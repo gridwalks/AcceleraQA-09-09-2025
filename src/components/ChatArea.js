@@ -1,7 +1,7 @@
 // src/components/ChatArea.js - DEPLOYMENT READY (fixes DatabaseOff issue)
 
 import React from 'react';
-import { Send, Loader2, Database, BookOpen } from 'lucide-react';
+import { Send, Loader2, Database, BookOpen, Paperclip } from 'lucide-react';
 
 const ChatArea = ({
   messages,
@@ -13,7 +13,9 @@ const ChatArea = ({
   messagesEndRef,
   ragEnabled,
   setRAGEnabled,
-  isSaving
+  isSaving,
+  uploadedFile,
+  setUploadedFile
 }) => {
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200">
@@ -155,6 +157,21 @@ const ChatArea = ({
       {/* Input Area */}
       <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
         <div className="flex space-x-3">
+          <div className="flex-shrink-0">
+            <input
+              type="file"
+              id="chat-file-upload"
+              className="hidden"
+              onChange={(e) => setUploadedFile(e.target.files[0] || null)}
+            />
+            <label
+              htmlFor="chat-file-upload"
+              className="px-3 sm:px-4 py-3 sm:py-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer flex items-center justify-center min-w-[44px]"
+              title="Attach document"
+            >
+              <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
+            </label>
+          </div>
           <div className="flex-1 relative">
             <textarea
               value={inputMessage}
@@ -176,7 +193,7 @@ const ChatArea = ({
           </div>
           <button
             onClick={handleSendMessage}
-            disabled={isLoading || !inputMessage.trim()}
+            disabled={isLoading || (!inputMessage.trim() && !uploadedFile)}
             className="px-4 sm:px-6 py-3 sm:py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center min-w-[44px]"
             title="Send message"
           >
@@ -187,6 +204,10 @@ const ChatArea = ({
             )}
           </button>
         </div>
+
+        {uploadedFile && (
+          <div className="text-xs text-gray-500 mt-2">Attached: {uploadedFile.name}</div>
+        )}
         
         {/* Character/Line Count for longer messages */}
         {inputMessage.length > 100 && (

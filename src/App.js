@@ -41,6 +41,7 @@ function App() {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [ragEnabled, setRAGEnabled] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState(null);
 
   // Learning suggestions state
   const [learningSuggestions, setLearningSuggestions] = useState([]);
@@ -169,15 +170,19 @@ function App() {
   }, [messages, user]);
 
   const handleSendMessage = useCallback(async () => {
-    if (!inputMessage.trim()) return;
+    if (!inputMessage.trim() && !uploadedFile) return;
 
     setIsLoading(true);
+
+    const displayContent = uploadedFile
+      ? `${inputMessage}\n[Attached: ${uploadedFile.name}]`
+      : inputMessage;
 
     const userMessage = {
       id: uuidv4(),
       role: 'user',
       type: 'user',
-      content: inputMessage,
+      content: displayContent,
       timestamp: Date.now(),
       resources: [],
     };
@@ -186,10 +191,19 @@ function App() {
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage('');
 
+    let documentText = '';
+    if (uploadedFile) {
+      try {
+        documentText = await uploadedFile.text();
+      } catch (e) {
+        console.error('Error reading file:', e);
+      }
+    }
+
     try {
-      const response = ragEnabled
+      const response = ragEnabled && !documentText
         ? await ragSearch(inputMessage)
-        : await openaiService.getChatResponse(inputMessage);
+        : await openaiService.getChatResponse(inputMessage, documentText);
 
       const assistantMessage = {
         id: uuidv4(),
@@ -224,8 +238,9 @@ function App() {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      setUploadedFile(null);
     }
-  }, [inputMessage, ragEnabled, messages.length, refreshLearningSuggestions]);
+  }, [inputMessage, uploadedFile, ragEnabled, messages.length, refreshLearningSuggestions]);
 
   const handleKeyPress = useCallback(
     (e) => {
@@ -368,6 +383,8 @@ function App() {
                     ragEnabled={ragEnabled}
                     setRAGEnabled={setRAGEnabled}
                     isSaving={isSaving}
+                    uploadedFile={uploadedFile}
+                    setUploadedFile={setUploadedFile}
                   />
                 </div>
 
@@ -409,6 +426,8 @@ function App() {
                     ragEnabled={ragEnabled}
                     setRAGEnabled={setRAGEnabled}
                     isSaving={isSaving}
+                    uploadedFile={uploadedFile}
+                    setUploadedFile={setUploadedFile}
                   />
                 </div>
 

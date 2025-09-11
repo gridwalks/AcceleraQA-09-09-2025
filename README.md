@@ -151,6 +151,7 @@ npm run build
 ### AI Integration
 - OpenAI GPT-4 integration
 - Pharmaceutical-specific prompts
+- Document attachments for instant analysis
 - Error handling and rate limiting
 - Usage tracking
 

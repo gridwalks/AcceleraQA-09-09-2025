@@ -82,12 +82,16 @@ class OpenAIService {
     };
   }
 
-  async getChatResponse(message) {
-    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+  async getChatResponse(message, documentContent = '') {
+    if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentContent) {
       throw new Error('Invalid message provided');
     }
 
-    const payload = this.createChatPayload(message);
+    const combinedMessage = documentContent
+      ? `${message}\n\nDocument Content:\n${documentContent}`
+      : message;
+
+    const payload = this.createChatPayload(combinedMessage);
     
     try {
       const data = await this.makeRequest('/chat/completions', {
@@ -209,6 +213,6 @@ const openaiService = new OpenAIService();
 export default openaiService;
 
 // Export convenience function for backward compatibility
-export const getChatGPTResponse = async (message) => {
-  return await openaiService.getChatResponse(message);
+export const getChatGPTResponse = async (message, documentContent = '') => {
+  return await openaiService.getChatResponse(message, documentContent);
 };

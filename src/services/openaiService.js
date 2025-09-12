@@ -1,5 +1,6 @@
 import { OPENAI_CONFIG, ERROR_MESSAGES } from '../config/constants';
 import { generateResources } from '../utils/resourceGenerator';
+import { getCurrentModel } from '../config/modelConfig';
 
 class OpenAIService {
   constructor() {
@@ -86,7 +87,7 @@ class OpenAIService {
     }
   }
 
-  createChatPayload(message, model = OPENAI_CONFIG.MODEL) {
+  createChatPayload(message, model = getCurrentModel()) {
     return {
       model,
       messages: [
@@ -105,7 +106,7 @@ class OpenAIService {
     return messageTokens + (payload.max_tokens || 0);
   }
 
-  async getChatResponse(message, documentContent = '', model = OPENAI_CONFIG.MODEL) {
+  async getChatResponse(message, documentContent = '', model = getCurrentModel()) {
     if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentContent) {
       throw new Error('Invalid message provided');
     }

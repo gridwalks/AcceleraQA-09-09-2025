@@ -33,6 +33,7 @@ import { getToken, getTokenInfo } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 import RAGConfigurationPage from './RAGConfigurationPage';
 import TrainingResourcesAdmin from './TrainingResourcesAdmin';
+import { MODEL_OPTIONS, getCurrentModel, setCurrentModel } from '../config/modelConfig';
 
 export const checkStorageHealth = async () => {
   // Check browser storage capacity
@@ -70,6 +71,13 @@ const AdminScreen = ({ user, onBack }) => {
   const [authStats, setAuthStats] = useState(null);
   const [systemHealth, setSystemHealth] = useState(null);
   const [error, setError] = useState(null);
+  const [chatModel, setChatModel] = useState(getCurrentModel());
+
+  const handleModelChange = (e) => {
+    const model = e.target.value;
+    setChatModel(model);
+    setCurrentModel(model);
+  };
 
   // Check if user has admin role
   const isAdmin = hasAdminRole(user);
@@ -709,6 +717,24 @@ const AdminScreen = ({ user, onBack }) => {
           {/* System Health Tab */}
           {activeTab === 'system' && (
             <div className="space-y-6">
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">AI Model Configuration</h3>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Chat Model
+                    <select
+                      value={chatModel}
+                      onChange={handleModelChange}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    >
+                      {MODEL_OPTIONS.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">System Health Overview</h3>
                 <div className="space-y-6">

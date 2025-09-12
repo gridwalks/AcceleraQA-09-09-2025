@@ -96,4 +96,23 @@ describe('AdminScreen navigation', () => {
 
     expect(onBack).toHaveBeenCalled();
   });
+
+  it('renders Token Usage tab when selected', async () => {
+    const user = { roles: ['admin'] };
+
+    await act(async () => {
+      ReactDOM.render(<AdminScreen user={user} onBack={() => {}} />, container);
+    });
+
+    const usageButton = Array.from(container.querySelectorAll('button')).find(btn =>
+      btn.textContent && btn.textContent.includes('Token Usage')
+    );
+
+    await act(async () => {
+      usageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const heading = container.querySelector('h3');
+    expect(heading && heading.textContent).toMatch(/Token Usage/i);
+  });
 });

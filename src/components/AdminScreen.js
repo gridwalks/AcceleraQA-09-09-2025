@@ -34,6 +34,7 @@ import { hasAdminRole } from '../utils/auth';
 import RAGConfigurationPage from './RAGConfigurationPage';
 import TrainingResourcesAdmin from './TrainingResourcesAdmin';
 import { MODEL_OPTIONS, getCurrentModel, setCurrentModel } from '../config/modelConfig';
+import { getTokenUsageStats } from '../utils/tokenUsage';
 
 export const checkStorageHealth = async () => {
   // Check browser storage capacity
@@ -72,6 +73,7 @@ const AdminScreen = ({ user, onBack }) => {
   const [systemHealth, setSystemHealth] = useState(null);
   const [error, setError] = useState(null);
   const [chatModel, setChatModel] = useState(getCurrentModel());
+  const [tokenUsage, setTokenUsage] = useState({ daily: [], monthly: [] });
 
   const handleModelChange = (e) => {
     const model = e.target.value;
@@ -105,6 +107,7 @@ const AdminScreen = ({ user, onBack }) => {
       if (ragData.status === 'fulfilled') setRAGStats(ragData.value);
       if (health.status === 'fulfilled') setSystemHealth(health.value);
       if (auth.status === 'fulfilled') setAuthStats(auth.value);
+      setTokenUsage(getTokenUsageStats());
 
       // Log any failures
       [stats, ragData, health, auth].forEach((result, index) => {
@@ -434,6 +437,7 @@ const AdminScreen = ({ user, onBack }) => {
               { id: 'rag', label: 'RAG System', icon: FileText },
               { id: 'ragConfig', label: 'RAG Config', icon: Search },
               { id: 'system', label: 'System Health', icon: Activity },
+              { id: 'usage', label: 'Token Usage', icon: BarChart3 },
               { id: 'training', label: 'Training Resources', icon: BookOpen },
               { id: 'tools', label: 'Admin Tools', icon: Settings }
             ].map(tab => {
@@ -753,6 +757,55 @@ const AdminScreen = ({ user, onBack }) => {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Token Usage Tab */}
+          {activeTab === 'usage' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Token Usage</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-medium mb-2">Last 30 Days</h4>
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr>
+                          <th className="text-left">Date</th>
+                          <th className="text-right">Tokens</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tokenUsage.daily.map(day => (
+                          <tr key={day.date}>
+                            <td>{day.date}</td>
+                            <td className="text-right">{day.tokens}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-2">Last 12 Months</h4>
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr>
+                          <th className="text-left">Month</th>
+                          <th className="text-right">Tokens</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tokenUsage.monthly.map(month => (
+                          <tr key={month.month}>
+                            <td>{month.month}</td>
+                            <td className="text-right">{month.tokens}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>

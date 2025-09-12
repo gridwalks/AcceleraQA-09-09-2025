@@ -99,7 +99,7 @@ TROUBLESHOOTING STEPS:
 2. Check your OpenAI account billing status
 3. Generate a new API key if needed: https://platform.openai.com/account/api-keys`,
 
-  RATE_LIMIT_EXCEEDED: '⏱️ API rate limit exceeded. Please wait a moment and try again.',
+  RATE_LIMIT_EXCEEDED: (tokens) => `Rate limit exceeded while sending ${tokens} tokens. Please wait a few seconds before trying again.`,
   
   QUOTA_EXCEEDED: `💳 OpenAI API quota exceeded. 
 

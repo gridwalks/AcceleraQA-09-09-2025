@@ -1,6 +1,7 @@
 import { OPENAI_CONFIG, ERROR_MESSAGES } from '../config/constants';
 import { generateResources } from '../utils/resourceGenerator';
 import { getCurrentModel } from '../config/modelConfig';
+import { recordTokenUsage } from '../utils/tokenUsage';
 
 class OpenAIService {
   constructor() {
@@ -136,6 +137,11 @@ class OpenAIService {
 
       // Generate relevant resources based on the response content
       const resources = generateResources(message, aiResponse);
+
+      // Record token usage for admin analytics
+      if (data.usage?.total_tokens || tokenCount) {
+        recordTokenUsage(data.usage?.total_tokens || tokenCount);
+      }
 
       return {
         answer: aiResponse,

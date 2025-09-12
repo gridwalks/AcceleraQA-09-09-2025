@@ -13,7 +13,7 @@ class OpenAIService {
     }
   }
 
-  async makeRequest(endpoint, options = {}) {
+  async makeRequest(endpoint, options = {}, tokenCount = 0) {
     this.validateApiKey();
 
     const defaultOptions = {
@@ -27,9 +27,9 @@ class OpenAIService {
 
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, defaultOptions);
-      
+
       if (!response.ok) {
-        await this.handleApiError(response);
+        await this.handleApiError(response, tokenCount);
       }
 
       return await response.json();
@@ -41,7 +41,7 @@ class OpenAIService {
     }
   }
 
-  async handleApiError(response) {
+  async handleApiError(response, tokenCount) {
     let errorData = {};
     
     try {
@@ -58,7 +58,7 @@ class OpenAIService {
       case 402:
         throw new Error(ERROR_MESSAGES.QUOTA_EXCEEDED);
       case 429:
-        throw new Error(ERROR_MESSAGES.RATE_LIMIT_EXCEEDED);
+        throw new Error(ERROR_MESSAGES.RATE_LIMIT_EXCEEDED(tokenCount));
       default:
         throw new Error(`OpenAI API error: ${response.status} ${errorMessage}`);
     }
@@ -82,17 +82,29 @@ class OpenAIService {
     };
   }
 
-  async getChatResponse(message) {
-    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+  estimateTokens(payload) {
+    const messageTokens = payload.messages.reduce((sum, msg) => {
+      return sum + msg.content.split(/\s+/).filter(Boolean).length;
+    }, 0);
+    return messageTokens + (payload.max_tokens || 0);
+  }
+
+  async getChatResponse(message, documentContent = '') {
+    if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentContent) {
       throw new Error('Invalid message provided');
     }
 
-    const payload = this.createChatPayload(message);
-    
+    const combinedMessage = documentContent
+      ? `${message}\n\nDocument Content:\n${documentContent}`
+      : message;
+
+    const payload = this.createChatPayload(combinedMessage);
+    const tokenCount = this.estimateTokens(payload);
+
     try {
       const data = await this.makeRequest('/chat/completions', {
         body: JSON.stringify(payload)
-      });
+      }, tokenCount);
 
       if (!data.choices || data.choices.length === 0) {
         throw new Error('No response generated');
@@ -209,6 +221,6 @@ const openaiService = new OpenAIService();
 export default openaiService;
 
 // Export convenience function for backward compatibility
-export const getChatGPTResponse = async (message) => {
-  return await openaiService.getChatResponse(message);
+export const getChatGPTResponse = async (message, documentContent = '') => {
+  return await openaiService.getChatResponse(message, documentContent);
 };

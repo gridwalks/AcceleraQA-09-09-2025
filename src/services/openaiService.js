@@ -25,20 +25,32 @@ class OpenAIService {
       ...options
     };
 
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, defaultOptions);
-      
-      if (!response.ok) {
-        await this.handleApiError(response);
-      }
+    const maxRetries = 3;
 
-      return await response.json();
-    } catch (error) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new Error(ERROR_MESSAGES.NETWORK_ERROR);
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${this.baseUrl}${endpoint}`, { ...defaultOptions });
+
+        if (response.status === 429 && attempt < maxRetries - 1) {
+          const delay = Math.pow(2, attempt) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+
+        if (!response.ok) {
+          await this.handleApiError(response);
+        }
+
+        return await response.json();
+      } catch (error) {
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          throw new Error(ERROR_MESSAGES.NETWORK_ERROR);
+        }
+        throw error;
       }
-      throw error;
     }
+
+    throw new Error(ERROR_MESSAGES.RATE_LIMIT_EXCEEDED);
   }
 
   async handleApiError(response) {

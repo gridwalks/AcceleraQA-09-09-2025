@@ -24,6 +24,8 @@ import { initializeNeonService, loadConversations as loadNeonConversations, save
 
 import { FEATURE_FLAGS } from './config/featureFlags';
 
+const COOLDOWN_SECONDS = 10;
+
 function App() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -42,6 +44,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [ragEnabled, setRAGEnabled] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
+  const [cooldown, setCooldown] = useState(0);
 
   // Learning suggestions state
   const [learningSuggestions, setLearningSuggestions] = useState([]);
@@ -58,6 +61,13 @@ function App() {
 
   const messagesEndRef = useRef(null);
   const isAdmin = useMemo(() => user?.roles?.includes('admin'), [user]);
+
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cooldown]);
 
   // Initialize authentication on mount
   useEffect(() => {
@@ -171,6 +181,7 @@ function App() {
 
   const handleSendMessage = useCallback(async () => {
     if (!inputMessage.trim() && !uploadedFile) return;
+    if (cooldown > 0) return;
 
     setIsLoading(true);
 
@@ -226,21 +237,37 @@ function App() {
       }
 
     } catch (error) {
-      const errorMessage = {
-        id: uuidv4(),
-        role: 'assistant',
-        type: 'ai',
-        content: error.message || 'An error occurred while fetching the response.',
-        timestamp: Date.now(),
-        sources: [],
-        resources: [],
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      const isRateLimit = error.response?.status === 429 || error.message?.toLowerCase().includes('rate limit');
+
+      if (isRateLimit) {
+        setCooldown(COOLDOWN_SECONDS);
+        const errorMessage = {
+          id: uuidv4(),
+          role: 'assistant',
+          type: 'ai',
+          content: 'Rate limit exceeded. Please wait a few seconds before trying again.',
+          timestamp: Date.now(),
+          sources: [],
+          resources: [],
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      } else {
+        const errorMessage = {
+          id: uuidv4(),
+          role: 'assistant',
+          type: 'ai',
+          content: error.message || 'An error occurred while fetching the response.',
+          timestamp: Date.now(),
+          sources: [],
+          resources: [],
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      }
     } finally {
       setIsLoading(false);
       setUploadedFile(null);
     }
-  }, [inputMessage, uploadedFile, ragEnabled, messages.length, refreshLearningSuggestions]);
+  }, [inputMessage, uploadedFile, ragEnabled, messages.length, refreshLearningSuggestions, cooldown]);
 
   const handleKeyPress = useCallback(
     (e) => {
@@ -385,6 +412,7 @@ function App() {
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
+                    cooldown={cooldown}
                   />
                 </div>
 
@@ -428,6 +456,7 @@ function App() {
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
+                    cooldown={cooldown}
                   />
                 </div>
 

@@ -15,7 +15,8 @@ const ChatArea = ({
   setRAGEnabled,
   isSaving,
   uploadedFile,
-  setUploadedFile
+  setUploadedFile,
+  cooldown
 }) => {
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200">
@@ -156,6 +157,11 @@ const ChatArea = ({
 
       {/* Input Area */}
       <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+        {cooldown > 0 && (
+          <div className="mb-2 text-sm text-yellow-700 bg-yellow-100 px-3 py-2 rounded">
+            You're sending messages too quickly. Please wait {cooldown}s before trying again.
+          </div>
+        )}
         <div className="flex space-x-3">
           <div className="flex-shrink-0">
             <input
@@ -193,9 +199,9 @@ const ChatArea = ({
           </div>
           <button
             onClick={handleSendMessage}
-            disabled={isLoading || (!inputMessage.trim() && !uploadedFile)}
+            disabled={isLoading || cooldown > 0 || (!inputMessage.trim() && !uploadedFile)}
             className="px-4 sm:px-6 py-3 sm:py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center min-w-[44px]"
-            title="Send message"
+            title={cooldown > 0 ? `Please wait ${cooldown}s` : 'Send message'}
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />

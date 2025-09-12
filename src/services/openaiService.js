@@ -64,9 +64,9 @@ class OpenAIService {
     }
   }
 
-  createChatPayload(message) {
+  createChatPayload(message, model = OPENAI_CONFIG.MODEL) {
     return {
-      model: OPENAI_CONFIG.MODEL,
+      model,
       messages: [
         {
           role: "system",
@@ -82,7 +82,7 @@ class OpenAIService {
     };
   }
 
-  async getChatResponse(message, documentContent = '') {
+  async getChatResponse(message, documentContent = '', model = OPENAI_CONFIG.MODEL) {
     if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentContent) {
       throw new Error('Invalid message provided');
     }
@@ -91,7 +91,7 @@ class OpenAIService {
       ? `${message}\n\nDocument Content:\n${documentContent}`
       : message;
 
-    const payload = this.createChatPayload(combinedMessage);
+    const payload = this.createChatPayload(combinedMessage, model);
     
     try {
       const data = await this.makeRequest('/chat/completions', {

@@ -3,6 +3,7 @@ import neonService from './neonService';
 import openaiService from './openaiService';
 import { getToken } from './authService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
+import { OPENAI_CONFIG } from '../config/constants';
 
 class LearningSuggestionsService {
   constructor() {
@@ -111,8 +112,12 @@ class LearningSuggestionsService {
       // Create prompt for ChatGPT to generate learning suggestions
       const prompt = this.createLearningPrompt(conversationSummary);
       
-      // Get suggestions from ChatGPT
-      const response = await openaiService.getChatResponse(prompt);
+      // Get suggestions from ChatGPT using a lighter model
+      const response = await openaiService.getChatResponse(
+        prompt,
+        '',
+        OPENAI_CONFIG.SUGGESTIONS_MODEL
+      );
       
       // Parse and format the suggestions
       const suggestions = this.parseSuggestions(response.answer);

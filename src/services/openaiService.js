@@ -20,34 +20,52 @@ class OpenAIService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
+        'Authorization': `Bearer ${this.apiKey}`,
       },
-      ...options
+      ...options,
     };
 
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, defaultOptions);
+    const maxRetries = 3;
 
-      if (!response.ok) {
-        await this.handleApiError(response, tokenCount);
-      }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${this.baseUrl}${endpoint}`, { ...defaultOptions });
 
-      return await response.json();
-    } catch (error) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new Error(ERROR_MESSAGES.NETWORK_ERROR);
+        // Handle rate limit with retries (exponential backoff)
+        if (response.status === 429 && attempt < maxRetries - 1) {
+          const delay = Math.pow(2, attempt) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+
+        if (!response.ok) {
+          await this.handleApiError(response, tokenCount);
+        }
+
+        return await response.json();
+      } catch (error) {
+        // Network-level fetch failures (e.g., CORS or connectivity)
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          throw new Error(ERROR_MESSAGES.NETWORK_ERROR);
+        }
+        throw error;
       }
-      throw error;
     }
+
+    // Final failure after retries
+    const finalMsg = typeof ERROR_MESSAGES.RATE_LIMIT_EXCEEDED === 'function'
+      ? ERROR_MESSAGES.RATE_LIMIT_EXCEEDED(tokenCount)
+      : ERROR_MESSAGES.RATE_LIMIT_EXCEEDED;
+
+    throw new Error(finalMsg);
   }
 
-  async handleApiError(response, tokenCount) {
+  async handleApiError(response, tokenCount = 0) {
     let errorData = {};
-    
     try {
       errorData = await response.json();
     } catch {
-      // If we can't parse the error response, use default messages
+      // ignore parse errors; fall back to generic message
     }
 
     const errorMessage = errorData.error?.message || 'Unknown error';
@@ -57,28 +75,26 @@ class OpenAIService {
         throw new Error(ERROR_MESSAGES.INVALID_API_KEY);
       case 402:
         throw new Error(ERROR_MESSAGES.QUOTA_EXCEEDED);
-      case 429:
-        throw new Error(ERROR_MESSAGES.RATE_LIMIT_EXCEEDED(tokenCount));
+      case 429: {
+        const msg = typeof ERROR_MESSAGES.RATE_LIMIT_EXCEEDED === 'function'
+          ? ERROR_MESSAGES.RATE_LIMIT_EXCEEDED(tokenCount)
+          : ERROR_MESSAGES.RATE_LIMIT_EXCEEDED;
+        throw new Error(msg);
+      }
       default:
         throw new Error(`OpenAI API error: ${response.status} ${errorMessage}`);
     }
   }
 
-  createChatPayload(message) {
+  createChatPayload(message, model = OPENAI_CONFIG.MODEL) {
     return {
-      model: OPENAI_CONFIG.MODEL,
+      model,
       messages: [
-        {
-          role: "system",
-          content: OPENAI_CONFIG.SYSTEM_PROMPT
-        },
-        {
-          role: "user",
-          content: message
-        }
+        { role: 'system', content: OPENAI_CONFIG.SYSTEM_PROMPT },
+        { role: 'user', content: message },
       ],
       max_tokens: OPENAI_CONFIG.MAX_TOKENS,
-      temperature: OPENAI_CONFIG.TEMPERATURE
+      temperature: OPENAI_CONFIG.TEMPERATURE,
     };
   }
 
@@ -89,7 +105,7 @@ class OpenAIService {
     return messageTokens + (payload.max_tokens || 0);
   }
 
-  async getChatResponse(message, documentContent = '') {
+  async getChatResponse(message, documentContent = '', model = OPENAI_CONFIG.MODEL) {
     if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentContent) {
       throw new Error('Invalid message provided');
     }
@@ -98,20 +114,21 @@ class OpenAIService {
       ? `${message}\n\nDocument Content:\n${documentContent}`
       : message;
 
-    const payload = this.createChatPayload(combinedMessage);
+    const payload = this.createChatPayload(combinedMessage, model);
     const tokenCount = this.estimateTokens(payload);
 
     try {
-      const data = await this.makeRequest('/chat/completions', {
-        body: JSON.stringify(payload)
-      }, tokenCount);
+      const data = await this.makeRequest(
+        '/chat/completions',
+        { body: JSON.stringify(payload) },
+        tokenCount
+      );
 
       if (!data.choices || data.choices.length === 0) {
         throw new Error('No response generated');
       }
 
-      const aiResponse = data.choices[0].message.content;
-      
+      const aiResponse = data.choices[0].message?.content;
       if (!aiResponse) {
         throw new Error('Empty response generated');
       }
@@ -121,10 +138,9 @@ class OpenAIService {
 
       return {
         answer: aiResponse,
-        resources: resources,
-        usage: data.usage || null
+        resources,
+        usage: data.usage || null,
       };
-
     } catch (error) {
       console.error('OpenAI API Error:', error);
       throw error;
@@ -146,19 +162,16 @@ class OpenAIService {
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
       .forEach(msg => {
         if (msg.type === 'user') {
-          // Start new conversation pair
           if (currentPair.question || currentPair.answer) {
             conversationPairs.push(currentPair);
           }
           currentPair = { question: msg.content };
         } else if (msg.type === 'ai' && !msg.isStudyNotes) {
-          // Add AI response to current pair
           currentPair.answer = msg.content;
           currentPair.resources = msg.resources || [];
         }
       });
 
-    // Don't forget the last pair
     if (currentPair.question || currentPair.answer) {
       conversationPairs.push(currentPair);
     }
@@ -167,27 +180,16 @@ class OpenAIService {
       throw new Error('No valid conversation pairs found for study notes generation');
     }
 
-    // Create study content from conversation pairs
     const studyContent = conversationPairs
       .map((pair, index) => {
         let content = `\n=== CONVERSATION ${index + 1} ===\n`;
-        
-        if (pair.question) {
-          content += `QUESTION: ${pair.question}\n\n`;
-        }
-        
-        if (pair.answer) {
-          content += `ANSWER: ${pair.answer}\n`;
-        }
-        
+        if (pair.question) content += `QUESTION: ${pair.question}\n\n`;
+        if (pair.answer) content += `ANSWER: ${pair.answer}\n`;
         if (pair.resources && pair.resources.length > 0) {
           content += `\nRELATED RESOURCES:\n`;
-          content += pair.resources
-            .map(r => `• ${r.title} (${r.type}): ${r.url}`)
-            .join('\n');
+          content += pair.resources.map(r => `• ${r.title} (${r.type}): ${r.url}`).join('\n');
           content += '\n';
         }
-        
         return content;
       })
       .join('\n');
@@ -216,11 +218,11 @@ ${studyContent}`;
 }
 
 // Create singleton instance
-const openaiService = new OpenAIService();
+const openAIService = new OpenAIService();
 
-export default openaiService;
+export default openAIService;
 
 // Export convenience function for backward compatibility
 export const getChatGPTResponse = async (message, documentContent = '') => {
-  return await openaiService.getChatResponse(message, documentContent);
+  return await openAIService.getChatResponse(message, documentContent);
 };

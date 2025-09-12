@@ -15,7 +15,8 @@ const ChatArea = ({
   setRAGEnabled,
   isSaving,
   uploadedFile,
-  setUploadedFile
+  setUploadedFile,
+  cooldown, // rate-limit cooldown (seconds)
 }) => {
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200">
@@ -33,9 +34,12 @@ const ChatArea = ({
               </div>
             )}
           </div>
-          
+
           {/* RAG Toggle Switch */}
-          <label className="flex items-center space-x-2 cursor-pointer" title={ragEnabled ? 'RAG enabled - searching uploaded documents' : 'RAG disabled - AI knowledge only'}>
+          <label
+            className="flex items-center space-x-2 cursor-pointer"
+            title={ragEnabled ? 'RAG enabled - searching uploaded documents' : 'RAG disabled - AI knowledge only'}
+          >
             <input
               type="checkbox"
               className="sr-only"
@@ -58,7 +62,7 @@ const ChatArea = ({
             </span>
           </label>
         </div>
-        
+
         {/* RAG Status Description */}
         {ragEnabled && (
           <div className="mt-2 text-sm text-purple-600 bg-purple-50 px-3 py-1 rounded-md flex items-center space-x-2">
@@ -101,54 +105,60 @@ const ChatArea = ({
           </div>
         ) : (
           <>
-            {messages.filter(message => !message.isResource).map((message, index) => (
-              <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] lg:max-w-[75%] p-3 sm:p-4 rounded-lg ${
-                  message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-900 border border-gray-200'
-                }`}>
-                  {/* Message Content */}
-                  <div className="whitespace-pre-wrap text-sm sm:text-base leading-relaxed">
-                    {message.content}
-                  </div>
-                  
-                  {/* RAG Sources Display */}
-                  {message.sources && message.sources.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-300">
-                      <div className="text-xs font-medium text-gray-600 mb-2 flex items-center space-x-1">
-                        <Database className="h-3 w-3" />
-                        <span>Sources from uploaded documents:</span>
-                      </div>
-                      <div className="space-y-1">
-                        {message.sources.slice(0, 3).map((source, idx) => (
-                          <div key={idx} className="text-xs bg-white bg-opacity-50 p-2 rounded border">
-                            <div className="font-medium truncate" title={source.filename}>
-                              {source.filename}
-                            </div>
-                            <div className="text-gray-600 line-clamp-2">
-                              {source.text.substring(0, 150)}...
-                            </div>
-                          </div>
-                        ))}
-                        {message.sources.length > 3 && (
-                          <div className="text-xs text-gray-500 italic">
-                            ...and {message.sources.length - 3} more sources
-                          </div>
-                        )}
-                      </div>
+            {messages
+              .filter(message => !message.isResource)
+              .map((message, index) => (
+                <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[85%] lg:max-w-[75%] p-3 sm:p-4 rounded-lg ${
+                      message.role === 'user'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-900 border border-gray-200'
+                    }`}
+                  >
+                    {/* Message Content */}
+                    <div className="whitespace-pre-wrap text-sm sm:text-base leading-relaxed">
+                      {message.content}
                     </div>
-                  )}
-                  
-                  {/* Timestamp */}
-                  <div className={`text-xs mt-2 ${
-                    message.role === 'user' ? 'text-blue-200' : 'text-gray-500'
-                  }`}>
-                    {new Date(message.timestamp).toLocaleTimeString()}
+
+                    {/* RAG Sources Display */}
+                    {message.sources && message.sources.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-300">
+                        <div className="text-xs font-medium text-gray-600 mb-2 flex items-center space-x-1">
+                          <Database className="h-3 w-3" />
+                          <span>Sources from uploaded documents:</span>
+                        </div>
+                        <div className="space-y-1">
+                          {message.sources.slice(0, 3).map((source, idx) => (
+                            <div key={idx} className="text-xs bg-white bg-opacity-50 p-2 rounded border">
+                              <div className="font-medium truncate" title={source.filename}>
+                                {source.filename}
+                              </div>
+                              <div className="text-gray-600 line-clamp-2">
+                                {source.text.substring(0, 150)}...
+                              </div>
+                            </div>
+                          ))}
+                          {message.sources.length > 3 && (
+                            <div className="text-xs text-gray-500 italic">
+                              ...and {message.sources.length - 3} more sources
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Timestamp */}
+                    <div
+                      className={`text-xs mt-2 ${
+                        message.role === 'user' ? 'text-blue-200' : 'text-gray-500'
+                      }`}
+                    >
+                      {new Date(message.timestamp).toLocaleTimeString()}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
             <div ref={messagesEndRef} />
           </>
         )}
@@ -156,6 +166,11 @@ const ChatArea = ({
 
       {/* Input Area */}
       <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+        {cooldown > 0 && (
+          <div className="mb-2 text-sm text-yellow-700 bg-yellow-100 px-3 py-2 rounded">
+            You're sending messages too quickly. Please wait {cooldown}s before trying again.
+          </div>
+        )}
         <div className="flex space-x-3">
           <div className="flex-shrink-0">
             <input
@@ -182,7 +197,7 @@ const ChatArea = ({
               rows={1}
               style={{
                 height: 'auto',
-                overflowY: inputMessage.split('\n').length > 3 ? 'auto' : 'hidden'
+                overflowY: inputMessage.split('\n').length > 3 ? 'auto' : 'hidden',
               }}
               onInput={(e) => {
                 e.target.style.height = 'auto';
@@ -193,9 +208,9 @@ const ChatArea = ({
           </div>
           <button
             onClick={handleSendMessage}
-            disabled={isLoading || (!inputMessage.trim() && !uploadedFile)}
+            disabled={isLoading || cooldown > 0 || (!inputMessage.trim() && !uploadedFile)}
             className="px-4 sm:px-6 py-3 sm:py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center min-w-[44px]"
-            title="Send message"
+            title={cooldown > 0 ? `Please wait ${cooldown}s` : 'Send message'}
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
@@ -208,7 +223,7 @@ const ChatArea = ({
         {uploadedFile && (
           <div className="text-xs text-gray-500 mt-2">Attached: {uploadedFile.name}</div>
         )}
-        
+
         {/* Character/Line Count for longer messages */}
         {inputMessage.length > 100 && (
           <div className="text-xs text-gray-500 mt-2 text-right">

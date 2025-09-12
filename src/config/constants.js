@@ -11,25 +11,22 @@ export const OPENAI_CONFIG = {
   SUGGESTIONS_MODEL: 'gpt-4o-mini',
   MAX_TOKENS: 1200,
   TEMPERATURE: 0.7,
-  SYSTEM_PROMPT: `
-You are AcceleraQA, an AI assistant for pharmaceutical quality, compliance, and clinical trial integrity.  
-Your role is to provide accurate, practical, and professional guidance aligned to global regulations (FDA, EMA, ICH, HIPAA, GDPR).  
+  SYSTEM_PROMPT: `You are AcceleraQA, an AI assistant for pharmaceutical quality, compliance, and clinical trial integrity.
+Your role is to provide accurate, practical, and professional guidance aligned to global regulations (FDA, EMA, ICH, HIPAA, GDPR).
 
-Expertise:  
-- GMP/cGMP, validation (IQ/OQ/PQ), CAPA, ICH Q10 quality systems, change control, supplier oversight, contamination prevention, stability programs.  
-- GCP (ICH E6 R2/R3), informed consent, subject safety, reliable data, eTMF/SOP documentation, ALCOA+ data integrity.  
-- Computerized System Validation (CSV, 21 CFR Part 11, Annex 11), digital health tools (ePRO/eCOA, wearables, decentralized trials), risk-based monitoring.  
-- Privacy & security: HIPAA, GDPR, global frameworks, data integrity, cybersecurity.  
+Expertise:
+- GMP/cGMP, validation (IQ/OQ/PQ), CAPA, ICH Q10 quality systems, change control, supplier oversight, contamination prevention, stability programs.
+- GCP (ICH E6 R2/R3), informed consent, subject safety, reliable data, eTMF/SOP documentation, ALCOA+ data integrity.
+- Computerized System Validation (CSV, 21 CFR Part 11, Annex 11), digital health tools (ePRO/eCOA, wearables, decentralized trials), risk-based monitoring.
+- Privacy & security: HIPAA, GDPR, global frameworks, data integrity, cybersecurity.
 
-Principles:  
-1. Patient safety first.  
-2. Always cite or reference global guidance where relevant.  
-3. Concise but complete (aim 150–250 words unless detail requested).  
-4. Prioritize practicality, continuous improvement, and adaptability to digital health.  
-
-
-'};
-
+Principles:
+1. Patient safety first.
+2. Always cite or reference global guidance where relevant.
+3. Concise but complete (aim 150-250 words unless detail requested).
+4. Prioritize practicality, continuous improvement, and adaptability to digital health.
+`,
+};
 // Auth0 Configuration with enhanced validation
 export const AUTH0_CONFIG = {
   DOMAIN: process.env.REACT_APP_AUTH0_DOMAIN,
@@ -56,42 +53,20 @@ export const FEATURE_FLAGS = {
 
 // Enhanced Error Messages with troubleshooting
 export const ERROR_MESSAGES = {
-  API_KEY_NOT_CONFIGURED: `⚠️ OpenAI API key not configured.
+  API_KEY_NOT_CONFIGURED: 'OpenAI API key not configured.\n\nTROUBLESHOOTING STEPS:\n1. Check that REACT_APP_OPENAI_API_KEY is set in your environment\n2. If deploying to Netlify, add the variable in Site Settings > Environment Variables\n3. Get your API key from: https://platform.openai.com/account/api-keys\n4. Contact your administrator if you need access',
 
-TROUBLESHOOTING STEPS:
-1. Check that REACT_APP_OPENAI_API_KEY is set in your environment
-2. If deploying to Netlify, add the variable in Site Settings > Environment Variables
-3. Get your API key from: https://platform.openai.com/account/api-keys
-4. Contact your administrator if you need access`,
+  INVALID_API_KEY: 'Invalid OpenAI API key.\n\nTROUBLESHOOTING STEPS:\n1. Verify your API key is correct and active\n2. Check your OpenAI account billing status\n3. Generate a new API key if needed: https://platform.openai.com/account/api-keys',
 
-  INVALID_API_KEY: `🔑 Invalid OpenAI API key. 
-
-TROUBLESHOOTING STEPS:
-1. Verify your API key is correct and active
-2. Check your OpenAI account billing status
-3. Generate a new API key if needed: https://platform.openai.com/account/api-keys`,
-
-  RATE_LIMIT_EXCEEDED: (tokens) => `Rate limit exceeded while sending ${tokens} tokens. Please wait a few seconds before trying again.`,
+  RATE_LIMIT_EXCEEDED: (tokens) => 'Rate limit exceeded while sending ' + tokens + ' tokens. Please wait a few seconds before trying again.',
   
-  QUOTA_EXCEEDED: `💳 OpenAI API quota exceeded. 
+  QUOTA_EXCEEDED: 'OpenAI API quota exceeded.\n\nTROUBLESHOOTING STEPS:\n1. Check your usage: https://platform.openai.com/account/usage\n2. Review your billing: https://platform.openai.com/account/billing\n3. Upgrade your plan if needed',
 
-TROUBLESHOOTING STEPS:
-1. Check your usage: https://platform.openai.com/account/usage
-2. Review your billing: https://platform.openai.com/account/billing
-3. Upgrade your plan if needed`,
-
-  NETWORK_ERROR: '🌐 Network error. Please check your internet connection and try again.',
+  NETWORK_ERROR: 'Network error. Please check your internet connection and try again.',
   GENERIC_ERROR: 'Sorry, I encountered an error. Please try again.',
-  
-  AUTH_ERROR: `🔐 Authentication error occurred. 
 
-TROUBLESHOOTING STEPS:
-1. Check that all Auth0 environment variables are set correctly
-2. Verify your Auth0 application configuration
-3. Try signing out and signing in again
-4. Contact support if the problem persists`,
+  AUTH_ERROR: 'Authentication error occurred.\n\nTROUBLESHOOTING STEPS:\n1. Check that all Auth0 environment variables are set correctly\n2. Verify your Auth0 application configuration\n3. Try signing out and signing in again\n4. Contact support if the problem persists',
 
-  STUDY_NOTES_GENERATION_FAILED: '❌ Failed to generate study notes. Please check your API configuration and try again.'
+  STUDY_NOTES_GENERATION_FAILED: 'Failed to generate study notes. Please check your API configuration and try again.'
 };
 
 // Enhanced environment variable validation with detailed feedback
@@ -108,27 +83,27 @@ export const validateEnvironment = () => {
   });
   
   if (missing.length > 0) {
-    console.error('❌ CONFIGURATION ERROR: Missing required environment variables:');
+    console.error('CONFIGURATION ERROR: Missing required environment variables:');
     missing.forEach(varName => {
-      console.error(`   • ${varName}`);
+      console.error('   - ' + varName);
     });
-    
-    console.error('\n📋 SETUP INSTRUCTIONS:');
+
+    console.error('\nSETUP INSTRUCTIONS:');
     console.error('1. Copy .env.example to .env');
     console.error('2. Replace placeholder values with real credentials');
     console.error('3. For Netlify: Add variables in Site Settings > Environment Variables');
     console.error('4. Ensure variable names start with REACT_APP_');
-    console.error('\n🔗 HELPFUL LINKS:');
-    console.error('• OpenAI API Keys: https://platform.openai.com/account/api-keys');
-    console.error('• Auth0 Dashboard: https://manage.auth0.com/');
-    console.error('• Netlify Environment Variables: https://docs.netlify.com/configure-builds/environment-variables/');
+    console.error('\nHELPFUL LINKS:');
+      console.error('OpenAI API Keys: https://platform.openai.com/account/api-keys');
+      console.error('Auth0 Dashboard: https://manage.auth0.com/');
+      console.error('Netlify Environment Variables: https://docs.netlify.com/configure-builds/environment-variables/');
     
     return false;
   }
   
   // Validate Auth0 domain format
   if (AUTH0_CONFIG.DOMAIN && !AUTH0_CONFIG.DOMAIN.includes('.auth0.com')) {
-    console.error('❌ CONFIGURATION ERROR: Invalid Auth0 domain format');
+      console.error('CONFIGURATION ERROR: Invalid Auth0 domain format');
     console.error('   Expected format: your-tenant.auth0.com or your-tenant.us.auth0.com');
     return false;
   }
@@ -136,12 +111,12 @@ export const validateEnvironment = () => {
   // Validate OpenAI API key format
   const apiKey = process.env.REACT_APP_OPENAI_API_KEY;
   if (apiKey && !apiKey.startsWith('sk-')) {
-    console.error('❌ CONFIGURATION ERROR: Invalid OpenAI API key format');
+      console.error('CONFIGURATION ERROR: Invalid OpenAI API key format');
     console.error('   Expected format: sk-proj-... or sk-...');
     return false;
   }
   
-  console.log('✅ Environment validation passed');
+    console.log('Environment validation passed');
   return true;
 };
 

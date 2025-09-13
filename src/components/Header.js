@@ -119,6 +119,7 @@ const Header = memo(({
             {/* Support */}
             <button
               onClick={onOpenSupport}
+
               className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Raise support request"
             >

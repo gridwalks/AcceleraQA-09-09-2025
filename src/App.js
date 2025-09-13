@@ -24,6 +24,8 @@ import { initializeNeonService, loadConversations as loadNeonConversations, save
 //import { initializeNeonService, loadConversations as loadNeonConversations } from './services/neonService';
 
 import { FEATURE_FLAGS } from './config/featureFlags';
+import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
+import { mergeCurrentAndStoredMessages } from './utils/messageUtils';
 
 const COOLDOWN_SECONDS = 10;
 
@@ -62,6 +64,7 @@ function App() {
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
 
   const messagesEndRef = useRef(null);
+  const messagesLoadedRef = useRef(false);
   const isAdmin = useMemo(() => user?.roles?.includes('admin'), [user]);
 
   useEffect(() => {
@@ -118,6 +121,44 @@ function App() {
     }
   }, [user, loadInitialLearningSuggestions]);
 
+  // Load messages from storage when user logs in
+  useEffect(() => {
+
+    messagesLoadedRef.current = false;
+
+    const loadStoredMessages = async () => {
+      if (!user?.sub) return;
+      try {
+        const stored = await loadMessagesFromStorage(user.sub);
+        setMessages(stored);
+      } catch (error) {
+        console.error('Failed to load messages from storage:', error);
+
+      } finally {
+        messagesLoadedRef.current = true;
+
+      }
+    };
+
+    loadStoredMessages();
+  }, [user]);
+
+  // Persist messages to storage whenever they change
+  useEffect(() => {
+
+    if (!user?.sub || !messagesLoadedRef.current) return;
+
+    const persist = async () => {
+      try {
+        await saveMessagesToStorage(user.sub, messages);
+      } catch (error) {
+        console.error('Failed to save messages to storage:', error);
+      }
+    };
+
+    persist();
+  }, [messages, user]);
+
   // Load conversations from Neon when user is available or refresh requested
   useEffect(() => {
     const fetchConversations = async () => {
@@ -146,6 +187,15 @@ function App() {
       console.error('Error refreshing learning suggestions:', error);
     }
   }, [user]);
+
+  // Load a previous conversation into the chat window
+  const handleConversationSelect = useCallback((conversationId) => {
+    const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
+    const convMessages = merged.filter(m => m.conversationId === conversationId);
+    if (convMessages.length) {
+      setMessages(convMessages.map(m => ({ ...m, isCurrent: true })));
+    }
+  }, [messages, thirtyDayMessages]);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -367,10 +417,10 @@ function App() {
 
   return (
     <ErrorBoundary>
-      {!isAuthenticated ? (
-        <AuthScreen />
-      ) : loading ? (
+      {loading ? (
         <LoadingScreen />
+      ) : !isAuthenticated ? (
+        <AuthScreen />
       ) : showRAGConfig ? (
         <RAGConfigurationPage onClose={handleCloseRAGConfig} user={user} />
       ) : showAdmin ? (
@@ -415,22 +465,14 @@ function App() {
                 {/* Sidebar is collapsible on mobile */}
                 <div className="flex-shrink-0 border-t bg-white max-h-60 overflow-hidden">
                   <Sidebar
-                    showNotebook={showNotebook}
                     messages={messages}
                     thirtyDayMessages={thirtyDayMessages}
-                    selectedMessages={selectedMessages}
-                    setSelectedMessages={setSelectedMessages}
-                    exportSelected={handleExportSelected}
-                    clearSelected={clearSelectedMessages}
-                    clearAllConversations={clearAllConversations}
-                    isServerAvailable={isServerAvailable}
-                    onRefresh={handleRefreshConversations}
-                    // Enhanced props for learning suggestions
                     user={user}
                     learningSuggestions={learningSuggestions}
                     isLoadingSuggestions={isLoadingSuggestions}
                     onSuggestionsUpdate={handleSuggestionsUpdate}
                     onAddResource={handleAddResourceToNotebook}
+                    onConversationSelect={handleConversationSelect}
                   />
                 </div>
               </div>
@@ -459,22 +501,14 @@ function App() {
                 {/* Sidebar - Fixed optimal width with enhanced learning features */}
                 <div className="w-80 xl:w-96 flex-shrink-0 border-l bg-white p-6">
                   <Sidebar
-                    showNotebook={showNotebook}
                     messages={messages}
                     thirtyDayMessages={thirtyDayMessages}
-                    selectedMessages={selectedMessages}
-                    setSelectedMessages={setSelectedMessages}
-                    exportSelected={handleExportSelected}
-                    clearSelected={clearSelectedMessages}
-                    clearAllConversations={clearAllConversations}
-                    isServerAvailable={isServerAvailable}
-                    onRefresh={handleRefreshConversations}
-                    // Enhanced props for learning suggestions
                     user={user}
                     learningSuggestions={learningSuggestions}
                     isLoadingSuggestions={isLoadingSuggestions}
                     onSuggestionsUpdate={handleSuggestionsUpdate}
                     onAddResource={handleAddResourceToNotebook}
+                    onConversationSelect={handleConversationSelect}
                   />
                 </div>
               </div>

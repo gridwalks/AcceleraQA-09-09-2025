@@ -237,9 +237,13 @@ class OpenAIService {
         tokenCount
       );
 
+      const outputArrayText = Array.isArray(data.output)
+        ? data.output.find(item => item?.content?.[0]?.text)?.content?.[0]?.text
+        : null;
+
       const aiResponse =
         data.output_text ||
-        data.output?.[0]?.content?.[0]?.text ||
+        outputArrayText ||
         data.choices?.[0]?.message?.content ||
         null;
 

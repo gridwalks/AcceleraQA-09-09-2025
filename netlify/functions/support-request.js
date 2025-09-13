@@ -58,7 +58,14 @@ exports.handler = async (event, context) => {
       }),
     });
 
-    const data = await jiraResponse.json();
+    // Parse response body safely (Jira may return plain text on errors)
+    const text = await jiraResponse.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
 
     if (!jiraResponse.ok) {
       console.error('Jira API error', data);

@@ -55,6 +55,7 @@ const Header = memo(({
     }
   };
 
+  // Support handled by parent via onOpenSupport
 
   const displayName = user?.email || user?.name || 'User';
   const roleLabel = user?.roles?.length ? user.roles.join(', ') : null;

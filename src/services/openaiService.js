@@ -130,6 +130,43 @@ class OpenAIService {
     return data.id;
   }
 
+  async createVectorStore() {
+    const response = await fetch(`${this.baseUrl}/vector_stores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+        'OpenAI-Beta': 'assistants=v2',
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      await this.handleApiError(response);
+    }
+
+    const data = await response.json();
+    return data.id;
+  }
+
+  async attachFileToVectorStore(vectorStoreId, fileId) {
+    const response = await fetch(`${this.baseUrl}/vector_stores/${vectorStoreId}/files`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+        'OpenAI-Beta': 'assistants=v2',
+      },
+      body: JSON.stringify({ file_id: fileId }),
+    });
+
+    if (!response.ok) {
+      await this.handleApiError(response);
+    }
+
+    return await response.json();
+  }
+
   async getChatResponse(message, documentFile = null, model = getCurrentModel()) {
     if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentFile) {
       throw new Error('Invalid message provided');
@@ -149,6 +186,14 @@ class OpenAIService {
     if (isFile) {
       try {
         const fileId = await this.uploadFile(documentFile);
+        let vectorStoreId;
+        try {
+          vectorStoreId = await this.createVectorStore();
+          await this.attachFileToVectorStore(vectorStoreId, fileId);
+        } catch (vsError) {
+          console.error('Vector store setup failed:', vsError);
+          throw vsError;
+        }
 
         requestBody = {
           model,
@@ -161,7 +206,7 @@ class OpenAIService {
               ],
             },
           ],
-          tools: [{ type: 'file_search' }],
+          tools: [{ type: 'file_search', vector_store_ids: [vectorStoreId] }],
         };
       } catch (error) {
         console.error('File upload failed:', error);

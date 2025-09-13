@@ -395,10 +395,10 @@ function App() {
 
   return (
     <ErrorBoundary>
-      {!isAuthenticated ? (
-        <AuthScreen />
-      ) : loading ? (
+      {loading ? (
         <LoadingScreen />
+      ) : !isAuthenticated ? (
+        <AuthScreen />
       ) : showRAGConfig ? (
         <RAGConfigurationPage onClose={handleCloseRAGConfig} user={user} />
       ) : showAdmin ? (

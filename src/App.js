@@ -23,6 +23,7 @@ import { initializeNeonService, loadConversations as loadNeonConversations, save
 //import { initializeNeonService, loadConversations as loadNeonConversations } from './services/neonService';
 
 import { FEATURE_FLAGS } from './config/featureFlags';
+import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
 
 const COOLDOWN_SECONDS = 10;
 
@@ -115,6 +116,35 @@ function App() {
       }
     }
   }, [user, loadInitialLearningSuggestions]);
+
+  // Load messages from storage when user logs in
+  useEffect(() => {
+    const loadStoredMessages = async () => {
+      if (!user?.sub) return;
+      try {
+        const stored = await loadMessagesFromStorage(user.sub);
+        setMessages(stored);
+      } catch (error) {
+        console.error('Failed to load messages from storage:', error);
+      }
+    };
+
+    loadStoredMessages();
+  }, [user]);
+
+  // Persist messages to storage whenever they change
+  useEffect(() => {
+    if (!user?.sub) return;
+    const persist = async () => {
+      try {
+        await saveMessagesToStorage(user.sub, messages);
+      } catch (error) {
+        console.error('Failed to save messages to storage:', error);
+      }
+    };
+
+    persist();
+  }, [messages, user]);
 
   // Load conversations from Neon when user is available or refresh requested
   useEffect(() => {

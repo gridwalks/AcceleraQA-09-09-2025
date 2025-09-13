@@ -161,8 +161,12 @@ class OpenAIService {
               ],
             },
           ],
-          attachments: [{ file_id: fileId }],
-          tools: [{ type: 'file_search' }],
+          attachments: [
+            {
+              file_id: fileId,
+              tools: [{ type: 'file_search' }],
+            },
+          ],
         };
       } catch (error) {
         console.error('File upload failed:', error);

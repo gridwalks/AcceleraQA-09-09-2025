@@ -144,12 +144,11 @@ class OpenAIService {
       requestBody.input = tokenPayloadMessage;
     }
 
-    // If a real file is provided, upload it and reference for file search
+    // If a real file is provided, upload it and reference it in the message
     const isFile = documentFile && typeof documentFile === 'object' && 'name' in documentFile;
     if (isFile) {
       try {
         const fileId = await this.uploadFile(documentFile);
-
 
         requestBody = {
           model,
@@ -158,15 +157,11 @@ class OpenAIService {
               role: 'user',
               content: [
                 { type: 'input_text', text: message || '' },
+                { type: 'input_file', file_id: fileId },
               ],
             },
           ],
-          attachments: [
-            {
-              file_id: fileId,
-              tools: [{ type: 'file_search' }],
-            },
-          ],
+          tools: [{ type: 'file_search' }],
         };
       } catch (error) {
         console.error('File upload failed:', error);

@@ -590,13 +590,13 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Select File (Text files work best)
                     </label>
-                    <input
-                      id="file-upload"
-                      type="file"
-                      accept=".txt,.pdf,.doc,.docx"
-                      onChange={handleFileSelect}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
+                      <input
+                        id="file-upload"
+                        type="file"
+                        accept=".pdf,.txt,.md"
+                        onChange={handleFileSelect}
+                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      />
                     <p className="text-xs text-gray-500 mt-1">
                       Persistent storage with Neon PostgreSQL database and full-text search
                     </p>

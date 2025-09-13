@@ -176,6 +176,7 @@ const ChatArea = ({
             <input
               type="file"
               id="chat-file-upload"
+              accept=".pdf,.txt,.md"
               className="hidden"
               onChange={(e) => setUploadedFile(e.target.files[0] || null)}
             />

@@ -109,6 +109,16 @@ class OpenAIService {
   }
 
   async uploadFile(file) {
+    const allowedExtensions = ['.pdf', '.txt', '.md'];
+    const allowedMimeTypes = ['application/pdf', 'text/plain', 'text/markdown'];
+    const fileName = file?.name?.toLowerCase() || '';
+    const fileType = file?.type?.toLowerCase() || '';
+    const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+    const hasValidMime = allowedMimeTypes.includes(fileType);
+    if (!hasValidExtension && !hasValidMime) {
+      throw new Error('Unsupported file type; please upload a PDF, TXT, or MD file');
+    }
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('purpose', 'assistants');

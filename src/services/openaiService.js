@@ -20,11 +20,12 @@ class OpenAIService {
 
     const defaultOptions = {
       method: 'POST',
+      ...options,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`,
+        ...(options.headers || {}),
       },
-      ...options,
     };
 
     const maxRetries = 3;
@@ -107,38 +108,91 @@ class OpenAIService {
     return messageTokens + (payload.max_tokens || 0);
   }
 
-  async getChatResponse(message, documentContent = '', model = getCurrentModel()) {
-    if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentContent) {
+  async uploadFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('purpose', 'assistants');
+
+    const response = await fetch(`${this.baseUrl}/files`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'OpenAI-Beta': 'assistants=v2',
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      await this.handleApiError(response);
+    }
+
+    const data = await response.json();
+    return data.id;
+  }
+
+  async getChatResponse(message, documentFile = null, model = getCurrentModel()) {
+    if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentFile) {
       throw new Error('Invalid message provided');
     }
 
-    const combinedMessage = documentContent
-      ? `${message}\n\nDocument Content:\n${documentContent}`
-      : message;
+    let requestBody = { model, input: message };
+    let tokenPayloadMessage = message;
 
-    const payload = this.createChatPayload(combinedMessage, model);
-    const tokenCount = this.estimateTokens(payload);
+    // If second parameter is a string (legacy document content)
+    if (typeof documentFile === 'string' && documentFile.trim().length > 0) {
+      tokenPayloadMessage = `${message}\n\nDocument Content:\n${documentFile}`;
+      requestBody.input = tokenPayloadMessage;
+    }
+
+    // If a real file is provided, upload it and reference for file search
+    const isFile = documentFile && typeof documentFile === 'object' && 'name' in documentFile;
+    if (isFile) {
+      try {
+        const fileId = await this.uploadFile(documentFile);
+
+        requestBody = {
+          model,
+          input: [
+            {
+              role: 'user',
+              content: [
+                { type: 'input_text', text: message || '' },
+              ],
+              attachments: [{ file_id: fileId }],
+            },
+          ],
+          tools: [{ type: 'file_search' }],
+        };
+      } catch (error) {
+        console.error('File upload failed:', error);
+        throw error;
+      }
+    }
+
+    const payloadForTokens = this.createChatPayload(tokenPayloadMessage, model);
+    const tokenCount = this.estimateTokens(payloadForTokens);
 
     try {
       const data = await this.makeRequest(
-        '/chat/completions',
-        { body: JSON.stringify(payload) },
+        '/responses',
+        {
+          headers: { 'OpenAI-Beta': 'assistants=v2' },
+          body: JSON.stringify(requestBody),
+        },
         tokenCount
       );
 
-      if (!data.choices || data.choices.length === 0) {
+      const aiResponse =
+        data.output_text ||
+        data.output?.[0]?.content?.[0]?.text ||
+        null;
+
+      if (!aiResponse) {
         throw new Error('No response generated');
       }
 
-      const aiResponse = data.choices[0].message?.content;
-      if (!aiResponse) {
-        throw new Error('Empty response generated');
-      }
-
-      // Generate relevant resources based on the response content
       const resources = generateResources(message, aiResponse);
 
-      // Record token usage for admin analytics
       if (data.usage?.total_tokens || tokenCount) {
         recordTokenUsage(data.usage?.total_tokens || tokenCount);
       }

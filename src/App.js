@@ -452,17 +452,8 @@ function App() {
                 {/* Sidebar is collapsible on mobile */}
                 <div className="flex-shrink-0 border-t bg-white max-h-60 overflow-hidden">
                   <Sidebar
-                    showNotebook={showNotebook}
                     messages={messages}
                     thirtyDayMessages={thirtyDayMessages}
-                    selectedMessages={selectedMessages}
-                    setSelectedMessages={setSelectedMessages}
-                    exportSelected={handleExportSelected}
-                    clearSelected={clearSelectedMessages}
-                    clearAllConversations={clearAllConversations}
-                    isServerAvailable={isServerAvailable}
-                    onRefresh={handleRefreshConversations}
-                    // Enhanced props for learning suggestions
                     user={user}
                     learningSuggestions={learningSuggestions}
                     isLoadingSuggestions={isLoadingSuggestions}
@@ -496,17 +487,8 @@ function App() {
                 {/* Sidebar - Fixed optimal width with enhanced learning features */}
                 <div className="w-80 xl:w-96 flex-shrink-0 border-l bg-white p-6">
                   <Sidebar
-                    showNotebook={showNotebook}
                     messages={messages}
                     thirtyDayMessages={thirtyDayMessages}
-                    selectedMessages={selectedMessages}
-                    setSelectedMessages={setSelectedMessages}
-                    exportSelected={handleExportSelected}
-                    clearSelected={clearSelectedMessages}
-                    clearAllConversations={clearAllConversations}
-                    isServerAvailable={isServerAvailable}
-                    onRefresh={handleRefreshConversations}
-                    // Enhanced props for learning suggestions
                     user={user}
                     learningSuggestions={learningSuggestions}
                     isLoadingSuggestions={isLoadingSuggestions}

@@ -202,19 +202,12 @@ function App() {
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage('');
 
-    let documentText = '';
-    if (uploadedFile) {
-      try {
-        documentText = await uploadedFile.text();
-      } catch (e) {
-        console.error('Error reading file:', e);
-      }
-    }
+    let fileToSend = uploadedFile;
 
     try {
-      const response = ragEnabled && !documentText
+      const response = ragEnabled && !fileToSend
         ? await ragSearch(inputMessage)
-        : await openaiService.getChatResponse(inputMessage, documentText);
+        : await openaiService.getChatResponse(inputMessage, fileToSend);
 
       const assistantMessage = {
         id: uuidv4(),

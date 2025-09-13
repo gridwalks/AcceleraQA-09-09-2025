@@ -60,6 +60,19 @@ describe('openAIService getChatResponse', () => {
     expect(result.answer).toBe('response from output_text');
   });
 
+  it('handles responses API payload with output array not first element', async () => {
+    openAIService.makeRequest.mockResolvedValue({
+      output: [
+        { role: 'meta' },
+        { role: 'assistant', content: [{ text: 'response from output array' }] },
+      ],
+      usage: { total_tokens: 7 },
+    });
+
+    const result = await openAIService.getChatResponse('howdy');
+    expect(result.answer).toBe('response from output array');
+  });
+
   it('handles chat/completions payload with choices message content', async () => {
     openAIService.makeRequest.mockResolvedValue({
       choices: [{ message: { content: 'response from choices' } }],

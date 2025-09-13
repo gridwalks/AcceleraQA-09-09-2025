@@ -24,6 +24,7 @@ import { initializeNeonService, loadConversations as loadNeonConversations, save
 
 import { FEATURE_FLAGS } from './config/featureFlags';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
+import { mergeCurrentAndStoredMessages } from './utils/messageUtils';
 
 const COOLDOWN_SECONDS = 10;
 
@@ -184,6 +185,15 @@ function App() {
       console.error('Error refreshing learning suggestions:', error);
     }
   }, [user]);
+
+  // Load a previous conversation into the chat window
+  const handleConversationSelect = useCallback((conversationId) => {
+    const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
+    const convMessages = merged.filter(m => m.conversationId === conversationId);
+    if (convMessages.length) {
+      setMessages(convMessages.map(m => ({ ...m, isCurrent: true })));
+    }
+  }, [messages, thirtyDayMessages]);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -459,6 +469,7 @@ function App() {
                     isLoadingSuggestions={isLoadingSuggestions}
                     onSuggestionsUpdate={handleSuggestionsUpdate}
                     onAddResource={handleAddResourceToNotebook}
+                    onConversationSelect={handleConversationSelect}
                   />
                 </div>
               </div>
@@ -494,6 +505,7 @@ function App() {
                     isLoadingSuggestions={isLoadingSuggestions}
                     onSuggestionsUpdate={handleSuggestionsUpdate}
                     onAddResource={handleAddResourceToNotebook}
+                    onConversationSelect={handleConversationSelect}
                   />
                 </div>
               </div>

@@ -11,7 +11,8 @@ const Sidebar = ({
   learningSuggestions = [],
   isLoadingSuggestions = false,
   onSuggestionsUpdate,
-  onAddResource
+  onAddResource,
+  onConversationSelect
 }) => {
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 lg:min-h-0">
@@ -29,6 +30,9 @@ const Sidebar = ({
           thirtyDayMessages={thirtyDayMessages}
           onSuggestionsUpdate={onSuggestionsUpdate}
           onAddResource={onAddResource}
+
+          onConversationSelect={onConversationSelect}
+
         />
       </div>
 

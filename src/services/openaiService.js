@@ -159,9 +159,9 @@ class OpenAIService {
               content: [
                 { type: 'input_text', text: message || '' },
               ],
-              attachments: [{ file_id: fileId }],
             },
           ],
+          attachments: [{ file_id: fileId }],
           tools: [{ type: 'file_search' }],
         };
       } catch (error) {

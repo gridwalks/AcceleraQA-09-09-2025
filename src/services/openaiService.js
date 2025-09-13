@@ -150,6 +150,7 @@ class OpenAIService {
       try {
         const fileId = await this.uploadFile(documentFile);
 
+
         requestBody = {
           model,
           input: [

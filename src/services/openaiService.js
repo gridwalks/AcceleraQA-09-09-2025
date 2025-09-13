@@ -240,10 +240,12 @@ class OpenAIService {
       const aiResponse =
         data.output_text ||
         data.output?.[0]?.content?.[0]?.text ||
+        data.choices?.[0]?.message?.content ||
         null;
 
       if (!aiResponse) {
-        throw new Error('No response generated');
+        const rawData = typeof data === 'object' ? JSON.stringify(data) : String(data);
+        throw new Error(`No response generated. Raw response: ${rawData}`);
       }
 
       const resources = generateResources(message, aiResponse);

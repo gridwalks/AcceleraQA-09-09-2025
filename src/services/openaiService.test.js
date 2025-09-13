@@ -70,9 +70,22 @@ describe('openAIService getChatResponse', () => {
     expect(result.answer).toBe('response from choices');
   });
 
+  it('handles responses API payload with message output', async () => {
+    openAIService.makeRequest.mockResolvedValue({
+      output: [
+        { type: 'message', content: [{ text: 'response from message' }] },
+        { type: 'other', content: [] },
+      ],
+      usage: { total_tokens: 7 },
+    });
+
+    const result = await openAIService.getChatResponse('hey');
+    expect(result.answer).toBe('response from message');
+  });
+
   it('throws descriptive error when response has no text', async () => {
     openAIService.makeRequest.mockResolvedValue({});
 
-    await expect(openAIService.getChatResponse('hi')).rejects.toThrow(/No response generated.*Raw response/);
+    await expect(openAIService.getChatResponse('hi')).rejects.toThrow(/No text found in OpenAI response/);
   });
 });

@@ -72,6 +72,7 @@ class OpenAIService {
     }
 
     const errorMessage = errorData.error?.message || 'Unknown error';
+    console.error('OpenAI API error response:', errorData);
 
     switch (response.status) {
       case 401:
@@ -237,15 +238,19 @@ class OpenAIService {
         tokenCount
       );
 
+      const messageItem = Array.isArray(data.output)
+        ? data.output.find(item => item.type === 'message')
+        : null;
+
       const aiResponse =
         data.output_text ||
-        data.output?.[0]?.content?.[0]?.text ||
+        messageItem?.content?.[0]?.text ||
         data.choices?.[0]?.message?.content ||
         null;
 
       if (!aiResponse) {
-        const rawData = typeof data === 'object' ? JSON.stringify(data) : String(data);
-        throw new Error(`No response generated. Raw response: ${rawData}`);
+        console.error('No text found in OpenAI response:', data);
+        throw new Error(`No text found in OpenAI response: ${JSON.stringify(data)}`);
       }
 
       const resources = generateResources(message, aiResponse);

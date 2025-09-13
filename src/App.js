@@ -61,6 +61,7 @@ function App() {
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
 
   const messagesEndRef = useRef(null);
+  const messagesLoadedRef = useRef(false);
   const isAdmin = useMemo(() => user?.roles?.includes('admin'), [user]);
 
   useEffect(() => {
@@ -119,6 +120,9 @@ function App() {
 
   // Load messages from storage when user logs in
   useEffect(() => {
+
+    messagesLoadedRef.current = false;
+
     const loadStoredMessages = async () => {
       if (!user?.sub) return;
       try {
@@ -126,6 +130,10 @@ function App() {
         setMessages(stored);
       } catch (error) {
         console.error('Failed to load messages from storage:', error);
+
+      } finally {
+        messagesLoadedRef.current = true;
+
       }
     };
 
@@ -134,7 +142,9 @@ function App() {
 
   // Persist messages to storage whenever they change
   useEffect(() => {
-    if (!user?.sub) return;
+
+    if (!user?.sub || !messagesLoadedRef.current) return;
+
     const persist = async () => {
       try {
         await saveMessagesToStorage(user.sub, messages);

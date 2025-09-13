@@ -5,6 +5,7 @@ import { MessageSquare } from 'lucide-react';
  * Displays a list of recent conversations and notifies parent when one is selected
  */
 const ConversationList = memo(({ conversations = [], onSelect = () => {} }) => {
+
   if (!conversations.length) {
     return (
       <p className="text-sm text-gray-500">No conversations yet.</p>
@@ -36,6 +37,7 @@ const ConversationList = memo(({ conversations = [], onSelect = () => {} }) => {
             }
           }}
         >
+
           <MessageSquare className="h-4 w-4 text-gray-400" />
           <span className="text-sm text-gray-700 truncate">
             {(conv.userContent || conv.aiContent || '').slice(0, 40)}

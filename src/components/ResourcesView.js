@@ -6,7 +6,9 @@ import { FEATURE_FLAGS } from '../config/featureFlags';
 import ConversationList from './ConversationList';
 import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
 
+
 const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [], thirtyDayMessages = [], onConversationSelect }) => {
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredResources, setFilteredResources] = useState(currentResources);
   const [learningSuggestions, setLearningSuggestions] = useState([]);
@@ -330,7 +332,9 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         )}
         {activeTab === 'conversations' && (
           <div className="space-y-2">
+
             <ConversationList conversations={conversations} onSelect={onConversationSelect} />
+
           </div>
         )}
       </div>

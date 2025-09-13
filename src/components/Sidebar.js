@@ -30,7 +30,9 @@ const Sidebar = ({
           thirtyDayMessages={thirtyDayMessages}
           onSuggestionsUpdate={onSuggestionsUpdate}
           onAddResource={onAddResource}
+
           onConversationSelect={onConversationSelect}
+
         />
       </div>
 

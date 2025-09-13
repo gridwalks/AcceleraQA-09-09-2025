@@ -10,6 +10,7 @@ const Header = memo(({
   lastSaveTime = null,
   onShowAdmin,
   onOpenNotebook,
+  onOpenSupport,
   onLogout
 }) => {
   // Enhanced admin detection with debugging
@@ -54,28 +55,6 @@ const Header = memo(({
     }
   };
 
-  const handleSupportClick = async () => {
-    const message = window.prompt('Describe your issue:');
-    if (!message) return;
-
-    try {
-      const response = await fetch('/.netlify/functions/support-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user?.email, message }),
-      });
-
-      if (response.ok) {
-        alert('Support request submitted');
-      } else {
-        console.error('Support request failed', await response.text());
-        alert('Failed to submit support request');
-      }
-    } catch (error) {
-      console.error('Support request error:', error);
-      alert('Failed to submit support request');
-    }
-  };
 
   const displayName = user?.email || user?.name || 'User';
   const roleLabel = user?.roles?.length ? user.roles.join(', ') : null;
@@ -138,7 +117,8 @@ const Header = memo(({
 
             {/* Support */}
             <button
-              onClick={handleSupportClick}
+              onClick={onOpenSupport}
+
               className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Raise support request"
             >

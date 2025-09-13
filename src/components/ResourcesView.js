@@ -1,19 +1,26 @@
 // Enhanced with Learning Suggestions
-import React, { memo, useState, useEffect, useRef } from 'react';
-import { Search, ChevronRight, ExternalLink, BookOpen, Brain, Sparkles, Target, Award, BookmarkPlus, Check } from 'lucide-react';
+import React, { memo, useState, useEffect, useRef, useMemo } from 'react';
+import { Search, ChevronRight, ExternalLink, BookOpen, Brain, Sparkles, Target, Award, BookmarkPlus, Check, MessageSquare } from 'lucide-react';
 import learningSuggestionsService from '../services/learningSuggestionsService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
+import ConversationList from './ConversationList';
+import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
 
-const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource }) => {
+const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [], thirtyDayMessages = [], onConversationSelect }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredResources, setFilteredResources] = useState(currentResources);
   const [learningSuggestions, setLearningSuggestions] = useState([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [activeTab, setActiveTab] = useState('resources'); // 'suggestions' or 'resources'
+  const [activeTab, setActiveTab] = useState('resources'); // 'suggestions', 'resources', or 'conversations'
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [addedResources, setAddedResources] = useState(new Set());
   const [showToast, setShowToast] = useState(false);
   const toastTimeoutRef = useRef(null);
+
+  const conversations = useMemo(() => {
+    const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
+    return combineMessagesIntoConversations(merged).slice(-20).reverse();
+  }, [messages, thirtyDayMessages]);
 
   // Load learning suggestions on component mount and user change
   useEffect(() => {
@@ -177,6 +184,22 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('conversations')}
+            className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              activeTab === 'conversations'
+                ? 'bg-green-100 text-green-700 border border-green-200'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+            }`}
+          >
+            <MessageSquare className="h-4 w-4" />
+            <span>Conversations</span>
+            {conversations.length > 0 && (
+              <span className="bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                {conversations.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Search input for resources tab */}
@@ -303,6 +326,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
                 </p>
               </div>
             )}
+          </div>
+        )}
+        {activeTab === 'conversations' && (
+          <div className="space-y-2">
+            <ConversationList conversations={conversations} onSelect={onConversationSelect} />
           </div>
         )}
       </div>

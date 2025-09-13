@@ -238,13 +238,17 @@ class OpenAIService {
         tokenCount
       );
 
+
       const messageItem = Array.isArray(data.output)
         ? data.output.find(item => item.type === 'message')
+
         : null;
 
       const aiResponse =
         data.output_text ||
+
         messageItem?.content?.[0]?.text ||
+
         data.choices?.[0]?.message?.content ||
         null;
 

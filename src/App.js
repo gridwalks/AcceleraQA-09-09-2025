@@ -23,6 +23,7 @@ import { initializeNeonService, loadConversations as loadNeonConversations, save
 //import { initializeNeonService, loadConversations as loadNeonConversations } from './services/neonService';
 
 import { FEATURE_FLAGS } from './config/featureFlags';
+import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
 
 const COOLDOWN_SECONDS = 10;
 
@@ -60,6 +61,7 @@ function App() {
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
 
   const messagesEndRef = useRef(null);
+  const messagesLoadedRef = useRef(false);
   const isAdmin = useMemo(() => user?.roles?.includes('admin'), [user]);
 
   useEffect(() => {
@@ -115,6 +117,38 @@ function App() {
       }
     }
   }, [user, loadInitialLearningSuggestions]);
+
+  // Load messages from storage when user logs in
+  useEffect(() => {
+    messagesLoadedRef.current = false;
+    const loadStoredMessages = async () => {
+      if (!user?.sub) return;
+      try {
+        const stored = await loadMessagesFromStorage(user.sub);
+        setMessages(stored);
+      } catch (error) {
+        console.error('Failed to load messages from storage:', error);
+      } finally {
+        messagesLoadedRef.current = true;
+      }
+    };
+
+    loadStoredMessages();
+  }, [user]);
+
+  // Persist messages to storage whenever they change
+  useEffect(() => {
+    if (!user?.sub || !messagesLoadedRef.current) return;
+    const persist = async () => {
+      try {
+        await saveMessagesToStorage(user.sub, messages);
+      } catch (error) {
+        console.error('Failed to save messages to storage:', error);
+      }
+    };
+
+    persist();
+  }, [messages, user]);
 
   // Load conversations from Neon when user is available or refresh requested
   useEffect(() => {

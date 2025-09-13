@@ -11,6 +11,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import RAGConfigurationPage from './components/RAGConfigurationPage';
 import AdminScreen from './components/AdminScreen';
 import NotebookOverlay from './components/NotebookOverlay';
+import SupportRequestOverlay from './components/SupportRequestOverlay';
 
 // Utility
 import { v4 as uuidv4 } from 'uuid';
@@ -36,6 +37,7 @@ function App() {
   const [showRAGConfig, setShowRAGConfig] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showNotebook, setShowNotebook] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
   const [isServerAvailable] = useState(true);
 
   // Conversation state
@@ -383,6 +385,7 @@ function App() {
               lastSaveTime={lastSaveTime}
               onShowAdmin={handleShowAdmin}
               onOpenNotebook={() => setShowNotebook(true)}
+              onOpenSupport={() => setShowSupport(true)}
               onLogout={handleLogoutComplete}
             />
 
@@ -491,6 +494,13 @@ function App() {
               isServerAvailable={isServerAvailable}
               exportNotebook={handleExport}
               onClose={() => setShowNotebook(false)}
+            />
+          )}
+
+          {showSupport && (
+            <SupportRequestOverlay
+              user={user}
+              onClose={() => setShowSupport(false)}
             />
           )}
         </>

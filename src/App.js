@@ -120,7 +120,9 @@ function App() {
 
   // Load messages from storage when user logs in
   useEffect(() => {
+
     messagesLoadedRef.current = false;
+
     const loadStoredMessages = async () => {
       if (!user?.sub) return;
       try {
@@ -128,8 +130,10 @@ function App() {
         setMessages(stored);
       } catch (error) {
         console.error('Failed to load messages from storage:', error);
+
       } finally {
         messagesLoadedRef.current = true;
+
       }
     };
 
@@ -138,7 +142,9 @@ function App() {
 
   // Persist messages to storage whenever they change
   useEffect(() => {
+
     if (!user?.sub || !messagesLoadedRef.current) return;
+
     const persist = async () => {
       try {
         await saveMessagesToStorage(user.sub, messages);
@@ -399,10 +405,10 @@ function App() {
 
   return (
     <ErrorBoundary>
-      {!isAuthenticated ? (
-        <AuthScreen />
-      ) : loading ? (
+      {loading ? (
         <LoadingScreen />
+      ) : !isAuthenticated ? (
+        <AuthScreen />
       ) : showRAGConfig ? (
         <RAGConfigurationPage onClose={handleCloseRAGConfig} user={user} />
       ) : showAdmin ? (

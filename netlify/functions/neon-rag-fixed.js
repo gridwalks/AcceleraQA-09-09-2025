@@ -327,6 +327,8 @@ async function handleUpload(userId, document) {
     }
     const text = document.text || '';
     const chunks = chunkText(text);
+
+
     const pool = await getPool();
     let client;
     let insertedDocument;

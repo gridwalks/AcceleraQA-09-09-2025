@@ -187,7 +187,7 @@ class RAGService {
     }
   }
 
-  async uploadDocument(file, metadata = {}) {
+  async uploadDocument(file, metadata = {}, options = {}) {
     try {
       if (!file) {
         throw new Error('File is required');
@@ -198,6 +198,7 @@ class RAGService {
       
       const result = await this.makeAuthenticatedRequest(this.apiUrl, {
         action: 'upload',
+        isGlobal: options.isGlobal || false,
         document: {
           filename: file.name,
           type: file.type,
@@ -297,7 +298,8 @@ class RAGService {
         options: {
           limit: options.limit || 10,
           threshold: options.threshold || 0.3,
-          documentIds: options.documentIds || null
+          documentIds: options.documentIds || null,
+          includeGlobal: options.includeGlobal !== undefined ? options.includeGlobal : true
         }
       });
       
@@ -378,7 +380,8 @@ Answer:`;
 
   async search(query, options = {}) {
     try {
-      const searchData = await this.searchDocuments(query, options);
+      const searchOptions = { includeGlobal: true, ...options };
+      const searchData = await this.searchDocuments(query, searchOptions);
       const matches = searchData.results || [];
       const response = await this.generateRAGResponse(query, matches);
       return {
@@ -582,9 +585,9 @@ const ragService = new RAGService();
 export default ragService;
 
 // Export convenience functions
-export const uploadDocument = (file, metadata) => ragService.uploadDocument(file, metadata);
-export const search = (query, options) => ragService.search(query, options);
-export const searchDocuments = (query, options) => ragService.searchDocuments(query, options);
+export const uploadDocument = (file, metadata, options) => ragService.uploadDocument(file, metadata, options);
+export const search = (query, options = {}) => ragService.search(query, { includeGlobal: true, ...options });
+export const searchDocuments = (query, options = {}) => ragService.searchDocuments(query, { includeGlobal: true, ...options });
 export const getDocuments = () => ragService.getDocuments();
 export const deleteDocument = (documentId) => ragService.deleteDocument(documentId);
 export const generateRAGResponse = (query, searchResults) => ragService.generateRAGResponse(query, searchResults);

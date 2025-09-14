@@ -32,7 +32,7 @@
     "netlify:dev": "netlify dev",
     "netlify:build": "netlify build",
     "netlify:deploy": "netlify deploy --prod",
-    "setup:neon": "node scripts/setup-neon-database.js"
+    "setup:vectorstore": "node scripts/setup-openai-vector-store.js"
   },
   "eslintConfig": {
     "extends": [

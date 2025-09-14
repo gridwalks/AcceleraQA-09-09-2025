@@ -88,4 +88,24 @@ describe('openAIService getChatResponse', () => {
 
     await expect(openAIService.getChatResponse('hi')).rejects.toThrow(/No response generated.*Raw response/);
   });
+
+  it('uses file search when a document is provided', async () => {
+    const file = { name: 'doc.pdf', type: 'application/pdf' };
+
+    jest.spyOn(openAIService, 'uploadFile').mockResolvedValue('file-123');
+    jest.spyOn(openAIService, 'createVectorStore').mockResolvedValue('vs-456');
+    jest.spyOn(openAIService, 'attachFileToVectorStore').mockResolvedValue({});
+
+    openAIService.makeRequest.mockResolvedValue({
+      output_text: 'response from file',
+      usage: { total_tokens: 3 },
+    });
+
+    const result = await openAIService.getChatResponse('hi', file);
+
+    expect(openAIService.uploadFile).toHaveBeenCalledWith(file);
+    expect(openAIService.createVectorStore).toHaveBeenCalled();
+    expect(openAIService.attachFileToVectorStore).toHaveBeenCalledWith('vs-456', 'file-123');
+    expect(result.answer).toBe('response from file');
+  });
 });

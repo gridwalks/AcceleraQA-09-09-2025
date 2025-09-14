@@ -191,7 +191,13 @@ JIRA_API_TOKEN=your_atlassian_api_token
 JIRA_SERVICE_DESK_ID=your_service_desk_id
 JIRA_REQUEST_TYPE_ID=your_request_type_id
 ```
+### Vector Store Preparation
 
+Run the OpenAI vector store setup script to create a store for RAG document search:
+
+```bash
+npm run setup:vectorstore
+```
 ## 🔍 Troubleshooting
 
 ### Common Issues

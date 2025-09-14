@@ -105,7 +105,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     loadDocuments();
     testConnection();
     checkAuthentication();
-  }, [checkAuthentication]);
+  }, [loadDocuments, checkAuthentication]);
 
   const testConnection = async () => {
     try {
@@ -166,16 +166,16 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const loadDocuments = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       console.log('Loading documents...');
-      const docs = await ragService.getDocuments();
+      const docs = await ragService.getDocuments(user?.sub);
       console.log('Documents loaded:', docs);
       setDocuments(docs);
     } catch (error) {
       console.error('Error loading documents:', error);
       setError(`Failed to load documents: ${error.message}`);
-      
+
       // If it's an auth error, check authentication
       if (error.message.includes('authentication') || error.message.includes('401')) {
         await checkAuthentication();
@@ -183,7 +183,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [checkAuthentication]);
+  }, [user, checkAuthentication]);
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
@@ -220,12 +220,12 @@ const RAGConfigurationPage = ({ user, onClose }) => {
       };
 
       console.log('Uploading document with metadata:', metadata);
-      const result = await ragService.uploadDocument(selectedFile, metadata);
+      const result = await ragService.uploadDocument(selectedFile, metadata, user?.sub);
       console.log('Upload result:', result);
-      
-      setUploadStatus({ 
-        type: 'success', 
-        message: `Successfully uploaded "${selectedFile.name}" with ${result.chunks} chunks processed` 
+
+      setUploadStatus({
+        type: 'success',
+        message: `Successfully uploaded "${selectedFile.name}"`
       });
       
       setSelectedFile(null);
@@ -264,7 +264,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     if (!confirmed) return;
 
     try {
-      await ragService.deleteDocument(documentId);
+      await ragService.deleteDocument(documentId, user?.sub);
       setDocuments(prev => prev.filter(doc => doc.id !== documentId));
       setSearchResults(prev => prev.filter(result => result.documentId !== documentId));
       

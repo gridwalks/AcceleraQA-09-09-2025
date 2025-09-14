@@ -443,10 +443,25 @@ async function handleList(userId) {
     };
   } catch (error) {
     console.error('List error:', error);
+    // Return an empty list for common database errors so the client
+    // can continue to function even if the backing store is unavailable.
+    const message = error.message || '';
+    const isMissingTable = /rag_documents/i.test(message) || /relation/i.test(message);
+    const isMissingColumn =
+      error.code === '42703' || /column .* does not exist/i.test(message);
+    const isConfigError = message.includes('NEON_DATABASE_URL');
+    if (isMissingTable || isMissingColumn || isConfigError) {
+      console.warn('Returning empty document list due to database configuration issue');
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ documents: [], total: 0, warning: 'database unavailable' }),
+      };
+    }
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: 'Failed to list documents', message: error.message }),
+      body: JSON.stringify({ error: 'Failed to list documents', message: message }),
     };
   }
 }

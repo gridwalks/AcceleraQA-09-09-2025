@@ -85,6 +85,7 @@ REACT_APP_AUTH0_CLIENT_ID=your_client_id
 # Auth0 (Optional)
 REACT_APP_AUTH0_AUDIENCE=your_api_audience
 REACT_APP_AUTH0_ROLES_CLAIM=https://your-domain.com/roles
+REACT_APP_AUTH0_ORG_CLAIM=https://your-domain.com/org
 
 # Neon PostgreSQL (Required for database features)
 NEON_DATABASE_URL=postgresql://username:password@hostname/database?sslmode=require
@@ -117,7 +118,7 @@ Allowed Web Origins:
 http://localhost:3000, https://your-app.netlify.app
 ```
 
-**Note:** `REACT_APP_AUTH0_ROLES_CLAIM` must match the custom claim added by your Auth0 Action/Rule.
+**Note:** `REACT_APP_AUTH0_ROLES_CLAIM` and `REACT_APP_AUTH0_ORG_CLAIM` must match the custom claims added by your Auth0 Action/Rule.
 
 ### 5. Development
 ```bash

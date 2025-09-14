@@ -10,14 +10,16 @@ describe('AuthService getUser', () => {
     jest.resetModules();
   });
 
-  it('returns user data with roles when claim is present', async () => {
+  it('returns user data with roles and organization when claim is present', async () => {
     process.env.REACT_APP_AUTH0_ROLES_CLAIM = 'https://example.com/roles';
+    process.env.REACT_APP_AUTH0_ORG_CLAIM = 'https://example.com/org';
     const authService = require('./authService').default;
 
     authService.auth0Client = {
       getUser: jest.fn().mockResolvedValue({ sub: 'user123', name: 'Test User' }),
       getIdTokenClaims: jest.fn().mockResolvedValue({
-        'https://example.com/roles': ['admin', 'editor']
+        'https://example.com/roles': ['admin', 'editor'],
+        'https://example.com/org': 'Acme Corp'
       })
     };
     authService.isAuthenticated = jest.fn().mockResolvedValue(true);
@@ -28,7 +30,8 @@ describe('AuthService getUser', () => {
     expect(result).toEqual({
       sub: 'user123',
       name: 'Test User',
-      roles: ['admin', 'editor']
+      roles: ['admin', 'editor'],
+      organization: 'Acme Corp'
     });
   });
 });

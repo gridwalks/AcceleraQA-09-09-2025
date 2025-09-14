@@ -123,6 +123,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     }
   }, [user, checkAuthentication]);
 
+
   const testConnection = async () => {
     try {
       console.log('=== CONNECTION TEST DEBUG ===');
@@ -184,6 +185,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     testConnection();
     checkAuthentication();
   }, [loadDocuments, checkAuthentication]);
+
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];

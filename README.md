@@ -76,9 +76,10 @@ cp .env.example .env
 ### 3. Required Environment Variables
 ```bash
 # OpenAI (Required)
+OPENAI_API_KEY=your_openai_api_key
 REACT_APP_OPENAI_API_KEY=your_openai_api_key
 
-# Auth0 (Required)  
+# Auth0 (Required)
 REACT_APP_AUTH0_DOMAIN=your-domain.auth0.com
 REACT_APP_AUTH0_CLIENT_ID=your_client_id
 
@@ -86,9 +87,6 @@ REACT_APP_AUTH0_CLIENT_ID=your_client_id
 REACT_APP_AUTH0_AUDIENCE=your_api_audience
 REACT_APP_AUTH0_ROLES_CLAIM=https://your-domain.com/roles
 REACT_APP_AUTH0_ORG_CLAIM=https://your-domain.com/org
-
-# Neon PostgreSQL (Required for database features)
-NEON_DATABASE_URL=postgresql://username:password@hostname/database?sslmode=require
 
 # Jira Service Desk (Optional)
 JIRA_API_EMAIL=your_atlassian_email
@@ -185,20 +183,13 @@ npm run build
 ```bash
 REACT_APP_AUTH0_DOMAIN=your-domain.auth0.com
 REACT_APP_AUTH0_CLIENT_ID=your_client_id
+OPENAI_API_KEY=your_openai_key
 REACT_APP_OPENAI_API_KEY=your_openai_key
 REACT_APP_ENABLE_AI_SUGGESTIONS=true # optional: set to 'false' to disable AI suggestions
 JIRA_API_EMAIL=your_atlassian_email
 JIRA_API_TOKEN=your_atlassian_api_token
 JIRA_SERVICE_DESK_ID=your_service_desk_id
 JIRA_REQUEST_TYPE_ID=your_request_type_id
-```
-
-### Database Migration
-
-Run the Neon database setup script to apply the latest schema changes:
-
-```bash
-npm run setup:neon
 ```
 
 ## 🔍 Troubleshooting

@@ -1,268 +1,99 @@
-// src/services/ragService.js - Updated RAG service with FIXED authentication
+// src/services/ragService.js - RAG service using OpenAI file search APIs
 import openaiService from './openaiService';
-import authService, { getToken } from './authService';
-
-const API_BASE_URL = '/.netlify/functions';
+import { getCurrentModel } from '../config/modelConfig';
 
 class RAGService {
   constructor() {
-    this.apiUrl = `${API_BASE_URL}/neon-rag-fixed`;
-    this.maxChunkSize = 1000;
-    this.chunkOverlap = 200;
+    this.apiUrl = openaiService.baseUrl;
+    this.vectorStoreId = null;
   }
 
-  async makeAuthenticatedRequest(endpoint, data = {}) {
-    try {
-      console.log('=== RAG SERVICE AUTH REQUEST ===');
-      console.log('Endpoint:', endpoint);
-      console.log('Data action:', data.action);
-      
-      // CRITICAL FIX: Get token with retry and better error handling
-      let token = null;
-      try {
-        token = await getToken();
-        console.log('Token retrieved:', !!token);
-        console.log('Token length:', token?.length || 0);
-        console.log('Token starts correctly:', token?.startsWith('eyJ') || false);
-      } catch (tokenError) {
-        console.error('Failed to get token:', tokenError);
-        throw new Error('Authentication failed: Could not retrieve access token');
-      }
-
-      // Prepare headers with BOTH methods for maximum compatibility
-      const headers = {
-        'Content-Type': 'application/json',
-      };
-
-      if (token) {
-        // Method 1: Standard Authorization Bearer header
-        headers['Authorization'] = `Bearer ${token}`;
-        console.log('Added Authorization header');
-
-        // Method 2: Extract user ID and add as x-user-id header
-        try {
-          const tokenParts = token.split('.');
-          if (tokenParts.length === 3) {
-            // Properly decode JWT payload with padding
-            let payload = tokenParts[1];
-            while (payload.length % 4) {
-              payload += '=';
-            }
-
-            const decoded = atob(payload);
-            const parsed = JSON.parse(decoded);
-
-            if (parsed.sub) {
-              headers['x-user-id'] = parsed.sub;
-              console.log('Added x-user-id header:', parsed.sub.substring(0, 10) + '...');
-            } else {
-              console.warn('No sub field in JWT token');
-            }
-          } else if (tokenParts.length === 5) {
-            console.log('Encrypted token detected - fetching user profile for x-user-id');
-            try {
-              const user = await authService.getUser();
-              if (user?.sub) {
-                headers['x-user-id'] = user.sub;
-                console.log('Added x-user-id header from profile for encrypted token:', user.sub.substring(0, 10) + '...');
-              } else {
-                console.warn('Could not retrieve user profile for x-user-id');
-              }
-            } catch (profileError) {
-              console.warn('Error fetching user profile for x-user-id:', profileError.message);
-            }
-          } else {
-            console.warn('Invalid JWT format - parts:', tokenParts.length);
-            try {
-              const user = await authService.getUser();
-              if (user?.sub) {
-                headers['x-user-id'] = user.sub;
-                console.log('Added x-user-id header from profile:', user.sub.substring(0, 10) + '...');
-              } else {
-                console.warn('Could not retrieve user profile for x-user-id');
-              }
-            } catch (profileError) {
-              console.warn('Error fetching user profile for x-user-id:', profileError.message);
-            }
-          }
-        } catch (jwtError) {
-          console.warn('Could not parse JWT for x-user-id:', jwtError.message);
-          try {
-            const user = await authService.getUser();
-            if (user?.sub) {
-              headers['x-user-id'] = user.sub;
-              console.log('Added x-user-id header from profile:', user.sub.substring(0, 10) + '...');
-            } else {
-              console.warn('Could not retrieve user profile for x-user-id');
-            }
-          } catch (profileError) {
-            console.warn('Error fetching user profile for x-user-id:', profileError.message);
-          }
-          // Continue anyway - the function should handle JWT parsing server-side
-        }
-      } else {
-        console.error('No token available for authentication');
-        throw new Error('Authentication required: No access token available');
-      }
-
-      // ENHANCED: Add additional headers for debugging
-      headers['X-Requested-With'] = 'XMLHttpRequest';
-      headers['X-Client-Version'] = '2.1.0';
-      headers['X-Timestamp'] = new Date().toISOString();
-
-      console.log('Request headers prepared:', Object.keys(headers));
-      console.log('Making request to:', endpoint);
-
-      // Make the request with proper error handling
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(data)
-      });
-
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-
-      if (!response.ok) {
-        console.error('Request failed with status:', response.status);
-        
-        let errorData;
-        try {
-          errorData = await response.json();
-          console.error('Error response data:', errorData);
-        } catch (parseError) {
-          console.error('Could not parse error response:', parseError);
-          errorData = { 
-            error: `HTTP ${response.status}: ${response.statusText}`,
-            details: 'Could not parse error response'
-          };
-        }
-
-        // Enhanced error messages based on status code
-        if (response.status === 401) {
-          throw new Error(`Authentication failed: ${errorData.error || 'Unauthorized'}. Please try signing out and signing in again.`);
-        } else if (response.status === 403) {
-          throw new Error(`Access forbidden: ${errorData.error || 'Insufficient permissions'}`);
-        } else if (response.status >= 500) {
-          throw new Error(`Server error: ${errorData.error || 'Internal server error'}. Please try again later.`);
-        } else {
-          throw new Error(errorData.error || `Request failed with status ${response.status}`);
-        }
-      }
-
-      const result = await response.json();
-      console.log('Request successful, response keys:', Object.keys(result));
-      console.log('=== REQUEST COMPLETED ===');
-      return result;
-
-    } catch (error) {
-      console.error('=== REQUEST FAILED ===');
-      console.error('Error type:', error.constructor.name);
-      console.error('Error message:', error.message);
-      console.error('=======================');
-      throw error;
+  async getVectorStoreId() {
+    if (this.vectorStoreId) return this.vectorStoreId;
+    this.vectorStoreId = localStorage.getItem('openai_vector_store_id');
+    if (!this.vectorStoreId) {
+      this.vectorStoreId = await openaiService.createVectorStore();
+      localStorage.setItem('openai_vector_store_id', this.vectorStoreId);
     }
+    return this.vectorStoreId;
   }
 
   async testConnection() {
     try {
-      console.log('Testing RAG connection...');
-      const result = await this.makeAuthenticatedRequest(this.apiUrl, {
-        action: 'test'
+      await openaiService.makeRequest('/files', {
+        method: 'GET',
+        headers: { 'OpenAI-Beta': 'assistants=v2' },
       });
-      
       return {
         success: true,
-        data: result,
-        recommendation: 'OpenAI File Search system working! Full-text search with persistent storage.'
+        recommendation: 'OpenAI file search API reachable.',
       };
-      
     } catch (error) {
       console.error('RAG connection test failed:', error);
       return {
         success: false,
         error: error.message,
-        recommendation: 'Check authentication and database connection'
+        recommendation: 'Check OpenAI API key and network connectivity',
       };
     }
   }
 
-
   async uploadDocument(file, metadata = {}) {
+    if (!file) throw new Error('File is required');
 
-    try {
-      if (!file) {
-        throw new Error('File is required');
-      }
+    const fileId = await openaiService.uploadFile(file);
+    const vectorStoreId = await this.getVectorStoreId();
+    await openaiService.attachFileToVectorStore(vectorStoreId, fileId);
 
-      console.log('Uploading document:', file.name);
-      const text = await this.extractTextFromFile(file);
+    return {
+      fileId,
+      vectorStoreId,
+      metadata: {
+        uploadedAt: new Date().toISOString(),
+        processingMode: 'openai-file-search',
+        ...metadata,
+      },
+    };
+  }
 
-      const result = await this.makeAuthenticatedRequest(this.apiUrl, {
-        action: 'upload',
-        document: {
-          filename: file.name,
-          type: file.type,
-          size: file.size,
-          text: text,
-          metadata: {
-            uploadedAt: new Date().toISOString(),
-            originalSize: file.size,
-            textLength: text.length,
-            processingMode: 'openai-file-search',
-            ...metadata
-          }
-        }
-      });
+  async getDocuments() {
+    const data = await openaiService.makeRequest('/files', {
+      method: 'GET',
+      headers: { 'OpenAI-Beta': 'assistants=v2' },
+    });
+    return data.data || [];
+  }
 
-      return result;
-
-    } catch (error) {
-      console.error('Error uploading document:', error);
-      throw error;
-    }
+  async deleteDocument(documentId) {
+    await openaiService.makeRequest(`/files/${documentId}`, {
+      method: 'DELETE',
+      headers: { 'OpenAI-Beta': 'assistants=v2' },
+    });
+    return { success: true };
   }
 
   async extractTextFromFile(file) {
     if (file.type === 'text/plain') {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target.result);
+        reader.onload = e => resolve(e.target.result);
         reader.onerror = () => reject(new Error('Failed to read text file'));
         reader.readAsText(file);
       });
     }
 
-    // Handle PDF files using a dynamic import to avoid bundling pdfjs-dist
-    if (
-      file.type === 'application/pdf' ||
-      file.name?.toLowerCase().endsWith('.pdf')
-    ) {
+    if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) {
       try {
         const arrayBuffer = await file.arrayBuffer();
-        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-        try {
-          const worker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
-          pdfjs.GlobalWorkerOptions.workerSrc = worker;
-        } catch (workerErr) {
-          console.warn('PDF worker failed to load:', workerErr);
-        }
-
-        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
-        let text = '';
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          text += content.items.map((item) => item.str).join(' ') + '\n';
-        }
-        return text.trim();
+        const raw = new TextDecoder().decode(arrayBuffer);
+        const matches = [...raw.matchAll(/\(([^)]+)\)/g)].map(m => m[1]).join(' ');
+        return matches.trim();
       } catch (err) {
         console.error('Failed to extract PDF text:', err);
         throw new Error(`Failed to extract PDF text: ${err.message}`);
       }
     }
 
-    // Handle DOCX files using a dynamic import to avoid bundling mammoth
     if (
       file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       file.name?.toLowerCase().endsWith('.docx')
@@ -270,7 +101,6 @@ class RAGService {
       try {
         const arrayBuffer = await file.arrayBuffer();
         const mammoth = await import('mammoth');
-
         const { value } = await mammoth.extractRawText({ arrayBuffer });
         return value;
       } catch (err) {
@@ -279,144 +109,67 @@ class RAGService {
       }
     }
 
-    // For unsupported file types return empty string for now
     console.warn('Unsupported file type for text extraction:', file.type || file.name);
-
     return '';
   }
 
-  async getDocuments() {
-    try {
-      console.log('Getting documents list...');
-      const result = await this.makeAuthenticatedRequest(this.apiUrl, {
-        action: 'list'
-      });
-      
-      return result.documents || [];
-
-    } catch (error) {
-      console.error('Error getting documents:', error);
-      throw error;
-    }
-  }
-
-  async deleteDocument(documentId) {
-    try {
-      const result = await this.makeAuthenticatedRequest(this.apiUrl, {
-        action: 'delete',
-        documentId
-      });
-      
-      return result;
-
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      throw error;
-    }
-  }
-
   async searchDocuments(query, options = {}) {
-    try {
-      if (!query || !query.trim()) {
-        throw new Error('Search query is required');
-      }
+    if (!query || !query.trim()) throw new Error('Search query is required');
+    const vectorStoreId = await this.getVectorStoreId();
 
-      const result = await this.makeAuthenticatedRequest(this.apiUrl, {
-        action: 'search',
-        query: query.trim(),
-        options: {
-          limit: options.limit || 10,
-          threshold: options.threshold || 0.3,
-          documentIds: options.documentIds || null,
-          includeGlobal: options.includeGlobal !== undefined ? options.includeGlobal : true
-        }
-      });
-      
-      return result;
+    const result = await openaiService.makeRequest(`/vector_stores/${vectorStoreId}/search`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'assistants=v2',
+      },
+      body: JSON.stringify({ query: query.trim(), limit: options.limit || 10 }),
+    });
 
-    } catch (error) {
-      console.error('Error searching documents:', error);
-      throw error;
-    }
+    return result;
   }
 
-  async generateRAGResponse(query, searchResults) {
-    try {
-      if (!searchResults || searchResults.length === 0) {
-        return await openaiService.getChatResponse(query);
-      }
+  async generateRAGResponse(query) {
+    const vectorStoreId = await this.getVectorStoreId();
 
-      const context = searchResults
-        .map((result, index) => 
-          `[Document: ${result.filename}]\n${result.text}\n`
-        )
-        .join('\n---\n');
+    const body = {
+      model: getCurrentModel(),
+      input: query,
+      tools: [{ type: 'file_search', vector_store_ids: [vectorStoreId] }],
+    };
 
-      const ragPrompt = `You are AcceleraQA, an AI assistant specialized in pharmaceutical quality and compliance. 
+    const data = await openaiService.makeRequest('/responses', {
+      headers: { 'OpenAI-Beta': 'assistants=v2' },
+      body: JSON.stringify(body),
+    });
 
-Use the following document context to answer the user's question. The documents have been retrieved using OpenAI File Search and contain relevant information.
+    const answer =
+      data.output_text ||
+      data.output?.[0]?.content?.[0]?.text ||
+      '';
 
-DOCUMENT CONTEXT:
-${context.substring(0, 10000)} ${context.length > 10000 ? '...[truncated]' : ''}
+    const annotations = [];
+    const contentItems = data.output?.[0]?.content || [];
+    contentItems.forEach(item => {
+      if (Array.isArray(item.annotations)) annotations.push(...item.annotations);
+    });
 
-USER QUESTION: ${query}
-
-Please provide a comprehensive answer that:
-1. References the relevant information from the documents
-2. Maintains your pharmaceutical expertise
-3. Cites specific documents when appropriate
-4. Provides actionable guidance based on the context
-
-Answer:`;
-
-      const response = await openaiService.getChatResponse(ragPrompt);
-      
-      const sourceDocs = [...new Set(searchResults.map(r => r.filename))];
-      const highScoreResults = searchResults.filter(r => r.similarity > 0.6);
-      
-      let sourceAttribution = '';
-      if (sourceDocs.length > 0) {
-        sourceAttribution = `\n\n📄 **Sources Referenced:**\n`;
-        sourceDocs.forEach(doc => {
-          const docResults = searchResults.filter(r => r.filename === doc);
-          const avgScore = docResults.reduce((sum, r) => sum + r.similarity, 0) / docResults.length;
-          sourceAttribution += `• ${doc} (${(avgScore * 100).toFixed(1)}% relevance)\n`;
-        });
-        
-        if (highScoreResults.length > 0) {
-          sourceAttribution += `\n🎯 **Strong matches:** ${highScoreResults.length} chunks with >60% relevance`;
-        }
-      }
-
-      return {
-        ...response,
-        answer: response.answer + sourceAttribution,
-        sources: searchResults,
-        ragMetadata: {
-          totalSources: searchResults.length,
-          highScoreSources: highScoreResults.length,
-          avgScore: searchResults.reduce((sum, r) => sum + r.similarity, 0) / searchResults.length,
-          searchType: 'full-text-postgresql',
-          processingMode: 'openai-file-search'
-        }
-      };
-
-    } catch (error) {
-      console.error('Error generating RAG response:', error);
-      throw error;
-    }
+    return {
+      answer,
+      sources: annotations,
+      ragMetadata: {
+        totalSources: annotations.length,
+        processingMode: 'openai-file-search',
+      },
+    };
   }
 
   async search(query, options = {}) {
     try {
-      const searchOptions = { includeGlobal: true, ...options };
-      const searchData = await this.searchDocuments(query, searchOptions);
-      const matches = searchData.results || [];
-      const response = await this.generateRAGResponse(query, matches);
+      const response = await this.generateRAGResponse(query, options);
       return {
         answer: response.answer,
-        sources: response.sources || matches,
-        resources: response.resources || []
+        sources: response.sources || [],
+        resources: response.resources || [],
       };
     } catch (error) {
       console.error('Error performing RAG search:', error);
@@ -425,17 +178,8 @@ Answer:`;
   }
 
   async getStats() {
-    try {
-      const result = await this.makeAuthenticatedRequest(this.apiUrl, {
-        action: 'stats'
-      });
-      
-      return result;
-
-    } catch (error) {
-      console.error('Error getting stats:', error);
-      throw error;
-    }
+    const documents = await this.getDocuments();
+    return { totalDocuments: documents.length };
   }
 
   async runDiagnostics() {
@@ -443,94 +187,76 @@ Answer:`;
       const diagnostics = {
         timestamp: new Date().toISOString(),
         mode: 'openai-file-search',
-        tests: {}
+        tests: {},
       };
-      
-      // Test connection
+
+      // Connectivity test
       try {
         const connectionTest = await this.testConnection();
         diagnostics.tests.connectivity = connectionTest;
       } catch (error) {
-        diagnostics.tests.connectivity = {
-          success: false,
-          error: error.message
-        };
+        diagnostics.tests.connectivity = { success: false, error: error.message };
       }
-      
-      // Test document listing
+
+      // Document listing test
       try {
         const documents = await this.getDocuments();
-        diagnostics.tests.documentListing = {
-          success: true,
-          documentCount: documents.length
-        };
+        diagnostics.tests.documentListing = { success: true, documentCount: documents.length };
       } catch (error) {
-        diagnostics.tests.documentListing = {
-          success: false,
-          error: error.message
-        };
+        diagnostics.tests.documentListing = { success: false, error: error.message };
       }
-      
-      // Test search functionality
+
+      // Vector search test
       try {
         const searchResult = await this.searchDocuments('pharmaceutical quality gmp', { limit: 3 });
         diagnostics.tests.search = {
           success: true,
-          resultsFound: searchResult.results?.length || 0,
-          searchType: searchResult.searchType || 'full-text'
+          resultsFound: searchResult?.data?.length || 0,
+          searchType: 'vector',
         };
       } catch (error) {
-        diagnostics.tests.search = {
-          success: false,
-          error: error.message
-        };
+        diagnostics.tests.search = { success: false, error: error.message };
       }
-      
-      // Test stats
+
+      // Stats test
       try {
         const stats = await this.getStats();
-        diagnostics.tests.stats = {
-          success: true,
-          ...stats
-        };
+        diagnostics.tests.stats = { success: true, ...stats };
       } catch (error) {
-        diagnostics.tests.stats = {
-          success: false,
-          error: error.message
-        };
+        diagnostics.tests.stats = { success: false, error: error.message };
       }
-      
-      const successfulTests = Object.values(diagnostics.tests).filter(test => test.success).length;
+
+      const successfulTests = Object.values(diagnostics.tests).filter(t => t.success).length;
       const totalTests = Object.keys(diagnostics.tests).length;
-      
+
       diagnostics.health = {
         score: (successfulTests / totalTests) * 100,
-        status: successfulTests === totalTests ? 'healthy' : 
-                successfulTests > totalTests / 2 ? 'partial' : 'unhealthy',
+        status:
+          successfulTests === totalTests
+            ? 'healthy'
+            : successfulTests > totalTests / 2
+            ? 'partial'
+            : 'unhealthy',
         mode: 'openai-file-search',
         features: {
-          persistentStorage: true,
-          fullTextSearch: true,
-          scalableDatabase: true,
-          backupAndRecovery: true
+          fileStorage: true,
+          vectorSearch: true,
+          openAIIntegration: true,
         },
-        recommendations: []
+        recommendations: [],
       };
-      
+
       if (!diagnostics.tests.connectivity?.success) {
-        diagnostics.health.recommendations.push('Check authentication and database connection');
+        diagnostics.health.recommendations.push('Check OpenAI API key and network connection');
       }
-      
       if (!diagnostics.tests.search?.success) {
-        diagnostics.health.recommendations.push('Upload test documents to enable search testing');
+        diagnostics.health.recommendations.push('Upload documents to enable search');
       }
-      
       if (diagnostics.health.status === 'healthy') {
-        diagnostics.health.recommendations.push('System working well! OpenAI File Search provides robust, scalable document storage and search.');
+        diagnostics.health.recommendations.push('System working well with OpenAI file search');
       }
-      
+
       return diagnostics;
-      
     } catch (error) {
       console.error('Error running diagnostics:', error);
       return {
@@ -539,89 +265,69 @@ Answer:`;
         health: {
           score: 0,
           status: 'error',
-          error: error.message
-        }
+          error: error.message,
+        },
       };
     }
   }
 
   async testUpload() {
     try {
-      const testContent = `Test Document for AcceleraQA OpenAI File Search System
+      const testContent = `Test Document for OpenAI File Search RAG System
 
-This is a comprehensive test document to verify the OpenAI File Search upload functionality works correctly.
+This is a test document to verify the OpenAI file-search upload functionality.`;
+      const testFile = new File([testContent], 'openai-file-search-test.txt', { type: 'text/plain' });
 
-Key Topics Covered:
-- Good Manufacturing Practice (GMP) compliance requirements
-- Quality Control Testing procedures and protocols
-- Process Validation lifecycle and documentation
-- Regulatory Compliance with FDA and ICH guidelines
-
-This test ensures the OpenAI File Search system can process documents efficiently and provide reliable search functionality for pharmaceutical quality professionals.`;
-
-      const testFile = new File([testContent], 'openai-test-document.txt', { type: 'text/plain' });
-      
       const result = await this.uploadDocument(testFile, {
         category: 'test',
-        tags: ['test', 'openai-verification', 'file-search'],
+        tags: ['test', 'openai-file-search'],
         testDocument: true,
-        description: 'Test document for OpenAI File Search system'
+        description: 'Test document for OpenAI file search RAG system',
       });
-      
+
       return {
         success: true,
         uploadResult: result,
-        message: 'Test upload to OpenAI File Search completed successfully'
+        message: 'Test upload completed successfully',
       };
-      
     } catch (error) {
       console.error('Test upload failed:', error);
       return {
         success: false,
         error: error.message,
-        message: 'Test upload to OpenAI File Search failed'
+        message: 'Test upload failed',
       };
     }
   }
 
   async testSearch() {
     try {
-      const searchResult = await this.searchDocuments('GMP quality manufacturing validation compliance', {
-        limit: 5,
-        threshold: 0.2
-      });
-      
+      const result = await this.generateRAGResponse('GMP quality manufacturing validation compliance');
       return {
         success: true,
-        searchResult: searchResult,
-        message: `Search test completed - found ${searchResult.results?.length || 0} results using OpenAI File Search`
+        searchResult: result,
+        message: `Search test completed - found ${result.sources?.length || 0} sources`,
       };
-      
     } catch (error) {
       console.error('Test search failed:', error);
       return {
         success: false,
         error: error.message,
-        message: 'Test search failed'
+        message: 'Test search failed',
       };
     }
   }
 }
 
-// Create singleton instance
 const ragService = new RAGService();
-
 export default ragService;
 
-// Export convenience functions
-
 export const uploadDocument = (file, metadata) => ragService.uploadDocument(file, metadata);
-export const search = (query, options = {}) => ragService.search(query, { includeGlobal: true, ...options });
-export const searchDocuments = (query, options = {}) => ragService.searchDocuments(query, { includeGlobal: true, ...options });
-
+export const search = (query, options = {}) => ragService.search(query, options);
+export const searchDocuments = (query, options = {}) => ragService.searchDocuments(query, options);
 export const getDocuments = () => ragService.getDocuments();
 export const deleteDocument = (documentId) => ragService.deleteDocument(documentId);
-export const generateRAGResponse = (query, searchResults) => ragService.generateRAGResponse(query, searchResults);
+export const generateRAGResponse = (query) => ragService.generateRAGResponse(query);
 export const testConnection = () => ragService.testConnection();
 export const getStats = () => ragService.getStats();
 export const runDiagnostics = () => ragService.runDiagnostics();

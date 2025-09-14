@@ -978,7 +978,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         <li>1. Try refreshing the page to get a new token</li>
                         <li>2. Sign out and sign back in</li>
                         <li>3. Check that your Auth0 configuration is correct</li>
-                        <li>4. Verify that NEON_DATABASE_URL is set in Netlify</li>
+                        <li>4. Verify that OPENAI_API_KEY is set in Netlify</li>
                         <li>5. Check the Network tab in browser dev tools</li>
                       </ul>
                     </div>

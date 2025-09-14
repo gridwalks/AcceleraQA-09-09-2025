@@ -327,7 +327,7 @@ async function handleUpload(userId, document) {
     }
     const text = document.text || '';
     const chunks = chunkText(text);
-    const isGlobal = false;
+
 
     const pool = await getPool();
     let client;
@@ -344,9 +344,8 @@ async function handleUpload(userId, document) {
           file_type,
           file_size,
           text_content,
-          metadata,
-          is_global
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, filename, created_at`,
+          metadata
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, filename, created_at`,
         [
           userId,
           document.filename,
@@ -354,8 +353,7 @@ async function handleUpload(userId, document) {
           getFileType(document.filename),
           document.size || text.length,
           text,
-          JSON.stringify(document.metadata || {}),
-          isGlobal,
+          JSON.stringify(document.metadata || {})
         ]
       );
       insertedDocument = docResult.rows[0];

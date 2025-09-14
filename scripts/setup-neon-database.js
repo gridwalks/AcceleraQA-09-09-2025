@@ -79,11 +79,18 @@ async function setupNeonDatabase() {
         file_size INTEGER NOT NULL,
         text_content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
+        is_global BOOLEAN DEFAULT FALSE,
         category document_category DEFAULT 'general',
         tags TEXT[] DEFAULT '{}',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
+    `;
+
+    // Ensure is_global column exists for existing installations
+    await sql`
+      ALTER TABLE rag_documents
+      ADD COLUMN IF NOT EXISTS is_global BOOLEAN DEFAULT FALSE
     `;
 
     // Create rag_document_chunks table

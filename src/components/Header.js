@@ -3,6 +3,7 @@ import React, { memo, useMemo } from 'react';
 import { LogOut, User, Shield, LifeBuoy, FileText, Menu } from 'lucide-react';
 import { handleLogout } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
+import { getTokenUsageStats } from '../utils/tokenUsage';
 
 const Header = memo(({ 
   user,
@@ -64,6 +65,15 @@ const Header = memo(({
   const orgLabel = user?.organization || null;
 
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [monthlyTokens, setMonthlyTokens] = React.useState(0);
+
+  React.useEffect(() => {
+    if (menuOpen) {
+      const stats = getTokenUsageStats();
+      const currentMonth = stats.monthly[stats.monthly.length - 1];
+      setMonthlyTokens(currentMonth?.tokens || 0);
+    }
+  }, [menuOpen]);
 
   return (
     <header className="bg-gray-50 border-b border-gray-200">
@@ -173,6 +183,10 @@ const Header = memo(({
                   <LogOut className="h-4 w-4 mr-2" />
                   Sign Out
                 </button>
+                <div className="border-t my-1"></div>
+                <div className="px-4 py-2 text-xs text-gray-500">
+                  Monthly Tokens Used: {monthlyTokens}
+                </div>
               </div>
             )}
           </div>

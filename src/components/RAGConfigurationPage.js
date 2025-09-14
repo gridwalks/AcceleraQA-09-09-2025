@@ -918,9 +918,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     <h4 className="font-medium text-gray-800 mb-2">Environment Check</h4>
                     <div className="p-3 bg-white border rounded-md space-y-2">
                       <p className="text-sm">
-                        <strong>OpenAI API Key:</strong> 
-                        <span className={process.env.OPENAI_API_KEY ? 'text-green-600' : 'text-red-600'}>
-                          {process.env.OPENAI_API_KEY ? ' ✓ Set' : ' ✗ Missing'}
+                        <strong>OpenAI API Key:</strong>
+                        <span className={(process.env.REACT_APP_OPENAI_API_KEY || process.env.OPENAI_API_KEY) ? 'text-green-600' : 'text-red-600'}>
+                          {(process.env.REACT_APP_OPENAI_API_KEY || process.env.OPENAI_API_KEY) ? ' ✓ Set' : ' ✗ Missing'}
                         </span>
                       </p>
                       <p className="text-sm">
@@ -978,7 +978,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         <li>1. Try refreshing the page to get a new token</li>
                         <li>2. Sign out and sign back in</li>
                         <li>3. Check that your Auth0 configuration is correct</li>
-                        <li>4. Verify that OPENAI_API_KEY is set in Netlify</li>
+                        <li>4. Verify that REACT_APP_OPENAI_API_KEY is set in Netlify (OPENAI_API_KEY for serverless functions)</li>
                         <li>5. Check the Network tab in browser dev tools</li>
                       </ul>
                     </div>

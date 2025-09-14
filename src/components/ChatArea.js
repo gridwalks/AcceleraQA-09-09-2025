@@ -79,13 +79,13 @@ const ChatArea = ({
             <div className="text-center max-w-md">
               <div className="text-4xl sm:text-6xl mb-4">🚀</div>
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
-                Welcome to AcceleraQA
+                What can I help you with today?
               </h3>
-              <p className="text-sm sm:text-base text-gray-600 mb-6">
+              <!-- <p className="text-sm sm:text-base text-gray-600 mb-6">
                 Your AI-powered learning assistant for pharmaceutical quality and compliance. 
                 Ask questions about GMP, validation, CAPA, or upload documents for personalized guidance.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              </p> -->
+              <!--<div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="bg-blue-50 p-3 rounded-lg">
                   <div className="font-medium text-blue-900 mb-1 flex items-center space-x-1">
                     <BookOpen className="h-3 w-3" />
@@ -100,7 +100,7 @@ const ChatArea = ({
                   </div>
                   <div className="text-purple-700">Enable document search and upload your company's SOPs or industry documents</div>
                 </div>
-              </div>
+              </div> -->
             </div>
           </div>
         ) : (

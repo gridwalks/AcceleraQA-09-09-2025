@@ -434,6 +434,7 @@ function App() {
               isSaving={isSaving}
               lastSaveTime={lastSaveTime}
               onShowAdmin={handleShowAdmin}
+              onShowRAGConfig={handleShowRAGConfig}
               onOpenNotebook={() => setShowNotebook(true)}
               onOpenSupport={() => setShowSupport(true)}
               onLogout={handleLogoutComplete}

@@ -195,7 +195,7 @@ JIRA_REQUEST_TYPE_ID=your_request_type_id
 
 ### Database Migration
 
-Run the Neon database setup script to apply the latest schema changes, including the new `is_global` flag and index:
+Run the Neon database setup script to apply the latest schema changes:
 
 ```bash
 npm run setup:neon

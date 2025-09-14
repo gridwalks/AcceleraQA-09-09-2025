@@ -327,9 +327,6 @@ async function handleUpload(userId, document) {
     }
     const text = document.text || '';
     const chunks = chunkText(text);
-    const isAdmin = (process.env.ADMIN_USER_IDS || '').split(',').includes(userId);
-    const isGlobal = isAdmin && document.isGlobal === true;
-
     const pool = await getPool();
     let client;
     let insertedDocument;
@@ -345,9 +342,8 @@ async function handleUpload(userId, document) {
           file_type,
           file_size,
           text_content,
-          metadata,
-          is_global
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, filename, created_at`,
+          metadata
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, filename, created_at`,
         [
           userId,
           document.filename,
@@ -355,8 +351,7 @@ async function handleUpload(userId, document) {
           getFileType(document.filename),
           document.size || text.length,
           text,
-          JSON.stringify(document.metadata || {}),
-          isGlobal,
+          JSON.stringify(document.metadata || {})
         ]
       );
       insertedDocument = docResult.rows[0];
@@ -418,10 +413,10 @@ async function handleList(userId) {
   try {
     const sql = await getSql();
     const rows = await sql`
-      SELECT d.id, d.filename, d.file_type, d.file_size, d.created_at, d.metadata, d.is_global,
+      SELECT d.id, d.filename, d.file_type, d.file_size, d.created_at, d.metadata,
              (SELECT COUNT(*) FROM rag_document_chunks c WHERE c.document_id = d.id) AS chunk_count
       FROM rag_documents d
-      WHERE d.user_id = ${userId} OR d.is_global = true
+      WHERE d.user_id = ${userId}
       ORDER BY d.created_at DESC
     `;
 
@@ -433,7 +428,6 @@ async function handleList(userId) {
       chunks: doc.chunk_count,
       createdAt: doc.created_at,
       metadata: doc.metadata,
-      isGlobal: doc.is_global,
     }));
 
     return {
@@ -479,7 +473,7 @@ async function handleDelete(userId, documentId) {
     }
     const sql = await getSql();
     const [doc] = await sql`
-      SELECT user_id, is_global FROM rag_documents WHERE id = ${documentId}
+      SELECT user_id FROM rag_documents WHERE id = ${documentId}
     `;
     if (!doc) {
       return {
@@ -490,14 +484,6 @@ async function handleDelete(userId, documentId) {
     }
 
     const isAdmin = (process.env.ADMIN_USER_IDS || '').split(',').includes(userId);
-    if (doc.is_global && !isAdmin) {
-      return {
-        statusCode: 403,
-        headers,
-        body: JSON.stringify({ error: 'Cannot delete global document' }),
-      };
-    }
-
     if (doc.user_id !== userId && !isAdmin) {
       return {
         statusCode: 404,
@@ -540,7 +526,7 @@ async function handleSearch(userId, query, options = {}) {
       SELECT c.document_id, c.chunk_index, c.chunk_text, d.filename
       FROM rag_document_chunks c
       JOIN rag_documents d ON c.document_id = d.id
-      WHERE (d.user_id = ${userId} OR d.is_global = true)
+      WHERE d.user_id = ${userId}
         AND c.chunk_text ILIKE ${'%' + query + '%'}
       LIMIT ${limit}
     `;

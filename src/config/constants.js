@@ -54,7 +54,7 @@ export const FEATURE_FLAGS = {
 
 // Enhanced Error Messages with troubleshooting
 export const ERROR_MESSAGES = {
-  API_KEY_NOT_CONFIGURED: 'OpenAI API key not configured.\n\nTROUBLESHOOTING STEPS:\n1. Check that OPENAI_API_KEY is set in your environment\n2. If deploying to Netlify, add the variable in Site Settings > Environment Variables\n3. Get your API key from: https://platform.openai.com/account/api-keys\n4. Contact your administrator if you need access',
+  API_KEY_NOT_CONFIGURED: 'OpenAI API key not configured.\n\nTROUBLESHOOTING STEPS:\n1. Check that REACT_APP_OPENAI_API_KEY or OPENAI_API_KEY is set in your environment\n2. If deploying to Netlify, add the variable in Site Settings > Environment Variables\n3. Get your API key from: https://platform.openai.com/account/api-keys\n4. Contact your administrator if you need access',
 
   INVALID_API_KEY: 'Invalid OpenAI API key.\n\nTROUBLESHOOTING STEPS:\n1. Verify your API key is correct and active\n2. Check your OpenAI account billing status\n3. Generate a new API key if needed: https://platform.openai.com/account/api-keys',
 
@@ -75,7 +75,7 @@ export const validateEnvironment = () => {
   const requiredVars = [
     'REACT_APP_AUTH0_DOMAIN',
     'REACT_APP_AUTH0_CLIENT_ID',
-    'OPENAI_API_KEY'
+    'REACT_APP_OPENAI_API_KEY'
   ];
   
   const missing = requiredVars.filter(varName => {
@@ -110,7 +110,7 @@ export const validateEnvironment = () => {
   }
   
   // Validate OpenAI API key format
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.REACT_APP_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
   if (apiKey && !apiKey.startsWith('sk-')) {
       console.error('CONFIGURATION ERROR: Invalid OpenAI API key format');
     console.error('   Expected format: sk-proj-... or sk-...');
@@ -127,10 +127,10 @@ export const validateDeploymentEnvironment = () => {
   
   // Check if we're in a build environment
   const isBuild = process.env.NODE_ENV === 'production' || process.env.CI;
-  
+
   if (isBuild) {
     // Additional production checks
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.REACT_APP_OPENAI_API_KEY && !process.env.OPENAI_API_KEY) {
       issues.push('OpenAI API key not set for production build');
     }
     

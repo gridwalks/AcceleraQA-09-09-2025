@@ -5,7 +5,7 @@ import { recordTokenUsage } from '../utils/tokenUsage';
 
 class OpenAIService {
   constructor() {
-    this.apiKey = process.env.OPENAI_API_KEY;
+    this.apiKey = process.env.REACT_APP_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
     this.baseUrl = 'https://api.openai.com/v1';
   }
 

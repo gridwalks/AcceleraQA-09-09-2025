@@ -16,12 +16,10 @@ import {
   BarChart3,
   Bug,
   User,
-  Users,
   Key
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
-import { hasAdminRole } from '../utils/auth';
 
 const RAGConfigurationPage = ({ user, onClose }) => {
   const [documents, setDocuments] = useState([]);
@@ -41,9 +39,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     tags: '',
     category: 'general'
   });
-  const [isGlobal, setIsGlobal] = useState(false);
-
-  const isAdmin = hasAdminRole(user);
+  
 
   // Enhanced authentication debugging
   const checkAuthentication = useCallback(async () => {
@@ -223,8 +219,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         tags: uploadMetadata.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
       };
 
-      console.log('Uploading document with metadata:', metadata, 'isGlobal:', isGlobal);
-      const result = await ragService.uploadDocument(selectedFile, metadata, isGlobal);
+      console.log('Uploading document with metadata:', metadata);
+      const result = await ragService.uploadDocument(selectedFile, metadata);
       console.log('Upload result:', result);
       
       setUploadStatus({ 
@@ -239,8 +235,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         tags: '',
         category: 'general'
       });
-      setIsGlobal(false);
-      
+
       const fileInput = document.getElementById('file-upload');
       if (fileInput) fileInput.value = '';
       
@@ -642,21 +637,6 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                       </select>
                     </div>
 
-                    {isAdmin && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-900 mb-1">
-                          Visibility
-                        </label>
-                        <select
-                          value={isGlobal ? 'global' : 'private'}
-                          onChange={(e) => setIsGlobal(e.target.value === 'global')}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
-                        >
-                          <option value="private">Only me</option>
-                          <option value="global">All users</option>
-                        </select>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -741,16 +721,6 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                           <p><span className="font-medium">Uploaded:</span> {new Date(doc.createdAt).toLocaleDateString()}</p>
                           <p><span className="font-medium">Storage:</span> Neon PostgreSQL</p>
                           <p><span className="font-medium">Search:</span> Full-text indexed</p>
-                          {isAdmin && (
-                            <p className="flex items-center space-x-1">
-                              {(doc.isGlobal ?? doc.metadata?.isGlobal) ? (
-                                <Users className="h-3 w-3 text-blue-600" />
-                              ) : (
-                                <User className="h-3 w-3 text-gray-600" />
-                              )}
-                              <span>{(doc.isGlobal ?? doc.metadata?.isGlobal) ? 'All users' : 'Only me'}</span>
-                            </p>
-                          )}
                           {doc.metadata?.tags && doc.metadata.tags.length > 0 && (
                             <div className="flex items-center space-x-1 mt-2">
                               <span className="font-medium">Tags:</span>

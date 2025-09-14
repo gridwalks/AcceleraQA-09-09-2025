@@ -439,9 +439,9 @@ function App() {
             />
 
             {/* Main Layout */}
-            <div className="flex-1">
+            <div className="flex-1 flex flex-col min-h-0">
               {/* Mobile Layout (stacked vertically) */}
-              <div className="lg:hidden h-full flex flex-col">
+              <div className="lg:hidden flex-1 h-full flex flex-col">
                 {/* Chat takes most space on mobile */}
                 <div className="flex-1 min-h-0 p-4">
                   <ChatArea
@@ -477,9 +477,9 @@ function App() {
               </div>
 
               {/* Desktop Layout (side by side) */}
-              <div className="hidden lg:flex h-full">
+              <div className="hidden lg:flex flex-1 h-full">
                 {/* Chat Area - Takes majority of space */}
-                <div className="flex-1 min-w-0 p-6">
+                <div className="flex-1 min-w-0 h-full p-6 pb-0">
                   <ChatArea
                     messages={messages}
                     inputMessage={inputMessage}
@@ -498,7 +498,7 @@ function App() {
                 </div>
 
                 {/* Sidebar - Fixed optimal width with enhanced learning features */}
-                <div className="w-80 xl:w-96 flex-shrink-0 border-l bg-white p-6">
+                <div className="w-80 xl:w-96 flex-shrink-0 h-full border-l bg-white p-6 pb-0">
                   <Sidebar
                     messages={messages}
                     thirtyDayMessages={thirtyDayMessages}

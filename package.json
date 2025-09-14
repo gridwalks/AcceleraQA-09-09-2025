@@ -6,7 +6,6 @@
   "homepage": "https://acceleraqa.com",
   "dependencies": {
     "@auth0/auth0-spa-js": "^2.1.3",
-    "@neondatabase/serverless": "^0.9.0",
     "jsonwebtoken": "^9.0.0",
     "jwks-rsa": "^2.1.5",
     "lucide-react": "^0.263.1",

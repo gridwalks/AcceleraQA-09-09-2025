@@ -1,4 +1,4 @@
-// src/services/trainingResourceService.js - Lightweight helper replacing Neon-based storage
+// src/services/trainingResourceService.js - Lightweight helper for resource storage
 
 class TrainingResourceService {
   constructor() {

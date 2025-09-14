@@ -939,16 +939,14 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     <h4 className="font-medium text-gray-800 mb-2">Function Endpoints</h4>
                     <div className="p-3 bg-white border rounded-md space-y-2">
                       <p className="text-sm">
-                        <strong>OpenAI RAG Function:</strong>
+                        <strong>OpenAI File Search Function:</strong>
                         <code className="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">
-                          {window.location.origin}/.netlify/functions/neon-rag
+                          {window.location.origin}/.netlify/functions/openai-file-search
                         </code>
                       </p>
                       <p className="text-sm">
-                        <strong>OpenAI DB Function:</strong>
-                        <code className="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">
-                          {window.location.origin}/.netlify/functions/neon-db
-                        </code>
+                        <strong>Conversation Storage:</strong>
+                        <span className="ml-2">OpenAI Files API</span>
                       </p>
                     </div>
                   </div>

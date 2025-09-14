@@ -31,10 +31,6 @@
   to = "/.netlify/functions/openai-file-search"
   status = 200
 
-[[redirects]]
-  from = "/api/conversations/*"
-  to = "/.netlify/functions/neon-db"
-  status = 200
 
 # Enhanced security headers
 [[headers]]

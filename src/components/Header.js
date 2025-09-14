@@ -147,7 +147,7 @@ const Header = memo(({
                   aria-label="Manage personal documents"
                 >
                   <FileText className="h-4 w-4 mr-2" />
-                  My Docs
+                  My Documents
                 </button>
 
                 <button

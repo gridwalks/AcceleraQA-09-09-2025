@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 import AdminScreen, { checkStorageHealth } from './AdminScreen';
 
-jest.mock('./RAGConfigurationPage', () => () => <h2>RAG Configuration</h2>);
+jest.mock('./RAGConfigurationPage', () => () => <h2>My Documents</h2>);
 
 jest.mock('../services/ragService', () => ({
   __esModule: true,
@@ -59,7 +59,7 @@ describe('AdminScreen navigation', () => {
     container = null;
   });
 
-  it('renders RAG Configuration page when RAG Config tab is selected', async () => {
+  it('renders My Documents page when My Documents tab is selected', async () => {
     const user = { roles: ['admin'] };
 
     await act(async () => {
@@ -67,7 +67,7 @@ describe('AdminScreen navigation', () => {
     });
 
     const ragButton = Array.from(container.querySelectorAll('button')).find(btn =>
-      btn.textContent && btn.textContent.includes('RAG Config')
+      btn.textContent && btn.textContent.includes('My Documents')
     );
 
     await act(async () => {
@@ -75,7 +75,7 @@ describe('AdminScreen navigation', () => {
     });
 
     const heading = container.querySelector('h2');
-    expect(heading && heading.textContent).toMatch(/RAG Configuration/i);
+    expect(heading && heading.textContent).toMatch(/My Documents/i);
   });
 
   it('calls onBack when back button is clicked', async () => {

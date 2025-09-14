@@ -2,6 +2,31 @@
 import openaiService from './openaiService';
 import { getCurrentModel } from '../config/modelConfig';
 
+const USER_DOCS_PREFIX = 'rag_docs_';
+
+function getUserDocsKey(userId) {
+  return `${USER_DOCS_PREFIX}${userId}`;
+}
+
+function loadUserDocs(userId) {
+  if (!userId || typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(getUserDocsKey(userId));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUserDocs(userId, docs) {
+  if (!userId || typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(getUserDocsKey(userId), JSON.stringify(docs));
+  } catch {
+    /* ignore */
+  }
+}
+
 class RAGService {
   constructor() {
     this.apiUrl = openaiService.baseUrl;
@@ -38,37 +63,57 @@ class RAGService {
     }
   }
 
-  async uploadDocument(file, metadata = {}) {
+  async uploadDocument(file, metadata = {}, userId) {
     if (!file) throw new Error('File is required');
 
     const fileId = await openaiService.uploadFile(file);
     const vectorStoreId = await this.getVectorStoreId();
     await openaiService.attachFileToVectorStore(vectorStoreId, fileId);
 
-    return {
-      fileId,
-      vectorStoreId,
+    const docInfo = {
+      id: fileId,
+      filename: file.name,
+      type: file.type,
+      size: file.size,
+      chunks: 0,
+      createdAt: new Date().toISOString(),
       metadata: {
-        uploadedAt: new Date().toISOString(),
         processingMode: 'openai-file-search',
         ...metadata,
       },
     };
+
+    const existing = loadUserDocs(userId);
+    existing.push(docInfo);
+    saveUserDocs(userId, existing);
+
+    return { fileId, vectorStoreId, metadata: docInfo.metadata };
   }
 
-  async getDocuments() {
-    const data = await openaiService.makeRequest('/files', {
-      method: 'GET',
-      headers: { 'OpenAI-Beta': 'assistants=v2' },
-    });
-    return data.data || [];
+  async getDocuments(userId) {
+    const userDocs = loadUserDocs(userId);
+    if (!userId) return userDocs;
+    try {
+      const data = await openaiService.makeRequest('/files', {
+        method: 'GET',
+        headers: { 'OpenAI-Beta': 'assistants=v2' },
+      });
+      const ids = new Set((data.data || []).map(f => f.id));
+      const filtered = userDocs.filter(d => ids.has(d.id));
+      if (filtered.length !== userDocs.length) saveUserDocs(userId, filtered);
+      return filtered;
+    } catch {
+      return userDocs;
+    }
   }
 
-  async deleteDocument(documentId) {
+  async deleteDocument(documentId, userId) {
     await openaiService.makeRequest(`/files/${documentId}`, {
       method: 'DELETE',
       headers: { 'OpenAI-Beta': 'assistants=v2' },
     });
+    const remaining = loadUserDocs(userId).filter(d => d.id !== documentId);
+    saveUserDocs(userId, remaining);
     return { success: true };
   }
 
@@ -177,8 +222,8 @@ class RAGService {
     }
   }
 
-  async getStats() {
-    const documents = await this.getDocuments();
+  async getStats(userId) {
+    const documents = await this.getDocuments(userId);
     return { totalDocuments: documents.length };
   }
 
@@ -322,14 +367,14 @@ This is a test document to verify the OpenAI file-search upload functionality.`;
 const ragService = new RAGService();
 export default ragService;
 
-export const uploadDocument = (file, metadata) => ragService.uploadDocument(file, metadata);
+export const uploadDocument = (file, metadata, userId) => ragService.uploadDocument(file, metadata, userId);
 export const search = (query, options = {}) => ragService.search(query, options);
 export const searchDocuments = (query, options = {}) => ragService.searchDocuments(query, options);
-export const getDocuments = () => ragService.getDocuments();
-export const deleteDocument = (documentId) => ragService.deleteDocument(documentId);
+export const getDocuments = (userId) => ragService.getDocuments(userId);
+export const deleteDocument = (documentId, userId) => ragService.deleteDocument(documentId, userId);
 export const generateRAGResponse = (query) => ragService.generateRAGResponse(query);
 export const testConnection = () => ragService.testConnection();
-export const getStats = () => ragService.getStats();
+export const getStats = (userId) => ragService.getStats(userId);
 export const runDiagnostics = () => ragService.runDiagnostics();
 export const testUpload = () => ragService.testUpload();
 export const testSearch = () => ragService.testSearch();

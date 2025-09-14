@@ -401,9 +401,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   };
 
   const getFileTypeIcon = (type) => {
-    if (type.includes('pdf')) return '📄';
-    if (type.includes('word')) return '📝';
-    if (type.includes('text')) return '📃';
+    const lowerType = type?.toLowerCase() || '';
+    if (lowerType.includes('pdf')) return '📄';
+    if (lowerType.includes('word')) return '📝';
+    if (lowerType.includes('text')) return '📃';
     return '📄';
   };
 

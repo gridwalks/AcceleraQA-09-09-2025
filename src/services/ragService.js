@@ -187,15 +187,17 @@ class RAGService {
     }
   }
 
+
   async uploadDocument(file, metadata = {}, options = {}) {
+
     try {
       if (!file) {
         throw new Error('File is required');
       }
 
-      console.log('Uploading document:', file.name);
+      console.log('Uploading document:', file.name, 'isGlobal:', isGlobal);
       const text = await this.extractTextFromFile(file);
-      
+
       const result = await this.makeAuthenticatedRequest(this.apiUrl, {
         action: 'upload',
         isGlobal: options.isGlobal || false,
@@ -211,7 +213,8 @@ class RAGService {
             processingMode: 'neon-postgresql',
             ...metadata
           }
-        }
+        },
+        isGlobal
       });
 
       return result;
@@ -585,9 +588,11 @@ const ragService = new RAGService();
 export default ragService;
 
 // Export convenience functions
+
 export const uploadDocument = (file, metadata, options) => ragService.uploadDocument(file, metadata, options);
 export const search = (query, options = {}) => ragService.search(query, { includeGlobal: true, ...options });
 export const searchDocuments = (query, options = {}) => ragService.searchDocuments(query, { includeGlobal: true, ...options });
+
 export const getDocuments = () => ragService.getDocuments();
 export const deleteDocument = (documentId) => ragService.deleteDocument(documentId);
 export const generateRAGResponse = (query, searchResults) => ragService.generateRAGResponse(query, searchResults);

@@ -81,6 +81,7 @@ async function setupNeonDatabase() {
         metadata JSONB DEFAULT '{}',
         category document_category DEFAULT 'general',
         tags TEXT[] DEFAULT '{}',
+        is_global BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
@@ -141,6 +142,7 @@ async function setupNeonDatabase() {
     await sql`CREATE INDEX IF NOT EXISTS idx_rag_documents_category ON rag_documents(user_id, category)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_rag_documents_created ON rag_documents(user_id, created_at DESC)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_rag_documents_filename ON rag_documents(user_id, filename)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_rag_documents_global ON rag_documents(is_global)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_rag_documents_tags ON rag_documents USING GIN(tags)`;
 
     // Document chunks indexes

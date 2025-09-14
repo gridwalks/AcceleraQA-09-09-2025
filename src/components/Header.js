@@ -87,7 +87,7 @@ const Header = memo(({
             {/* User Info */}
             <div className="flex items-center space-x-2 text-sm text-gray-700">
               <User className="h-4 w-4 text-gray-500" />
-              <span className="hidden sm:block max-w-40 truncate">
+              <span className="hidden sm:block whitespace-nowrap">
                 {displayName}
                 {roleLabel ? ` (${roleLabel})` : ''}
               </span>

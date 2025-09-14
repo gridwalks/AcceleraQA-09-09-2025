@@ -129,7 +129,7 @@ const AdminScreen = ({ user, onBack }) => {
     try {
       const [conversationStats, ragStats] = await Promise.all([
         conversationService.getConversationStats(),
-        ragService.getStats()
+        ragService.getStats(user?.sub)
       ]);
 
       return {

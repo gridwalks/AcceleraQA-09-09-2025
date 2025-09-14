@@ -1,6 +1,6 @@
 // src/components/Header.js - UPDATED VERSION with cloud status and clear all button removed
 import React, { memo, useMemo } from 'react';
-import { LogOut, User, Shield, LifeBuoy, FileText, Menu } from 'lucide-react';
+import { LogOut, User, Shield, LifeBuoy, FileText, Menu, HelpCircle } from 'lucide-react';
 import { handleLogout } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 
@@ -149,6 +149,26 @@ const Header = memo(({
                   <FileText className="h-4 w-4 mr-2" />
                   My Documents
                 </button>
+
+                <a
+                  href="/privacy-policy.html"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  aria-label="View terms and policies"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Terms & Policies
+                </a>
+
+                <a
+                  href="/help.html"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  aria-label="View help information"
+                >
+                  <HelpCircle className="h-4 w-4 mr-2" />
+                  Help
+                </a>
 
                 <button
                   onClick={() => {

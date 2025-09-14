@@ -919,8 +919,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     <div className="p-3 bg-white border rounded-md space-y-2">
                       <p className="text-sm">
                         <strong>OpenAI API Key:</strong> 
-                        <span className={process.env.REACT_APP_OPENAI_API_KEY ? 'text-green-600' : 'text-red-600'}>
-                          {process.env.REACT_APP_OPENAI_API_KEY ? ' ✓ Set' : ' ✗ Missing'}
+                        <span className={process.env.OPENAI_API_KEY ? 'text-green-600' : 'text-red-600'}>
+                          {process.env.OPENAI_API_KEY ? ' ✓ Set' : ' ✗ Missing'}
                         </span>
                       </p>
                       <p className="text-sm">

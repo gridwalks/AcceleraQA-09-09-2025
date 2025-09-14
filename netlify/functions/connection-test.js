@@ -28,8 +28,8 @@ export const handler = async (event, context) => {
   console.log('📋 Testing environment variables...');
   try {
     const neonUrl = process.env.NEON_DATABASE_URL;
-    const openaiKey = process.env.REACT_APP_OPENAI_API_KEY;
-    const auth0Domain = process.env.REACT_APP_AUTH0_DOMAIN;
+    const openaiKey = process.env.OPENAI_API_KEY;
+    const auth0Domain = process.env.AUTH0_DOMAIN || process.env.REACT_APP_AUTH0_DOMAIN;
     
     testResults.tests.environmentVariables = {
       success: true,
@@ -41,12 +41,12 @@ export const handler = async (event, context) => {
           hasSslMode: neonUrl ? neonUrl.includes('sslmode=require') : false,
           hostExtracted: neonUrl ? extractHostFromUrl(neonUrl) : null
         },
-        REACT_APP_OPENAI_API_KEY: {
+        OPENAI_API_KEY: {
           present: !!openaiKey,
           length: openaiKey ? openaiKey.length : 0,
           startsWithSk: openaiKey ? openaiKey.startsWith('sk-') : false
         },
-        REACT_APP_AUTH0_DOMAIN: {
+        AUTH0_DOMAIN: {
           present: !!auth0Domain,
           length: auth0Domain ? auth0Domain.length : 0,
           isAuth0Format: auth0Domain ? auth0Domain.includes('.auth0.com') : false

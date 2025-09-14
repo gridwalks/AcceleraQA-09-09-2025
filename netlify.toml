@@ -31,11 +31,6 @@
   to = "/.netlify/functions/openai-file-search"
   status = 200
 
-[[redirects]]
-  from = "/api/conversations/*"
-  to = "/.netlify/functions/neon-db"
-  status = 200
-
 # Enhanced security headers
 [[headers]]
   for = "/*"
@@ -60,4 +55,3 @@
 
 # Environment variables needed for functions (add these in Netlify dashboard)
 # OPENAI_API_KEY = "sk-..."
-# REACT_APP_OPENAI_API_KEY = "sk-..."

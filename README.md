@@ -77,7 +77,6 @@ cp .env.example .env
 ```bash
 # OpenAI (Required)
 OPENAI_API_KEY=your_openai_api_key
-REACT_APP_OPENAI_API_KEY=your_openai_api_key
 
 # Auth0 (Required)
 REACT_APP_AUTH0_DOMAIN=your-domain.auth0.com
@@ -177,14 +176,15 @@ npm run build
 ### Netlify (Recommended)
 1. Connect your repository
 2. Set environment variables in Netlify dashboard
-3. Deploy with automatic builds
+   - `OPENAI_API_KEY` for serverless calls to OpenAI
+   - `REACT_APP_OPENAI_API_KEY` for client-side features (optional)
+3. Deploy with automatic builds. Netlify will expose the `openai-file-search` function at `/api/rag/*` to proxy requests to OpenAI's file-search API.
 
 ### Environment Variables in Netlify:
 ```bash
 REACT_APP_AUTH0_DOMAIN=your-domain.auth0.com
 REACT_APP_AUTH0_CLIENT_ID=your_client_id
 OPENAI_API_KEY=your_openai_key
-REACT_APP_OPENAI_API_KEY=your_openai_key
 REACT_APP_ENABLE_AI_SUGGESTIONS=true # optional: set to 'false' to disable AI suggestions
 JIRA_API_EMAIL=your_atlassian_email
 JIRA_API_TOKEN=your_atlassian_api_token

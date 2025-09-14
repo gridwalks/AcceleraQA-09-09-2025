@@ -12,7 +12,6 @@ import RAGConfigurationPage from './components/RAGConfigurationPage';
 import AdminScreen from './components/AdminScreen';
 import NotebookOverlay from './components/NotebookOverlay';
 import SupportRequestOverlay from './components/SupportRequestOverlay';
-import Footer from './components/Footer';
 
 // Utility
 import { v4 as uuidv4 } from 'uuid';
@@ -513,7 +512,6 @@ function App() {
                 </div>
               </div>
             </div>
-            <Footer />
           </div>
 
           {/* Notebook Overlay */}

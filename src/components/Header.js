@@ -1,6 +1,6 @@
 // src/components/Header.js - UPDATED VERSION with cloud status and clear all button removed
 import React, { memo, useMemo } from 'react';
-import { LogOut, User, Shield, LifeBuoy, FileText } from 'lucide-react';
+import { LogOut, User, Shield, LifeBuoy, FileText, Menu } from 'lucide-react';
 import { handleLogout } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 
@@ -60,6 +60,7 @@ const Header = memo(({
 
   const displayName = user?.email || user?.name || 'User';
   const roleLabel = user?.roles?.length ? user.roles.join(', ') : null;
+  const [menuOpen, setMenuOpen] = React.useState(false);
 
   return (
     <header className="bg-gray-50 border-b border-gray-200">
@@ -82,7 +83,7 @@ const Header = memo(({
             />
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="relative flex items-center space-x-4">
             {/* User Info */}
             <div className="flex items-center space-x-2 text-sm text-gray-700">
               <User className="h-4 w-4 text-gray-500" />
@@ -91,62 +92,82 @@ const Header = memo(({
                 {roleLabel ? ` (${roleLabel})` : ''}
               </span>
             </div>
+            {/* Menu toggle */}
+            <button
+              onClick={() => setMenuOpen((prev) => !prev)}
+              className="p-2 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300"
+              aria-label="Toggle menu"
+            >
+              <Menu className="h-5 w-5 text-gray-700" />
+            </button>
 
-            {/* Admin Button */}
-            {isAdmin && (
-              <button
-                onClick={handleAdminClick}
-                className="flex items-center space-x-2 px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
-                aria-label="Access admin panel"
-                title="Administrative controls and system monitoring"
-              >
-                <Shield className="h-4 w-4" />
-                <span className="hidden sm:block">Admin</span>
-              </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      handleAdminClick();
+                      setMenuOpen(false);
+                    }}
+                    className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    aria-label="Access admin panel"
+                  >
+                    <Shield className="h-4 w-4 mr-2" />
+                    Admin
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    onOpenNotebook();
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  aria-label="Open notebook"
+                >
+                  <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                  Open Notebook
+                </button>
+
+                <button
+                  onClick={() => {
+                    onShowRAGConfig();
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  aria-label="Manage personal documents"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  My Docs
+                </button>
+
+                <button
+                  onClick={() => {
+                    onOpenSupport();
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  aria-label="Raise support request"
+                >
+                  <LifeBuoy className="h-4 w-4 mr-2" />
+                  Support
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleLogoutClick();
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  aria-label="Sign out of AcceleraQA"
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </button>
+              </div>
             )}
-
-            {/* Open Notebook */}
-            <button
-              onClick={onOpenNotebook}
-              className="hidden sm:flex items-center space-x-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 text-gray-700"
-              aria-label="Open notebook"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-              <span>Open Notebook</span>
-            </button>
-
-            {/* Manage RAG Documents */}
-            <button
-              onClick={onShowRAGConfig}
-              className="flex items-center space-x-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 text-gray-700"
-              aria-label="Manage personal documents"
-            >
-              <FileText className="h-4 w-4" />
-              <span className="hidden sm:block">My Docs</span>
-            </button>
-
-            {/* Support */}
-            <button
-              onClick={onOpenSupport}
-
-              className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-              aria-label="Raise support request"
-            >
-              <LifeBuoy className="h-4 w-4" />
-              <span className="hidden sm:block">Support</span>
-            </button>
-
-            {/* Logout */}
-            <button
-              onClick={handleLogoutClick}
-              className="flex items-center space-x-2 px-3 py-2 text-gray-700 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 rounded"
-              aria-label="Sign out of AcceleraQA"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:block">Sign Out</span>
-            </button>
           </div>
         </div>
       </div>

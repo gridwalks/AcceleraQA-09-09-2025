@@ -447,8 +447,12 @@ async function handleList(userId) {
     // can continue to function even if the backing store is unavailable.
     const message = error.message || '';
     const isMissingTable = /rag_documents/i.test(message) || /relation/i.test(message);
+
+    const isMissingColumn =
+      error.code === '42703' || /column .* does not exist/i.test(message);
     const isConfigError = message.includes('NEON_DATABASE_URL');
-    if (isMissingTable || isConfigError) {
+    if (isMissingTable || isMissingColumn || isConfigError) {
+
       console.warn('Returning empty document list due to database configuration issue');
       return {
         statusCode: 200,

@@ -1,13 +1,11 @@
 // src/services/learningSuggestionsService.js
-import neonService from './neonService';
+import conversationService from './conversationService';
 import openaiService from './openaiService';
-import { getToken } from './authService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import { OPENAI_CONFIG } from '../config/constants';
 
 class LearningSuggestionsService {
   constructor() {
-    this.apiUrl = '/.netlify/functions/neon-db';
     this.cache = new Map();
     this.cacheTTL = 5 * 60 * 1000; // 5 minutes cache
   }
@@ -32,8 +30,8 @@ class LearningSuggestionsService {
         return cached.suggestions;
       }
 
-      // Get user's recent conversations from Neon database
-      const recentConversations = await this.getRecentConversations(userId);
+      // Get user's recent conversations from OpenAI backend
+      const recentConversations = await this.getRecentConversations();
 
       if (!recentConversations || recentConversations.length === 0) {
         console.log('No recent conversations found, returning default suggestions');
@@ -60,36 +58,16 @@ class LearningSuggestionsService {
   }
 
   /**
-   * Fetches last 10 conversations from Neon database
-   * @param {string} userId - User identifier
+   * Fetches last 10 conversations from the conversation service
    * @returns {Promise<Object[]>} - Recent conversations
    */
-  async getRecentConversations(userId) {
+  async getRecentConversations() {
     if (!FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
       return [];
     }
     try {
-      const token = await getToken();
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'x-user-id': userId
-        },
-        body: JSON.stringify({
-          action: 'get_recent_conversations',
-          data: { limit: 10 }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch conversations: ${response.status}`);
-      }
-
-      const result = await response.json();
-      return result.conversations || [];
-
+      const conversations = await conversationService.loadConversations();
+      return conversations.slice(-10).reverse();
     } catch (error) {
       console.error('Error fetching recent conversations:', error);
       throw error;

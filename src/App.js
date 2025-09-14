@@ -20,9 +20,7 @@ import authService, { initializeAuth } from './services/authService';
 import { search as ragSearch } from './services/ragService';
 import openaiService from './services/openaiService';
 
-import { initializeNeonService, loadConversations as loadNeonConversations, saveConversation as saveNeonConversation } from './services/neonService';
-//import { initializeNeonService, loadConversations as loadNeonConversations, saveConversation as saveNeonConversation } from './services/neonService';
-//import { initializeNeonService, loadConversations as loadNeonConversations } from './services/neonService';
+import { initializeConversationService, loadConversations as loadStoredConversations, saveConversation as saveStoredConversation } from './services/conversationService';
 
 import { FEATURE_FLAGS } from './config/featureFlags';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
@@ -115,7 +113,7 @@ function App() {
   // Initialize backend services when user is available
   useEffect(() => {
     if (user) {
-      initializeNeonService(user);
+      initializeConversationService(user);
       if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
         loadInitialLearningSuggestions();
       }
@@ -160,20 +158,20 @@ function App() {
     persist();
   }, [messages, user]);
 
-  // Load conversations from Neon when user is available or refresh requested
+  // Load conversations from OpenAI backend when user is available or refresh requested
   useEffect(() => {
     const fetchConversations = async () => {
       if (!user) return;
       try {
-        const loaded = await loadNeonConversations();
+        const loaded = await loadStoredConversations();
         setThirtyDayMessages(loaded);
       } catch (error) {
-        console.error('Error loading conversations from Neon:', error);
+        console.error('Error loading conversations from OpenAI backend:', error);
       }
     };
 
     fetchConversations();
-  }, [user, lastSaveTime, setThirtyDayMessages, loadNeonConversations]);
+  }, [user, lastSaveTime, setThirtyDayMessages, loadStoredConversations]);
 
   // Refresh learning suggestions after new conversations
   const refreshLearningSuggestions = useCallback(async () => {
@@ -205,7 +203,7 @@ function App() {
     }
   }, [messages]);
 
-  // Save conversation to Neon after assistant responses
+  // Save conversation to OpenAI backend after assistant responses
   useEffect(() => {
     if (!user || messages.length < 2) return;
 
@@ -220,10 +218,10 @@ function App() {
     const save = async () => {
       setIsSaving(true);
       try {
-        await saveNeonConversation(messagesWithType);
+        await saveStoredConversation(messagesWithType);
         setLastSaveTime(new Date().toISOString());
       } catch (error) {
-        console.error('Error saving conversation to Neon:', error);
+        console.error('Error saving conversation to OpenAI backend:', error);
       } finally {
         setIsSaving(false);
       }
@@ -328,17 +326,17 @@ function App() {
   const handleRefreshConversations = useCallback(async () => {
     console.log('Refreshing conversations');
     try {
-      const loaded = await loadNeonConversations(false);
+      const loaded = await loadStoredConversations(false);
       setThirtyDayMessages(loaded);
     } catch (error) {
-      console.error('Error refreshing conversations from Neon:', error);
+      console.error('Error refreshing conversations from OpenAI backend:', error);
     }
     setLastSaveTime(new Date().toISOString());
     // Also refresh learning suggestions when conversations are refreshed
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
       refreshLearningSuggestions();
     }
-  }, [refreshLearningSuggestions, setThirtyDayMessages, loadNeonConversations]);
+  }, [refreshLearningSuggestions, setThirtyDayMessages, loadStoredConversations]);
 
   const clearChat = useCallback(() => {
     setMessages([]);

@@ -311,8 +311,8 @@ const AdminScreen = ({ user, onBack }) => {
     setIsLoading(true);
     try {
       const testResults = await Promise.allSettled([
-        ragService.testUpload(),
-        ragService.testSearch(),
+        ragService.testUpload(user?.sub),
+        ragService.testSearch(user?.sub),
         conversationService.isServiceAvailable()
       ]);
 

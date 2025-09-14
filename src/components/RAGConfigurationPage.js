@@ -298,10 +298,14 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
     try {
       console.log('Searching with query:', searchQuery);
-      const results = await ragService.searchDocuments(searchQuery, {
-        limit: 20,
-        threshold: 0.3
-      });
+      const results = await ragService.searchDocuments(
+        searchQuery,
+        {
+          limit: 20,
+          threshold: 0.3,
+        },
+        user?.sub
+      );
       
       console.log('Search results:', results);
       setSearchResults(results.results || []);
@@ -333,17 +337,21 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     setError(null);
 
     try {
-      const searchResults = await ragService.searchDocuments(searchQuery, {
-        limit: 5,
-        threshold: 0.4
-      });
+      const searchResults = await ragService.searchDocuments(
+        searchQuery,
+        {
+          limit: 5,
+          threshold: 0.4,
+        },
+        user?.sub
+      );
 
       if (!searchResults.results || searchResults.results.length === 0) {
         setError('No relevant documents found to generate response');
         return;
       }
 
-      const ragResponse = await ragService.generateRAGResponse(searchQuery, searchResults.results);
+      const ragResponse = await ragService.generateRAGResponse(searchQuery, user?.sub);
       
       const newWindow = window.open('', '_blank');
       newWindow.document.write(`

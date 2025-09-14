@@ -7,6 +7,8 @@ const API_BASE_URL = '/.netlify/functions';
 class RAGService {
   constructor() {
     this.apiUrl = `${API_BASE_URL}/openai-file-search`;
+    this.maxChunkSize = 1000;
+    this.chunkOverlap = 200;
   }
 
   async makeAuthenticatedRequest(endpoint, data = {}) {
@@ -556,7 +558,7 @@ Key Topics Covered:
 
 This test ensures the OpenAI file search system can process documents efficiently and provide reliable search functionality for pharmaceutical quality professionals.`;
 
-      const testFile = new File([testContent], 'neon-test-document.txt', { type: 'text/plain' });
+      const testFile = new File([testContent], 'openai-test-document.txt', { type: 'text/plain' });
       
       const result = await this.uploadDocument(testFile, {
         category: 'test',

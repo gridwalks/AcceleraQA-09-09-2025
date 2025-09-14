@@ -25,10 +25,10 @@
   to = "/index.html"
   status = 200
 
-# API routes for Neon functions
+# API routes for serverless functions
 [[redirects]]
   from = "/api/rag/*"
-  to = "/.netlify/functions/neon-rag"
+  to = "/.netlify/functions/openai-file-search"
   status = 200
 
 [[redirects]]

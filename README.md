@@ -177,7 +177,9 @@ npm run build
 ### Netlify (Recommended)
 1. Connect your repository
 2. Set environment variables in Netlify dashboard
-3. Deploy with automatic builds
+   - `OPENAI_API_KEY` for serverless calls to OpenAI
+   - `REACT_APP_OPENAI_API_KEY` for client-side features (optional)
+3. Deploy with automatic builds. Netlify will expose the `openai-file-search` function at `/api/rag/*` to proxy requests to OpenAI's file-search API.
 
 ### Environment Variables in Netlify:
 ```bash

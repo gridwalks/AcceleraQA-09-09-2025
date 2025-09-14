@@ -1,6 +1,6 @@
 // src/components/Header.js - UPDATED VERSION with cloud status and clear all button removed
 import React, { memo, useMemo } from 'react';
-import { LogOut, User, Shield, LifeBuoy } from 'lucide-react';
+import { LogOut, User, Shield, LifeBuoy, FileText } from 'lucide-react';
 import { handleLogout } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 
@@ -10,6 +10,7 @@ const Header = memo(({
   lastSaveTime = null,
   onShowAdmin,
   onOpenNotebook,
+  onShowRAGConfig,
   onOpenSupport,
   onLogout
 }) => {
@@ -114,6 +115,16 @@ const Header = memo(({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
               <span>Open Notebook</span>
+            </button>
+
+            {/* Manage RAG Documents */}
+            <button
+              onClick={onShowRAGConfig}
+              className="flex items-center space-x-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 text-gray-700"
+              aria-label="Manage personal documents"
+            >
+              <FileText className="h-4 w-4" />
+              <span className="hidden sm:block">My Docs</span>
             </button>
 
             {/* Support */}

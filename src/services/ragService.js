@@ -233,6 +233,34 @@ class RAGService {
       });
     }
 
+    // Handle PDF files using a dynamic import to avoid bundling pdfjs-dist
+    if (
+      file.type === 'application/pdf' ||
+      file.name?.toLowerCase().endsWith('.pdf')
+    ) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        try {
+          const worker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+          pdfjs.GlobalWorkerOptions.workerSrc = worker;
+        } catch (workerErr) {
+          console.warn('PDF worker failed to load:', workerErr);
+        }
+
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        let text = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map((item) => item.str).join(' ') + '\n';
+        }
+        return text.trim();
+      } catch (err) {
+        console.error('Failed to extract PDF text:', err);
+        throw new Error(`Failed to extract PDF text: ${err.message}`);
+      }
+    }
 
     // Handle DOCX files using a dynamic import to avoid bundling mammoth
     if (

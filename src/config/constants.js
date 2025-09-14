@@ -54,7 +54,7 @@ export const FEATURE_FLAGS = {
 
 // Enhanced Error Messages with troubleshooting
 export const ERROR_MESSAGES = {
-  API_KEY_NOT_CONFIGURED: 'OpenAI API key not configured.\n\nTROUBLESHOOTING STEPS:\n1. Check that REACT_APP_OPENAI_API_KEY is set in your environment\n2. If deploying to Netlify, add the variable in Site Settings > Environment Variables\n3. Get your API key from: https://platform.openai.com/account/api-keys\n4. Contact your administrator if you need access',
+  API_KEY_NOT_CONFIGURED: 'OpenAI API key not configured.\n\nTROUBLESHOOTING STEPS:\n1. Check that OPENAI_API_KEY is set in your environment\n2. If deploying to Netlify, add the variable in Site Settings > Environment Variables\n3. Get your API key from: https://platform.openai.com/account/api-keys\n4. Contact your administrator if you need access',
 
   INVALID_API_KEY: 'Invalid OpenAI API key.\n\nTROUBLESHOOTING STEPS:\n1. Verify your API key is correct and active\n2. Check your OpenAI account billing status\n3. Generate a new API key if needed: https://platform.openai.com/account/api-keys',
 
@@ -74,8 +74,8 @@ export const ERROR_MESSAGES = {
 export const validateEnvironment = () => {
   const requiredVars = [
     'REACT_APP_AUTH0_DOMAIN',
-    'REACT_APP_AUTH0_CLIENT_ID', 
-    'REACT_APP_OPENAI_API_KEY'
+    'REACT_APP_AUTH0_CLIENT_ID',
+    'OPENAI_API_KEY'
   ];
   
   const missing = requiredVars.filter(varName => {
@@ -93,7 +93,7 @@ export const validateEnvironment = () => {
     console.error('1. Copy .env.example to .env');
     console.error('2. Replace placeholder values with real credentials');
     console.error('3. For Netlify: Add variables in Site Settings > Environment Variables');
-    console.error('4. Ensure variable names start with REACT_APP_');
+    console.error('4. Ensure environment variable names are correct');
     console.error('\nHELPFUL LINKS:');
       console.error('OpenAI API Keys: https://platform.openai.com/account/api-keys');
       console.error('Auth0 Dashboard: https://manage.auth0.com/');
@@ -110,7 +110,7 @@ export const validateEnvironment = () => {
   }
   
   // Validate OpenAI API key format
-  const apiKey = process.env.REACT_APP_OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey && !apiKey.startsWith('sk-')) {
       console.error('CONFIGURATION ERROR: Invalid OpenAI API key format');
     console.error('   Expected format: sk-proj-... or sk-...');
@@ -130,7 +130,7 @@ export const validateDeploymentEnvironment = () => {
   
   if (isBuild) {
     // Additional production checks
-    if (!process.env.REACT_APP_OPENAI_API_KEY) {
+    if (!process.env.OPENAI_API_KEY) {
       issues.push('OpenAI API key not set for production build');
     }
     

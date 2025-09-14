@@ -55,4 +55,3 @@
 
 # Environment variables needed for functions (add these in Netlify dashboard)
 # OPENAI_API_KEY = "sk-..."
-# REACT_APP_OPENAI_API_KEY = "sk-..."

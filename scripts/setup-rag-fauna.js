@@ -198,7 +198,7 @@ Add this to your existing netlify.toml file:
 Add these environment variables to your .env file and Netlify dashboard:
 
 # Existing variables
-REACT_APP_OPENAI_API_KEY=your_openai_api_key
+OPENAI_API_KEY=your_openai_api_key
 REACT_APP_AUTH0_DOMAIN=your-domain.auth0.com
 REACT_APP_AUTH0_CLIENT_ID=your_client_id
 

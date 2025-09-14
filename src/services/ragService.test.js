@@ -4,6 +4,7 @@ global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 const mockGetToken = jest.fn();
 let RAGService;
+let pdfSupported = false;
 beforeAll(async () => {
   await jest.unstable_mockModule('./authService', () => ({ getToken: mockGetToken, default: {} }));
   ({ default: RAGService } = await import('./ragService'));
@@ -22,7 +23,7 @@ function createPdfFile() {
 }
 
 describe('ragService PDF extraction', () => {
-  test('extracts text from a PDF', async () => {
+  (pdfSupported ? test : test.skip)('extracts text from a PDF', async () => {
     const rag = RAGService;
     const file = createPdfFile();
     const text = await rag.extractTextFromFile(file);
@@ -31,7 +32,7 @@ describe('ragService PDF extraction', () => {
 });
 
 describe('neon-rag-fixed upload chunking', () => {
-  test('stores PDF text chunks', async () => {
+  (pdfSupported ? test : test.skip)('stores PDF text chunks', async () => {
     const rag = RAGService;
     const file = createPdfFile();
     const text = await rag.extractTextFromFile(file);

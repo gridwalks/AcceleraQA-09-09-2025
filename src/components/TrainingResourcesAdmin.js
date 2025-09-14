@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle } from 'lucide-react';
-import neonService from '../services/neonService';
+import trainingResourceService from '../services/trainingResourceService';
 
 const TrainingResourcesAdmin = () => {
   const [resources, setResources] = useState([]);
@@ -14,7 +14,7 @@ const TrainingResourcesAdmin = () => {
 
   const loadResources = async () => {
     try {
-      const data = await neonService.getTrainingResources();
+      const data = await trainingResourceService.getTrainingResources();
       setResources(data);
     } catch (err) {
       console.error('Failed to load training resources:', err);
@@ -36,7 +36,7 @@ const TrainingResourcesAdmin = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const newResource = await neonService.addTrainingResource(form);
+      const newResource = await trainingResourceService.addTrainingResource(form);
       setResources(prev => [newResource, ...prev]);
       setForm({ name: '', description: '', url: '', tag: '' });
     } catch (err) {

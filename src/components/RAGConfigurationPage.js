@@ -1,4 +1,4 @@
-// src/components/RAGConfigurationPage.js - Fixed authentication for Neon
+// src/components/RAGConfigurationPage.js - Fixed authentication for OpenAI File Search
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Upload,
@@ -416,7 +416,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
             <Database className="h-6 w-6 text-blue-600" />
             <div>
               <h2 className="text-xl font-semibold text-gray-900">RAG Configuration</h2>
-              <p className="text-sm text-gray-500">Upload documents and configure search with Neon PostgreSQL</p>
+              <p className="text-sm text-gray-500">Upload documents and configure search with OpenAI File Search</p>
             </div>
           </div>
           <button
@@ -583,7 +583,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
               <div className="bg-gray-50 p-6 rounded-lg">
                 <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
                   <Upload className="h-5 w-5" />
-                  <span>Upload Document (Neon PostgreSQL Storage)</span>
+                  <span>Upload Document (OpenAI File Search Storage)</span>
                 </h3>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -599,7 +599,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
                     <p className="text-xs text-gray-500 mt-1">
-                      Persistent storage with Neon PostgreSQL database and full-text search
+                      Persistent storage with OpenAI File Search backend and full-text search
                     </p>
                   </div>
 
@@ -678,7 +678,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 {isLoading ? (
                   <div className="text-center py-12">
                     <Loader className="h-8 w-8 text-blue-600 mx-auto animate-spin mb-4" />
-                    <p className="text-gray-600">Loading documents from Neon database...</p>
+                    <p className="text-gray-600">Loading documents from OpenAI backend...</p>
                   </div>
                 ) : documents.length === 0 ? (
                   <div className="text-center py-12 bg-gray-50 rounded-lg">
@@ -719,7 +719,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         <div className="text-sm text-gray-600 space-y-1">
                           <p><span className="font-medium">Category:</span> {doc.metadata?.category || 'General'}</p>
                           <p><span className="font-medium">Uploaded:</span> {new Date(doc.createdAt).toLocaleDateString()}</p>
-                          <p><span className="font-medium">Storage:</span> Neon PostgreSQL</p>
+                          <p><span className="font-medium">Storage:</span> OpenAI File Search</p>
                           <p><span className="font-medium">Search:</span> Full-text indexed</p>
                           {doc.metadata?.tags && doc.metadata.tags.length > 0 && (
                             <div className="flex items-center space-x-1 mt-2">
@@ -746,7 +746,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
               <div className="bg-gray-50 p-6 rounded-lg">
                 <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
                   <Search className="h-5 w-5" />
-                  <span>Search Documents (PostgreSQL Full-Text)</span>
+                  <span>Search Documents (OpenAI File Search)</span>
                 </h3>
 
                 <div className="flex space-x-4 mb-4">
@@ -939,13 +939,13 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     <h4 className="font-medium text-gray-800 mb-2">Function Endpoints</h4>
                     <div className="p-3 bg-white border rounded-md space-y-2">
                       <p className="text-sm">
-                        <strong>Neon RAG Function:</strong> 
+                        <strong>OpenAI RAG Function:</strong>
                         <code className="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">
                           {window.location.origin}/.netlify/functions/neon-rag
                         </code>
                       </p>
                       <p className="text-sm">
-                        <strong>Neon DB Function:</strong> 
+                        <strong>OpenAI DB Function:</strong>
                         <code className="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">
                           {window.location.origin}/.netlify/functions/neon-db
                         </code>
@@ -957,7 +957,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     <h4 className="font-medium text-gray-800 mb-2">System Capabilities</h4>
                     <div className="p-3 bg-white border rounded-md">
                       <ul className="text-sm space-y-1 text-gray-600">
-                        <li>✅ Neon PostgreSQL database storage</li>
+                        <li>✅ OpenAI File Search storage</li>
                         <li>✅ Full-text search with ranking</li>
                         <li>✅ Document persistence across sessions</li>
                         <li>✅ RAG response generation</li>

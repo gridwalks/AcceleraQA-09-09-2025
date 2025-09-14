@@ -22,18 +22,18 @@ class RAGService {
     try {
       await openaiService.makeRequest('/files', {
         method: 'GET',
-        headers: { 'OpenAI-Beta': 'assistants=v2' }
+        headers: { 'OpenAI-Beta': 'assistants=v2' },
       });
       return {
         success: true,
-        recommendation: 'OpenAI file search API reachable.'
+        recommendation: 'OpenAI file search API reachable.',
       };
     } catch (error) {
       console.error('RAG connection test failed:', error);
       return {
         success: false,
         error: error.message,
-        recommendation: 'Check OpenAI API key and network connectivity'
+        recommendation: 'Check OpenAI API key and network connectivity',
       };
     }
   }
@@ -51,15 +51,15 @@ class RAGService {
       metadata: {
         uploadedAt: new Date().toISOString(),
         processingMode: 'openai-file-search',
-        ...metadata
-      }
+        ...metadata,
+      },
     };
   }
 
   async getDocuments() {
     const data = await openaiService.makeRequest('/files', {
       method: 'GET',
-      headers: { 'OpenAI-Beta': 'assistants=v2' }
+      headers: { 'OpenAI-Beta': 'assistants=v2' },
     });
     return data.data || [];
   }
@@ -67,7 +67,7 @@ class RAGService {
   async deleteDocument(documentId) {
     await openaiService.makeRequest(`/files/${documentId}`, {
       method: 'DELETE',
-      headers: { 'OpenAI-Beta': 'assistants=v2' }
+      headers: { 'OpenAI-Beta': 'assistants=v2' },
     });
     return { success: true };
   }
@@ -82,10 +82,7 @@ class RAGService {
       });
     }
 
-    if (
-      file.type === 'application/pdf' ||
-      file.name?.toLowerCase().endsWith('.pdf')
-    ) {
+    if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) {
       try {
         const arrayBuffer = await file.arrayBuffer();
         const raw = new TextDecoder().decode(arrayBuffer);
@@ -123,9 +120,9 @@ class RAGService {
     const result = await openaiService.makeRequest(`/vector_stores/${vectorStoreId}/search`, {
       headers: {
         'Content-Type': 'application/json',
-        'OpenAI-Beta': 'assistants=v2'
+        'OpenAI-Beta': 'assistants=v2',
       },
-      body: JSON.stringify({ query: query.trim(), limit: options.limit || 10 })
+      body: JSON.stringify({ query: query.trim(), limit: options.limit || 10 }),
     });
 
     return result;
@@ -137,12 +134,12 @@ class RAGService {
     const body = {
       model: getCurrentModel(),
       input: query,
-      tools: [{ type: 'file_search', vector_store_ids: [vectorStoreId] }]
+      tools: [{ type: 'file_search', vector_store_ids: [vectorStoreId] }],
     };
 
     const data = await openaiService.makeRequest('/responses', {
       headers: { 'OpenAI-Beta': 'assistants=v2' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     });
 
     const answer =
@@ -161,8 +158,8 @@ class RAGService {
       sources: annotations,
       ragMetadata: {
         totalSources: annotations.length,
-        processingMode: 'openai-file-search'
-      }
+        processingMode: 'openai-file-search',
+      },
     };
   }
 
@@ -172,7 +169,7 @@ class RAGService {
       return {
         answer: response.answer,
         sources: response.sources || [],
-        resources: response.resources || []
+        resources: response.resources || [],
       };
     } catch (error) {
       console.error('Error performing RAG search:', error);
@@ -182,9 +179,7 @@ class RAGService {
 
   async getStats() {
     const documents = await this.getDocuments();
-    return {
-      totalDocuments: documents.length
-    };
+    return { totalDocuments: documents.length };
   }
 
   async runDiagnostics() {
@@ -192,9 +187,10 @@ class RAGService {
       const diagnostics = {
         timestamp: new Date().toISOString(),
         mode: 'openai-file-search',
-        tests: {}
+        tests: {},
       };
 
+      // Connectivity test
       try {
         const connectionTest = await this.testConnection();
         diagnostics.tests.connectivity = connectionTest;
@@ -202,27 +198,27 @@ class RAGService {
         diagnostics.tests.connectivity = { success: false, error: error.message };
       }
 
+      // Document listing test
       try {
         const documents = await this.getDocuments();
-        diagnostics.tests.documentListing = {
-          success: true,
-          documentCount: documents.length
-        };
+        diagnostics.tests.documentListing = { success: true, documentCount: documents.length };
       } catch (error) {
         diagnostics.tests.documentListing = { success: false, error: error.message };
       }
 
+      // Vector search test
       try {
         const searchResult = await this.searchDocuments('pharmaceutical quality gmp', { limit: 3 });
         diagnostics.tests.search = {
           success: true,
           resultsFound: searchResult?.data?.length || 0,
-          searchType: 'vector'
+          searchType: 'vector',
         };
       } catch (error) {
         diagnostics.tests.search = { success: false, error: error.message };
       }
 
+      // Stats test
       try {
         const stats = await this.getStats();
         diagnostics.tests.stats = { success: true, ...stats };
@@ -235,24 +231,27 @@ class RAGService {
 
       diagnostics.health = {
         score: (successfulTests / totalTests) * 100,
-        status: successfulTests === totalTests ? 'healthy' : successfulTests > totalTests / 2 ? 'partial' : 'unhealthy',
+        status:
+          successfulTests === totalTests
+            ? 'healthy'
+            : successfulTests > totalTests / 2
+            ? 'partial'
+            : 'unhealthy',
         mode: 'openai-file-search',
         features: {
           fileStorage: true,
           vectorSearch: true,
-          openAIIntegration: true
+          openAIIntegration: true,
         },
-        recommendations: []
+        recommendations: [],
       };
 
       if (!diagnostics.tests.connectivity?.success) {
         diagnostics.health.recommendations.push('Check OpenAI API key and network connection');
       }
-
       if (!diagnostics.tests.search?.success) {
         diagnostics.health.recommendations.push('Upload documents to enable search');
       }
-
       if (diagnostics.health.status === 'healthy') {
         diagnostics.health.recommendations.push('System working well with OpenAI file search');
       }
@@ -266,35 +265,37 @@ class RAGService {
         health: {
           score: 0,
           status: 'error',
-          error: error.message
-        }
+          error: error.message,
+        },
       };
     }
   }
 
   async testUpload() {
     try {
-      const testContent = `Test Document for OpenAI File Search RAG System\n\nThis is a test document to verify the OpenAI file-search upload functionality.`;
+      const testContent = `Test Document for OpenAI File Search RAG System
+
+This is a test document to verify the OpenAI file-search upload functionality.`;
       const testFile = new File([testContent], 'openai-file-search-test.txt', { type: 'text/plain' });
 
       const result = await this.uploadDocument(testFile, {
         category: 'test',
         tags: ['test', 'openai-file-search'],
         testDocument: true,
-        description: 'Test document for OpenAI file search RAG system'
+        description: 'Test document for OpenAI file search RAG system',
       });
 
       return {
         success: true,
         uploadResult: result,
-        message: 'Test upload completed successfully'
+        message: 'Test upload completed successfully',
       };
     } catch (error) {
       console.error('Test upload failed:', error);
       return {
         success: false,
         error: error.message,
-        message: 'Test upload failed'
+        message: 'Test upload failed',
       };
     }
   }
@@ -305,21 +306,20 @@ class RAGService {
       return {
         success: true,
         searchResult: result,
-        message: `Search test completed - found ${result.sources?.length || 0} sources`
+        message: `Search test completed - found ${result.sources?.length || 0} sources`,
       };
     } catch (error) {
       console.error('Test search failed:', error);
       return {
         success: false,
         error: error.message,
-        message: 'Test search failed'
+        message: 'Test search failed',
       };
     }
   }
 }
 
 const ragService = new RAGService();
-
 export default ragService;
 
 export const uploadDocument = (file, metadata) => ragService.uploadDocument(file, metadata);
@@ -333,4 +333,3 @@ export const getStats = () => ragService.getStats();
 export const runDiagnostics = () => ragService.runDiagnostics();
 export const testUpload = () => ragService.testUpload();
 export const testSearch = () => ragService.testSearch();
-

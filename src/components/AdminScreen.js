@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 
 // Import services
-import neonService from '../services/neonService';
+import conversationService from '../services/conversationService';
 import ragService from '../services/ragService';
 import { getToken, getTokenInfo } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
@@ -128,7 +128,7 @@ const AdminScreen = ({ user, onBack }) => {
   const getSystemStats = async () => {
     try {
       const [conversationStats, ragStats] = await Promise.all([
-        neonService.getConversationStats(),
+        conversationService.getConversationStats(),
         ragService.getStats()
       ]);
 
@@ -191,7 +191,7 @@ const AdminScreen = ({ user, onBack }) => {
   const getSystemHealth = async () => {
     try {
       const checks = {
-        database: await checkDatabaseHealth(),
+        backend: await checkBackendHealth(),
         rag: await checkRAGHealth(),
         authentication: await checkAuthHealth(),
         storage: await checkStorageHealth()
@@ -214,20 +214,20 @@ const AdminScreen = ({ user, onBack }) => {
     }
   };
 
-  const checkDatabaseHealth = async () => {
+  const checkBackendHealth = async () => {
     try {
-      const result = await neonService.isServiceAvailable();
+      const result = await conversationService.isServiceAvailable();
       if (result.ok) {
         return {
           status: 'healthy',
-          message: 'Database connection active',
+          message: 'OpenAI backend reachable',
           responseTime: '< 100ms' // Placeholder
         };
       }
 
       return {
         status: 'unhealthy',
-        message: result.error || 'Database unavailable',
+        message: result.error || 'OpenAI backend unavailable',
         responseTime: null
       };
     } catch (error) {
@@ -313,13 +313,13 @@ const AdminScreen = ({ user, onBack }) => {
       const testResults = await Promise.allSettled([
         ragService.testUpload(),
         ragService.testSearch(),
-        neonService.isServiceAvailable()
+        conversationService.isServiceAvailable()
       ]);
 
       const results = {
         ragUpload: testResults[0],
         ragSearch: testResults[1],
-        database: testResults[2],
+        backend: testResults[2],
         timestamp: new Date().toISOString()
       };
 
@@ -433,7 +433,7 @@ const AdminScreen = ({ user, onBack }) => {
             {[
               { id: 'overview', label: 'Overview', icon: Monitor },
               { id: 'users', label: 'Users & Auth', icon: Users },
-              { id: 'database', label: 'Database', icon: Database },
+              { id: 'backend', label: 'Backend', icon: Database },
               { id: 'rag', label: 'RAG System', icon: FileText },
               { id: 'ragConfig', label: 'RAG Config', icon: Search },
               { id: 'system', label: 'System Health', icon: Activity },
@@ -468,9 +468,9 @@ const AdminScreen = ({ user, onBack }) => {
               {/* System Health Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <SystemHealthCard
-                  title="Database"
-                  status={systemHealth?.checks?.database?.status || 'unknown'}
-                  message={systemHealth?.checks?.database?.message || 'Checking...'}
+                  title="Backend"
+                  status={systemHealth?.checks?.backend?.status || 'unknown'}
+                  message={systemHealth?.checks?.backend?.message || 'Checking...'}
                   icon={Database}
                 />
                 <SystemHealthCard
@@ -537,10 +537,10 @@ const AdminScreen = ({ user, onBack }) => {
                       status={ragStats?.health?.score >= 80 ? 'good' : ragStats?.health?.score >= 50 ? 'warning' : 'error'}
                     />
                     <StatItem
-                      label="Database Status"
-                      value={systemHealth?.checks?.database?.status || 'Unknown'}
-                      description={systemHealth?.checks?.database?.responseTime || 'Checking...'}
-                      status={systemHealth?.checks?.database?.status === 'healthy' ? 'good' : 'warning'}
+                      label="Backend Status"
+                      value={systemHealth?.checks?.backend?.status || 'Unknown'}
+                      description={systemHealth?.checks?.backend?.responseTime || 'Checking...'}
+                      status={systemHealth?.checks?.backend?.status === 'healthy' ? 'good' : 'warning'}
                     />
                     <StatItem
                       label="Auth Token"
@@ -589,11 +589,11 @@ const AdminScreen = ({ user, onBack }) => {
             </div>
           )}
 
-          {/* Database Tab */}
-          {activeTab === 'database' && (
+          {/* Backend Tab */}
+          {activeTab === 'backend' && (
             <div className="space-y-6">
               <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Neon PostgreSQL Database</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">OpenAI File Search Backend</h3>
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="p-4 bg-blue-50 rounded-lg">
@@ -626,17 +626,17 @@ const AdminScreen = ({ user, onBack }) => {
                   </div>
                   
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-2">Database Health</h4>
+                    <h4 className="font-medium text-gray-900 mb-2">Backend Health</h4>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span>Connection Status:</span>
-                        <span className={`font-medium ${systemHealth?.checks?.database?.status === 'healthy' ? 'text-green-600' : 'text-red-600'}`}>
-                          {systemHealth?.checks?.database?.status || 'Unknown'}
+                        <span className={`font-medium ${systemHealth?.checks?.backend?.status === 'healthy' ? 'text-green-600' : 'text-red-600'}`}>
+                          {systemHealth?.checks?.backend?.status || 'Unknown'}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Response Time:</span>
-                        <span className="font-medium">{systemHealth?.checks?.database?.responseTime || 'Unknown'}</span>
+                        <span className="font-medium">{systemHealth?.checks?.backend?.responseTime || 'Unknown'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Last Check:</span>
@@ -863,8 +863,8 @@ const AdminScreen = ({ user, onBack }) => {
                   />
                   
                   <AdminToolCard
-                    title="Database Console"
-                    description="Access database management tools"
+                    title="Backend Console"
+                    description="Access backend management tools"
                     icon={Database}
                     onClick={() => window.open('/.netlify/functions/admin-db', '_blank')}
                     color="indigo"

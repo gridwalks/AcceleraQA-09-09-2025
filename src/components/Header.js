@@ -88,15 +88,7 @@ const Header = memo(({
             />
           </div>
 
-          <div className="flex-1 px-4">
-            <input
-              type="text"
-              placeholder="Search policies, SOPs, modules"
-              className="w-full max-w-md mx-auto block px-4 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="relative flex items-center space-x-4">
+          <div className="relative flex items-center space-x-4 ml-auto">
             {/* User Info */}
             <div className="flex items-center space-x-2 text-sm text-gray-700">
               <User className="h-4 w-4 text-gray-500" />

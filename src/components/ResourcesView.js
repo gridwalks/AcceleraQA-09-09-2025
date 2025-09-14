@@ -13,7 +13,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const [filteredResources, setFilteredResources] = useState(currentResources);
   const [learningSuggestions, setLearningSuggestions] = useState([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [activeTab, setActiveTab] = useState('resources'); // 'suggestions', 'resources', or 'conversations'
+  const [openSections, setOpenSections] = useState({
+    suggestions: false,
+    resources: true,
+    conversations: false
+  });
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [addedResources, setAddedResources] = useState(new Set());
   const [showToast, setShowToast] = useState(false);
@@ -67,6 +71,10 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
+  };
+
+  const toggleSection = (section) => {
+    setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
   const handleResourceClick = (resource) => {
@@ -148,195 +156,185 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6 h-full shadow-sm flex flex-col">
-      {/* Header */}
-      <div className="mb-6">
-        {/* Tab Navigation */}
-        <div className="flex space-x-1 mb-4">
-          {FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && (
+      <div className="flex-1 overflow-y-auto space-y-4">
+        {FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && (
+          <div className="border border-gray-200 rounded-lg">
             <button
-              onClick={() => setActiveTab('suggestions')}
-              className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                activeTab === 'suggestions'
-                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
+              type="button"
+              onClick={() => toggleSection('suggestions')}
+              className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
             >
-              <Sparkles className="h-4 w-4" />
-              <span>AI Suggestions</span>
-              {learningSuggestions.length > 0 && (
-                <span className="bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full">
-                  {learningSuggestions.length}
+              <div className="flex items-center space-x-2">
+                <Sparkles className="h-4 w-4" />
+                <span>AI Suggestions</span>
+                {learningSuggestions.length > 0 && (
+                  <span className="bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                    {learningSuggestions.length}
+                  </span>
+                )}
+              </div>
+              <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.suggestions ? 'rotate-90' : ''}`} />
+            </button>
+            {openSections.suggestions && (
+              <div className="p-4 space-y-4 border-t border-gray-200">
+                {isLoadingSuggestions ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600 text-sm">Analyzing your conversations...</p>
+                  </div>
+                ) : learningSuggestions.length > 0 ? (
+                  <>
+                    <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg border border-purple-100 mb-4">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Brain className="h-4 w-4 text-purple-600" />
+                        <span className="text-sm font-medium text-purple-800">
+                          Suggestions Based on Your Recent Conversations
+                        </span>
+                      </div>
+                    </div>
+
+                    {displayedSuggestions.map((suggestion, index) => (
+                      <SuggestionCard
+                        key={suggestion.id}
+                        suggestion={suggestion}
+                        onClick={() => handleSuggestionClick(suggestion)}
+                        getDifficultyColor={getDifficultyColor}
+                        getTypeIcon={getTypeIcon}
+                        index={index}
+                        onAdd={() => handleAdd(suggestion)}
+                        isAdded={addedResources.has(suggestion.id || suggestion.url || suggestion.title)}
+                      />
+                    ))}
+
+                    {learningSuggestions.length > 3 && (
+                      <button
+                        onClick={() => setShowAllSuggestions(!showAllSuggestions)}
+                        className="w-full py-2 px-4 text-sm text-purple-600 hover:text-purple-800 border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors"
+                      >
+                        {showAllSuggestions
+                          ? `Show Less (${learningSuggestions.length - 3} hidden)`
+                          : `Show ${learningSuggestions.length - 3} More Suggestions`}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 bg-purple-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                      <Brain className="h-6 w-6 text-purple-600" />
+                    </div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">No Suggestions Yet</h4>
+                    <p className="text-gray-600 text-sm mb-4">
+                      Start conversations to get personalized learning recommendations
+                    </p>
+                    <button
+                      onClick={loadLearningSuggestions}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+                    >
+                      Generate Suggestions
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="border border-gray-200 rounded-lg">
+          <button
+            type="button"
+            onClick={() => toggleSection('resources')}
+            className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
+          >
+            <div className="flex items-center space-x-2">
+              <BookOpen className="h-4 w-4" />
+              <span>Resources</span>
+              {currentResources.length > 0 && (
+                <span className="bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {currentResources.length}
                 </span>
               )}
-            </button>
+            </div>
+            <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.resources ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.resources && (
+            <div className="p-4 space-y-4 border-t border-gray-200">
+              {currentResources.length > 0 && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search resources..."
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+
+              {currentResources.length > 0 ? (
+                filteredResources.length > 0 ? (
+                  filteredResources.map((resource, index) => (
+                    <ResourceCard
+                      key={`${resource.url}-${index}`}
+                      resource={resource}
+                      onClick={() => handleResourceClick(resource)}
+                      colorClass={resourceTypeColors[resource.type] || resourceTypeColors['Reference']}
+                      onAdd={() => handleAdd(resource)}
+                      isAdded={addedResources.has(resource.url || resource.id || resource.title)}
+                    />
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">
+                      No resources match "{searchTerm}"
+                    </p>
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Clear search
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                    <BookOpen className="h-6 w-6 text-gray-400" />
+                  </div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">No resources yet</h4>
+                  <p className="text-gray-600">
+                    Ask a question to see relevant learning resources
+                  </p>
+                </div>
+              )}
+            </div>
           )}
-          <button
-            onClick={() => setActiveTab('resources')}
-            className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'resources'
-                ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-            }`}
-          >
-            <BookOpen className="h-4 w-4" />
-            <span>Resources</span>
-            {currentResources.length > 0 && (
-              <span className="bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full">
-                {currentResources.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('conversations')}
-            className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'conversations'
-                ? 'bg-green-100 text-green-700 border border-green-200'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-            }`}
-          >
-            <MessageSquare className="h-4 w-4" />
-            <span>Conversations</span>
-            {conversations.length > 0 && (
-              <span className="bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">
-                {conversations.length}
-              </span>
-            )}
-          </button>
         </div>
 
-        {/* Search input for resources tab */}
-        {activeTab === 'resources' && currentResources.length > 0 && (
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search resources..."
-              value={searchTerm}
-              onChange={handleSearchChange}
-              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-          </div>
-        )}
-      </div>
-      
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto">
-        {/* AI Suggestions Tab */}
-        {FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && activeTab === 'suggestions' && (
-          <div className="space-y-4">
-            {isLoadingSuggestions ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
-                <p className="text-gray-600 text-sm">Analyzing your conversations...</p>
-              </div>
-            ) : learningSuggestions.length > 0 ? (
-              <>
-                {/* Personalized Header */}
-                <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg border border-purple-100 mb-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <Brain className="h-4 w-4 text-purple-600" />
-                    <span className="text-sm font-medium text-purple-800">
-                      Suggestions Based on Your Recent Conversations
-                    </span>
-                  </div>
-                </div>
-
-                {/* Suggestions List */}
-                {displayedSuggestions.map((suggestion, index) => (
-                  <SuggestionCard
-                    key={suggestion.id}
-                    suggestion={suggestion}
-                    onClick={() => handleSuggestionClick(suggestion)}
-                    getDifficultyColor={getDifficultyColor}
-                    getTypeIcon={getTypeIcon}
-                    index={index}
-                    onAdd={() => handleAdd(suggestion)}
-                    isAdded={addedResources.has(suggestion.id || suggestion.url || suggestion.title)}
-                  />
-                ))}
-
-                {/* Show More/Less Button */}
-                {learningSuggestions.length > 3 && (
-                  <button
-                    onClick={() => setShowAllSuggestions(!showAllSuggestions)}
-                    className="w-full py-2 px-4 text-sm text-purple-600 hover:text-purple-800 border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors"
-                  >
-                    {showAllSuggestions 
-                      ? `Show Less (${learningSuggestions.length - 3} hidden)` 
-                      : `Show ${learningSuggestions.length - 3} More Suggestions`
-                    }
-                  </button>
-                )}
-              </>
-            ) : (
-              <div className="text-center py-12">
-                <div className="w-12 h-12 bg-purple-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                  <Brain className="h-6 w-6 text-purple-600" />
-                </div>
-                <h4 className="text-lg font-medium text-gray-900 mb-2">No Suggestions Yet</h4>
-                <p className="text-gray-600 text-sm mb-4">
-                  Start conversations to get personalized learning recommendations
-                </p>
-                <button
-                  onClick={loadLearningSuggestions}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
-                >
-                  Generate Suggestions
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Resources Tab */}
-        {activeTab === 'resources' && (
-          <div className="space-y-4">
-            {currentResources.length > 0 ? (
-              filteredResources.length > 0 ? (
-                filteredResources.map((resource, index) => (
-                  <ResourceCard
-                    key={`${resource.url}-${index}`}
-                    resource={resource}
-                    onClick={() => handleResourceClick(resource)}
-                    colorClass={resourceTypeColors[resource.type] || resourceTypeColors['Reference']}
-                    onAdd={() => handleAdd(resource)}
-                    isAdded={addedResources.has(resource.url || resource.id || resource.title)}
-                  />
-                ))
-              ) : (
-                <div className="text-center py-8">
-                  <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-600 text-sm">
-                    No resources match "{searchTerm}"
-                  </p>
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className="mt-2 text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    Clear search
-                  </button>
-                </div>
-              )
-            ) : (
-              <div className="text-center py-12">
-                <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                  <BookOpen className="h-6 w-6 text-gray-400" />
-                </div>
-                <h4 className="text-lg font-medium text-gray-900 mb-2">No resources yet</h4>
-                <p className="text-gray-600">
-                  Ask a question to see relevant learning resources
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-        {activeTab === 'conversations' && (
-          <div className="space-y-2">
-
-            <ConversationList conversations={conversations} onSelect={onConversationSelect} />
-
-          </div>
-        )}
+        <div className="border border-gray-200 rounded-lg">
+          <button
+            type="button"
+            onClick={() => toggleSection('conversations')}
+            className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
+          >
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="h-4 w-4" />
+              <span>Conversations</span>
+              {conversations.length > 0 && (
+                <span className="bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {conversations.length}
+                </span>
+              )}
+            </div>
+            <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.conversations ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.conversations && (
+            <div className="p-4 space-y-2 border-t border-gray-200">
+              <ConversationList conversations={conversations} onSelect={onConversationSelect} />
+            </div>
+          )}
+        </div>
       </div>
       {showToast && (
         <div className="fixed bottom-4 right-4 bg-green-600 text-white text-sm px-3 py-2 rounded shadow-lg z-50">

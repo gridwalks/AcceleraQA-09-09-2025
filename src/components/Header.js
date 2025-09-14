@@ -60,6 +60,9 @@ const Header = memo(({
 
   const displayName = user?.email || user?.name || 'User';
   const roleLabel = user?.roles?.length ? user.roles.join(', ') : null;
+
+  const orgLabel = user?.organization || null;
+
   const [menuOpen, setMenuOpen] = React.useState(false);
 
   return (
@@ -89,7 +92,11 @@ const Header = memo(({
               <User className="h-4 w-4 text-gray-500" />
               <span className="hidden sm:block whitespace-nowrap">
                 {displayName}
-                {roleLabel ? ` (${roleLabel})` : ''}
+                {roleLabel
+                  ? ` (${roleLabel}${orgLabel ? ` / ${orgLabel}` : ''})`
+                  : orgLabel
+                    ? ` (${orgLabel})`
+                    : ''}
               </span>
             </div>
             {/* Menu toggle */}

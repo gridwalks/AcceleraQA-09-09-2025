@@ -81,8 +81,9 @@ class AuthService {
       const user = await this.auth0Client.getUser();
       const claims = await this.auth0Client.getIdTokenClaims();
       const roles = claims?.[AUTH0_CONFIG.ROLES_CLAIM] || [];
+      const organization = claims?.[AUTH0_CONFIG.ORG_CLAIM] || null;
 
-      return { ...user, roles };
+      return { ...user, roles, organization };
     } catch (error) {
       console.error('Error getting user:', error);
       return null;

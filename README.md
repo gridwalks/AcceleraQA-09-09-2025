@@ -193,12 +193,12 @@ JIRA_SERVICE_DESK_ID=your_service_desk_id
 JIRA_REQUEST_TYPE_ID=your_request_type_id
 ```
 
-### Database Migration
+### Vector Store Preparation
 
-Run the Neon database setup script to apply the latest schema changes:
+Run the OpenAI vector store setup script to create a store for RAG document search:
 
 ```bash
-npm run setup:neon
+npm run setup:vectorstore
 ```
 
 ## 🔍 Troubleshooting

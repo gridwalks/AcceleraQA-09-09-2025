@@ -60,7 +60,9 @@ const Header = memo(({
 
   const displayName = user?.email || user?.name || 'User';
   const roleLabel = user?.roles?.length ? user.roles.join(', ') : null;
+
   const orgLabel = user?.organization || null;
+
   const [menuOpen, setMenuOpen] = React.useState(false);
 
   return (

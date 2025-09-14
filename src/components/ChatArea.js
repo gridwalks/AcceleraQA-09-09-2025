@@ -173,7 +173,7 @@ const ChatArea = ({
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask about pharmaceutical quality, compliance, or upload documents for specific guidance..."
+              placeholder="Ask about quality, compliance, or upload documents for specific guidance..."
               className="w-full p-3 sm:p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base min-h-[44px] max-h-32"
               rows={1}
               style={{

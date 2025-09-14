@@ -5,25 +5,17 @@ import { recordTokenUsage } from '../utils/tokenUsage';
 
 class OpenAIService {
   constructor() {
-    this.apiKey = process.env.REACT_APP_OPENAI_API_KEY;
-    this.baseUrl = 'https://api.openai.com/v1';
-  }
-
-  validateApiKey() {
-    if (!this.apiKey) {
-      throw new Error(ERROR_MESSAGES.API_KEY_NOT_CONFIGURED);
-    }
+    // Calls are now routed through a Netlify serverless function which handles
+    // authentication with OpenAI. The client no longer needs direct API key access.
+    this.baseUrl = '/.netlify/functions/openai-file-search';
   }
 
   async makeRequest(endpoint, options = {}, tokenCount = 0) {
-    this.validateApiKey();
-
     const defaultOptions = {
       method: 'POST',
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
         ...(options.headers || {}),
       },
     };
@@ -71,22 +63,21 @@ class OpenAIService {
       // ignore parse errors; fall back to generic message
     }
 
-    const errorMessage = errorData.error?.message || 'Unknown error';
+    const errorMessage =
+      errorData.error?.message ||
+      errorData.error ||
+      errorData.message ||
+      'Unknown error';
 
-    switch (response.status) {
-      case 401:
-        throw new Error(ERROR_MESSAGES.INVALID_API_KEY);
-      case 402:
-        throw new Error(ERROR_MESSAGES.QUOTA_EXCEEDED);
-      case 429: {
-        const msg = typeof ERROR_MESSAGES.RATE_LIMIT_EXCEEDED === 'function'
-          ? ERROR_MESSAGES.RATE_LIMIT_EXCEEDED(tokenCount)
-          : ERROR_MESSAGES.RATE_LIMIT_EXCEEDED;
-        throw new Error(msg);
-      }
-      default:
-        throw new Error(`OpenAI API error: ${response.status} ${errorMessage}`);
+    if (response.status === 429) {
+      const msg = typeof ERROR_MESSAGES.RATE_LIMIT_EXCEEDED === 'function'
+        ? ERROR_MESSAGES.RATE_LIMIT_EXCEEDED(tokenCount)
+        : ERROR_MESSAGES.RATE_LIMIT_EXCEEDED;
+      throw new Error(msg);
     }
+
+    // Serverless layer may return various status codes; surface the message
+    throw new Error(`OpenAI function error: ${response.status} ${errorMessage}`);
   }
 
   createChatPayload(message, model = getCurrentModel()) {
@@ -126,7 +117,6 @@ class OpenAIService {
     const response = await fetch(`${this.baseUrl}/files`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
         'OpenAI-Beta': 'assistants=v2',
       },
       body: formData,
@@ -145,7 +135,6 @@ class OpenAIService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
         'OpenAI-Beta': 'assistants=v2',
       },
       body: JSON.stringify({}),
@@ -164,7 +153,6 @@ class OpenAIService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
         'OpenAI-Beta': 'assistants=v2',
       },
       body: JSON.stringify({ file_id: fileId }),

@@ -42,7 +42,6 @@ describe('openAIService uploadFile', () => {
 
 describe('openAIService getChatResponse', () => {
   beforeEach(() => {
-    openAIService.apiKey = 'test-key';
     jest.spyOn(openAIService, 'makeRequest');
   });
 

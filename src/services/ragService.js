@@ -6,9 +6,7 @@ const API_BASE_URL = '/.netlify/functions';
 
 class RAGService {
   constructor() {
-    this.apiUrl = `${API_BASE_URL}/neon-rag-fixed`;
-    this.maxChunkSize = 1000;
-    this.chunkOverlap = 200;
+    this.apiUrl = `${API_BASE_URL}/openai-file-search`;
   }
 
   async makeAuthenticatedRequest(endpoint, data = {}) {
@@ -174,7 +172,7 @@ class RAGService {
       return {
         success: true,
         data: result,
-        recommendation: 'Neon PostgreSQL RAG system working! Full-text search with persistent storage.'
+        recommendation: 'OpenAI file search system working!'
       };
       
     } catch (error) {
@@ -182,7 +180,7 @@ class RAGService {
       return {
         success: false,
         error: error.message,
-        recommendation: 'Check authentication and database connection'
+        recommendation: 'Check authentication and OpenAI API key'
       };
     }
   }
@@ -209,7 +207,7 @@ class RAGService {
             uploadedAt: new Date().toISOString(),
             originalSize: file.size,
             textLength: text.length,
-            processingMode: 'neon-postgresql',
+            processingMode: 'openai-file-search',
             ...metadata
           }
         }
@@ -354,7 +352,7 @@ class RAGService {
 
       const ragPrompt = `You are AcceleraQA, an AI assistant specialized in pharmaceutical quality and compliance. 
 
-Use the following document context to answer the user's question. The documents have been retrieved using full-text search from a PostgreSQL database and contain relevant information.
+Use the following document context to answer the user's question. The documents have been retrieved using OpenAI file search and contain relevant information.
 
 DOCUMENT CONTEXT:
 ${context.substring(0, 10000)} ${context.length > 10000 ? '...[truncated]' : ''}
@@ -396,8 +394,8 @@ Answer:`;
           totalSources: searchResults.length,
           highScoreSources: highScoreResults.length,
           avgScore: searchResults.reduce((sum, r) => sum + r.similarity, 0) / searchResults.length,
-          searchType: 'full-text-postgresql',
-          processingMode: 'neon-database'
+          searchType: 'openai-file-search',
+          processingMode: 'openai-file-search'
         }
       };
 
@@ -442,7 +440,7 @@ Answer:`;
     try {
       const diagnostics = {
         timestamp: new Date().toISOString(),
-        mode: 'neon-postgresql',
+        mode: 'openai-file-search',
         tests: {}
       };
       
@@ -507,18 +505,17 @@ Answer:`;
         score: (successfulTests / totalTests) * 100,
         status: successfulTests === totalTests ? 'healthy' : 
                 successfulTests > totalTests / 2 ? 'partial' : 'unhealthy',
-        mode: 'neon-postgresql',
+        mode: 'openai-file-search',
         features: {
-          persistentStorage: true,
-          fullTextSearch: true,
-          scalableDatabase: true,
-          backupAndRecovery: true
+          fileSearch: true,
+          vectorStorage: true,
+          cloudAPI: true
         },
         recommendations: []
       };
       
       if (!diagnostics.tests.connectivity?.success) {
-        diagnostics.health.recommendations.push('Check authentication and database connection');
+        diagnostics.health.recommendations.push('Check authentication and OpenAI API key');
       }
       
       if (!diagnostics.tests.search?.success) {
@@ -526,7 +523,7 @@ Answer:`;
       }
       
       if (diagnostics.health.status === 'healthy') {
-        diagnostics.health.recommendations.push('System working well! Neon PostgreSQL provides robust, scalable document storage and search.');
+        diagnostics.health.recommendations.push('System working well! OpenAI file search is ready.');
       }
       
       return diagnostics;
@@ -535,7 +532,7 @@ Answer:`;
       console.error('Error running diagnostics:', error);
       return {
         timestamp: new Date().toISOString(),
-        mode: 'neon-postgresql',
+        mode: 'openai-file-search',
         health: {
           score: 0,
           status: 'error',
@@ -547,9 +544,9 @@ Answer:`;
 
   async testUpload() {
     try {
-      const testContent = `Test Document for AcceleraQA Neon RAG System
+      const testContent = `Test Document for AcceleraQA OpenAI File Search
 
-This is a comprehensive test document to verify the Neon PostgreSQL upload functionality works correctly.
+This is a comprehensive test document to verify the OpenAI upload functionality works correctly.
 
 Key Topics Covered:
 - Good Manufacturing Practice (GMP) compliance requirements
@@ -557,21 +554,21 @@ Key Topics Covered:
 - Process Validation lifecycle and documentation
 - Regulatory Compliance with FDA and ICH guidelines
 
-This test ensures the Neon RAG system can process documents efficiently and provide reliable search functionality for pharmaceutical quality professionals.`;
+This test ensures the OpenAI file search system can process documents efficiently and provide reliable search functionality for pharmaceutical quality professionals.`;
 
       const testFile = new File([testContent], 'neon-test-document.txt', { type: 'text/plain' });
       
       const result = await this.uploadDocument(testFile, {
         category: 'test',
-        tags: ['test', 'neon-verification', 'postgresql'],
+        tags: ['test', 'openai-verification', 'file-search'],
         testDocument: true,
-        description: 'Test document for Neon PostgreSQL RAG system'
+        description: 'Test document for OpenAI file search system'
       });
       
       return {
         success: true,
         uploadResult: result,
-        message: 'Test upload to Neon completed successfully'
+        message: 'Test upload to OpenAI completed successfully'
       };
       
     } catch (error) {
@@ -579,7 +576,7 @@ This test ensures the Neon RAG system can process documents efficiently and prov
       return {
         success: false,
         error: error.message,
-        message: 'Test upload to Neon failed'
+        message: 'Test upload to OpenAI failed'
       };
     }
   }
@@ -594,7 +591,7 @@ This test ensures the Neon RAG system can process documents efficiently and prov
       return {
         success: true,
         searchResult: searchResult,
-        message: `Search test completed - found ${searchResult.results?.length || 0} results using PostgreSQL full-text search`
+        message: `Search test completed - found ${searchResult.results?.length || 0} results using OpenAI file search`
       };
       
     } catch (error) {

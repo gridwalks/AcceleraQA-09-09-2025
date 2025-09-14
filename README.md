@@ -87,8 +87,8 @@ REACT_APP_AUTH0_AUDIENCE=your_api_audience
 REACT_APP_AUTH0_ROLES_CLAIM=https://your-domain.com/roles
 REACT_APP_AUTH0_ORG_CLAIM=https://your-domain.com/org
 
-# Neon PostgreSQL (Required for database features)
-NEON_DATABASE_URL=postgresql://username:password@hostname/database?sslmode=require
+# OpenAI API (Required for file search features)
+OPENAI_API_KEY=sk-your_openai_api_key
 
 # Jira Service Desk (Optional)
 JIRA_API_EMAIL=your_atlassian_email

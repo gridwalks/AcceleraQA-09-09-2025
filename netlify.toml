@@ -52,12 +52,11 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# Function settings - Updated for ES Modules and Neon
+# Function settings - Updated for ES Modules
 [functions]
-  external_node_modules = ["@neondatabase/serverless", "mammoth", "jsonwebtoken", "jwks-rsa"]
+  external_node_modules = ["mammoth", "jsonwebtoken", "jwks-rsa"]
   node_bundler = "esbuild"
   directory = "netlify/functions"
 
 # Environment variables needed for functions (add these in Netlify dashboard)
-# NEON_DATABASE_URL = "postgresql://..."
-# REACT_APP_OPENAI_API_KEY = "sk-..."
+# OPENAI_API_KEY = "sk-..."

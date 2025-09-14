@@ -12,6 +12,7 @@ import RAGConfigurationPage from './components/RAGConfigurationPage';
 import AdminScreen from './components/AdminScreen';
 import NotebookOverlay from './components/NotebookOverlay';
 import SupportRequestOverlay from './components/SupportRequestOverlay';
+import Footer from './components/Footer';
 
 // Utility
 import { v4 as uuidv4 } from 'uuid';
@@ -427,7 +428,7 @@ function App() {
         <AdminScreen onBack={handleCloseAdmin} user={user} />
       ) : (
         <>
-          <div className="min-h-screen bg-gray-50">
+          <div className="min-h-screen bg-gray-50 flex flex-col">
             {/* Header remains the same */}
             <Header
               user={user}
@@ -441,7 +442,7 @@ function App() {
             />
 
             {/* Main Layout */}
-            <div className="h-[calc(100vh-64px)]">
+            <div className="flex-1">
               {/* Mobile Layout (stacked vertically) */}
               <div className="lg:hidden h-full flex flex-col">
                 {/* Chat takes most space on mobile */}
@@ -514,6 +515,7 @@ function App() {
                 </div>
               </div>
             </div>
+            <Footer />
           </div>
 
           {/* Notebook Overlay */}

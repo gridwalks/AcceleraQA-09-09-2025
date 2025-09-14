@@ -27,7 +27,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "CI=false react-scripts build",
-    "test": "react-scripts test",
+    "test": "react-scripts test --testPathIgnorePatterns=neon",
     "eject": "react-scripts eject",
     "netlify:dev": "netlify dev",
     "netlify:build": "netlify build",

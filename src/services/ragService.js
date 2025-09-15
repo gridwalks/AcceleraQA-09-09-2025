@@ -2,44 +2,13 @@
 import openaiService from './openaiService';
 import { getToken, getUserId } from './authService';
 import { getCurrentModel } from '../config/modelConfig';
-import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION } from '../config/ragConfig';
-
-const USER_DOCS_PREFIX = 'rag_docs_';
-const VECTOR_STORE_PREFIX = 'openai_vector_store_id_';
+import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION, RAG_DOCS_FUNCTION } from '../config/ragConfig';
 
 const DEFAULT_NEON_ENDPOINTS = Array.from(new Set([
   NEON_RAG_FUNCTION,
   '/.netlify/functions/neon-rag-fixed',
   '/.netlify/functions/neon-rag',
 ]));
-
-
-function getUserDocsKey(userId) {
-  return `${USER_DOCS_PREFIX}${userId}`;
-}
-
-function getVectorStoreKey(userId) {
-  return `${VECTOR_STORE_PREFIX}${userId}`;
-}
-
-function loadUserDocs(userId) {
-  if (!userId || typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(getUserDocsKey(userId));
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveUserDocs(userId, docs) {
-  if (!userId || typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(getUserDocsKey(userId), JSON.stringify(docs));
-  } catch {
-    /* ignore */
-  }
-}
 
 class RAGService {
   constructor() {
@@ -49,6 +18,7 @@ class RAGService {
     this.backend = RAG_BACKEND;
     this.neonEndpoints = DEFAULT_NEON_ENDPOINTS;
     this.activeNeonEndpointIndex = 0;
+    this.docsEndpoint = RAG_DOCS_FUNCTION;
   }
 
   isNeonBackend() {
@@ -123,20 +93,81 @@ class RAGService {
 
   }
 
+  async makeDocumentMetadataRequest(action, userId, payload = {}) {
+    if (!this.docsEndpoint) {
+      throw new Error('Document metadata endpoint is not configured');
+    }
+
+    if (!action) {
+      throw new Error('Action is required for document metadata requests');
+    }
+
+    const resolvedUserId = userId || (await getUserId());
+    if (!resolvedUserId) {
+      throw new Error('User ID is required for document metadata operations');
+    }
+
+    let token;
+    try {
+      token = await getToken();
+    } catch (error) {
+      console.error('Failed to fetch token for document metadata request:', error);
+      throw new Error(`Authentication failed: ${error.message}`);
+    }
+
+    const requestBody = JSON.stringify({ action, ...payload });
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'x-user-id': resolvedUserId,
+    };
+
+    let response;
+    try {
+      response = await fetch(this.docsEndpoint, {
+        method: 'POST',
+        headers,
+        body: requestBody,
+      });
+    } catch (error) {
+      console.error('Document metadata request failed:', error);
+      throw new Error('Unable to reach document metadata service');
+    }
+
+    if (!response.ok) {
+      let errorMessage = `Request failed with status ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } catch (parseError) {
+        console.warn('Failed to parse document metadata error response:', parseError);
+      }
+      throw new Error(errorMessage);
+    }
+
+    return await response.json();
+  }
+
   async getVectorStoreId(userId) {
     if (!userId) throw new Error('User ID is required');
+    if (this.isNeonBackend()) {
+      return null;
+    }
     if (this.vectorStoreId && this.vectorStoreUserId === userId) {
       return this.vectorStoreId;
     }
-    const key = getVectorStoreKey(userId);
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = await openaiService.createVectorStore();
-      localStorage.setItem(key, id);
+
+    const response = await this.makeDocumentMetadataRequest('get_vector_store', userId);
+    let vectorStoreId = response?.vectorStoreId || response?.vector_store_id || null;
+
+    if (!vectorStoreId) {
+      vectorStoreId = await openaiService.createVectorStore();
+      await this.makeDocumentMetadataRequest('set_vector_store', userId, { vectorStoreId });
     }
-    this.vectorStoreId = id;
+
+    this.vectorStoreId = vectorStoreId;
     this.vectorStoreUserId = userId;
-    return id;
+    return vectorStoreId;
   }
 
   async testConnection(userId) {
@@ -158,13 +189,24 @@ class RAGService {
     }
 
     try {
+      await this.makeDocumentMetadataRequest('health', userId);
+    } catch (error) {
+      console.error('Document metadata health check failed:', error);
+      return {
+        success: false,
+        error: error.message,
+        recommendation: 'Verify Neon database connectivity for document metadata storage',
+      };
+    }
+
+    try {
       await openaiService.makeRequest('/files', {
         method: 'GET',
         headers: { 'OpenAI-Beta': 'assistants=v2' },
       });
       return {
         success: true,
-        recommendation: 'OpenAI file search API reachable.',
+        recommendation: 'OpenAI file search API reachable. Document metadata service reachable.',
       };
     } catch (error) {
       console.error('RAG connection test failed:', error);
@@ -213,6 +255,7 @@ class RAGService {
 
     const docInfo = {
       id: fileId,
+      fileId,
       filename: file.name,
       type: file.type,
       size: file.size,
@@ -222,13 +265,35 @@ class RAGService {
         processingMode: 'openai-file-search',
         ...metadata,
       },
+      vectorStoreId,
     };
 
-    const existing = loadUserDocs(userId);
-    existing.push(docInfo);
-    saveUserDocs(userId, existing);
+    let savedDocument = docInfo;
+    try {
+      const response = await this.makeDocumentMetadataRequest('save_document', userId, {
+        document: docInfo,
+        vectorStoreId,
+      });
+      savedDocument = response?.document || docInfo;
+    } catch (error) {
+      console.error('Failed to persist document metadata. Rolling back OpenAI upload.', error);
+      try {
+        await openaiService.makeRequest(`/files/${fileId}`, {
+          method: 'DELETE',
+          headers: { 'OpenAI-Beta': 'assistants=v2' },
+        });
+      } catch (cleanupError) {
+        console.error('Failed to remove uploaded file after metadata error:', cleanupError);
+      }
+      throw error;
+    }
 
-    return { fileId, vectorStoreId, metadata: docInfo.metadata };
+    return {
+      fileId,
+      vectorStoreId,
+      metadata: savedDocument?.metadata || docInfo.metadata,
+      document: savedDocument,
+    };
   }
 
   async getDocuments(userId) {
@@ -240,19 +305,43 @@ class RAGService {
       return response?.documents || [];
     }
 
-    const userDocs = loadUserDocs(userId);
-    if (!userId) return userDocs;
+    const resolvedUserId = userId || (await getUserId());
+    if (!resolvedUserId) {
+      throw new Error('User ID is required to list documents');
+    }
+
+    let documents = [];
+    try {
+      const response = await this.makeDocumentMetadataRequest('list_documents', resolvedUserId);
+      documents = response?.documents || [];
+    } catch (error) {
+      console.error('Failed to retrieve persisted documents:', error);
+      throw new Error(`Failed to load documents: ${error.message}`);
+    }
+
     try {
       const data = await openaiService.makeRequest('/files', {
         method: 'GET',
         headers: { 'OpenAI-Beta': 'assistants=v2' },
       });
       const ids = new Set((data.data || []).map(f => f.id));
-      const filtered = userDocs.filter(d => ids.has(d.id));
-      if (filtered.length !== userDocs.length) saveUserDocs(userId, filtered);
-      return filtered;
-    } catch {
-      return userDocs;
+      const syncedDocuments = documents.filter(doc => ids.has(doc.id));
+
+      if (syncedDocuments.length !== documents.length) {
+        const missingDocuments = documents.filter(doc => !ids.has(doc.id));
+        await Promise.all(
+          missingDocuments.map(doc =>
+            this.makeDocumentMetadataRequest('delete_document', resolvedUserId, { documentId: doc.id }).catch(syncError => {
+              console.warn('Failed to prune missing document metadata:', syncError);
+            })
+          )
+        );
+      }
+
+      return syncedDocuments;
+    } catch (error) {
+      console.warn('Failed to synchronize document metadata with OpenAI:', error);
+      return documents;
     }
   }
 
@@ -265,12 +354,17 @@ class RAGService {
       return { success: true };
     }
 
+    const resolvedUserId = userId || (await getUserId());
     await openaiService.makeRequest(`/files/${documentId}`, {
       method: 'DELETE',
       headers: { 'OpenAI-Beta': 'assistants=v2' },
     });
-    const remaining = loadUserDocs(userId).filter(d => d.id !== documentId);
-    saveUserDocs(userId, remaining);
+
+    try {
+      await this.makeDocumentMetadataRequest('delete_document', resolvedUserId, { documentId });
+    } catch (error) {
+      console.warn('Failed to remove document metadata after deletion:', error);
+    }
     return { success: true };
   }
 

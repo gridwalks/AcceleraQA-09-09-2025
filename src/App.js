@@ -76,11 +76,11 @@ function App() {
   useEffect(() => {
     const initAuth = async () => {
       setLoading(true);
-      await initializeAuth(
+      const authUser = await initializeAuth(
         (authUser) => setUser(authUser),
         () => {}
       );
-      const authStatus = await authService.isAuthenticated();
+      const authStatus = !!authUser;
       setIsAuthenticated(authStatus);
       if (!authStatus) {
         setUser(null);

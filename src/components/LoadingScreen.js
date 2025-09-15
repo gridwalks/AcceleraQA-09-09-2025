@@ -15,7 +15,7 @@ const LoadingScreen = memo(() => {
           height="40"
           className="mx-auto mb-4"
         />
-        <p className="text-lg text-gray-300 mb-2">Loading your pharmaceutical AI assistant...</p>
+        <p className="text-lg text-gray-300 mb-2">Loading your Quality AI assistant...</p>
         <p className="text-sm text-gray-500">Initializing secure authentication</p>
       </div>
     </div>

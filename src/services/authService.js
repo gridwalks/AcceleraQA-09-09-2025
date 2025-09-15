@@ -28,7 +28,9 @@ class AuthService {
           redirect_uri: AUTH0_CONFIG.REDIRECT_URI,
           audience: AUTH0_CONFIG.AUDIENCE,
           scope: AUTH0_CONFIG.SCOPE
-        }
+        },
+        cacheLocation: 'localstorage',
+        useRefreshTokens: true
       });
 
       this.isInitialized = true;

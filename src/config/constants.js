@@ -36,7 +36,7 @@ export const AUTH0_CONFIG = {
   ORG_CLAIM: process.env.REACT_APP_AUTH0_ORG_CLAIM,
   REDIRECT_URI: window.location.origin,
   LOGOUT_URI: window.location.origin,
-  SCOPE: 'openid profile email'
+  SCOPE: 'openid profile email offline_access'
 };
 
 // UI Constants

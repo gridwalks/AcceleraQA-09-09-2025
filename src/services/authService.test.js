@@ -5,6 +5,34 @@ import { hasAdminRole } from '../utils/auth';
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
+describe('AuthService initialize', () => {
+  beforeEach(() => {
+    jest.resetModules();
+  });
+  afterEach(() => {
+    jest.dontMock('@auth0/auth0-spa-js');
+  });
+
+  it('stores tokens in local storage with refresh support', async () => {
+    process.env.REACT_APP_AUTH0_DOMAIN = 'test.auth0.com';
+    process.env.REACT_APP_AUTH0_CLIENT_ID = 'abc123';
+
+    const createAuth0Client = jest.fn().mockResolvedValue({});
+    jest.doMock('@auth0/auth0-spa-js', () => ({ createAuth0Client }));
+
+    const authService = (await import('./authService')).default;
+
+    await authService.initialize();
+
+    expect(createAuth0Client).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cacheLocation: 'localstorage',
+        useRefreshTokens: true
+      })
+    );
+  });
+});
+
 describe('AuthService getUser', () => {
   beforeEach(() => {
     jest.resetModules();

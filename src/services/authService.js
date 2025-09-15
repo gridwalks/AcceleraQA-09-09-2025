@@ -74,11 +74,13 @@ class AuthService {
     }
 
     try {
-      const isAuth = await this.isAuthenticated();
-      if (!isAuth) {
+      // Attempt to retrieve the user directly. This will also trigger a
+      // session check with Auth0 so users remain logged in after a refresh.
+      const user = await this.auth0Client.getUser();
+      if (!user) {
         return null;
       }
-      const user = await this.auth0Client.getUser();
+
       const claims = await this.auth0Client.getIdTokenClaims();
       const roles = claims?.[AUTH0_CONFIG.ROLES_CLAIM] || [];
       const organization = claims?.[AUTH0_CONFIG.ORG_CLAIM] || null;
@@ -289,16 +291,16 @@ export default authService;
 export const initializeAuth = async (setUser, setIsLoadingAuth, initializeWelcomeMessage) => {
   try {
     await authService.initialize();
-    
+
     // Check if user is returning from redirect
     const query = window.location.search;
     if (query.includes("code=") && query.includes("state=")) {
       await authService.handleRedirectCallback();
     }
 
-    // Check if user is authenticated
+    // Attempt to retrieve the user; this triggers session restoration if possible
     const user = await authService.getUser();
-    
+
     if (user) {
       setUser(user);
       // Only call initializeWelcomeMessage if it's provided
@@ -306,11 +308,13 @@ export const initializeAuth = async (setUser, setIsLoadingAuth, initializeWelcom
         initializeWelcomeMessage();
       }
     }
-    
+
     setIsLoadingAuth(false);
+    return user;
   } catch (error) {
     console.error('Auth initialization error:', error);
     setIsLoadingAuth(false);
+    return null;
   }
 };
 

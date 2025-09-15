@@ -34,6 +34,26 @@ describe('AuthService getUser', () => {
       organization: 'Acme Corp'
     });
   });
+
+  it('retrieves user even when initial authentication check would fail', async () => {
+    const authService = require('./authService').default;
+
+    authService.auth0Client = {
+      getUser: jest.fn().mockResolvedValue({ sub: 'user456', name: 'Another User' }),
+      getIdTokenClaims: jest.fn().mockResolvedValue({})
+    };
+    authService.isAuthenticated = jest.fn().mockResolvedValue(false);
+
+    const result = await authService.getUser();
+
+    expect(authService.auth0Client.getUser).toHaveBeenCalled();
+    expect(result).toEqual({
+      sub: 'user456',
+      name: 'Another User',
+      roles: [],
+      organization: null
+    });
+  });
 });
 
 describe('hasAdminRole', () => {

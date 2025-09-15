@@ -20,6 +20,13 @@ import {
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
+import {
+  getRagBackendLabel,
+  getRagSearchDescription,
+  isNeonBackend,
+  NEON_DB_FUNCTION,
+  NEON_RAG_FUNCTION,
+} from '../config/ragConfig';
 
 const RAGConfigurationPage = ({ user, onClose }) => {
   const [documents, setDocuments] = useState([]);
@@ -39,7 +46,11 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     tags: '',
     category: 'general'
   });
-  
+
+  const ragBackendLabel = getRagBackendLabel();
+  const ragSearchDescription = getRagSearchDescription();
+  const neonBackendEnabled = isNeonBackend();
+
 
   // Enhanced authentication debugging
   const checkAuthentication = useCallback(async () => {
@@ -153,7 +164,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
       console.log('Testing RAG connection with auth info:', authInfo);
       
-      const result = await ragService.testConnection();
+      const result = await ragService.testConnection(user?.sub);
       console.log('RAG test result:', result);
       
       setDebugInfo({
@@ -184,7 +195,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     loadDocuments();
     testConnection();
     checkAuthentication();
-  }, [loadDocuments, checkAuthentication]);
+  }, [loadDocuments, checkAuthentication, user]);
 
 
   const handleFileSelect = (event) => {
@@ -351,7 +362,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         return;
       }
 
-      const ragResponse = await ragService.generateRAGResponse(searchQuery, user?.sub);
+
+      const ragResponse = await ragService.generateRAGResponse(searchQuery, user?.sub, { searchResults });
+
       
       const newWindow = window.open('', '_blank');
       newWindow.document.write(`
@@ -586,7 +599,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
               <div className="bg-gray-50 p-6 rounded-lg">
                 <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
                   <Upload className="h-5 w-5" />
-                  <span>Upload Document (OpenAI File Search Storage)</span>
+                  <span>Upload Document ({ragBackendLabel} Storage)</span>
                 </h3>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -602,7 +615,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
                     <p className="text-xs text-gray-500 mt-1">
-                      Persistent storage with OpenAI File Search backend and full-text search
+                      Persistent storage with the {ragBackendLabel} backend
                     </p>
                   </div>
 
@@ -722,8 +735,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         <div className="text-sm text-gray-600 space-y-1">
                           <p><span className="font-medium">Category:</span> {doc.metadata?.category || 'General'}</p>
                           <p><span className="font-medium">Uploaded:</span> {new Date(doc.createdAt).toLocaleDateString()}</p>
-                          <p><span className="font-medium">Storage:</span> OpenAI File Search</p>
-                          <p><span className="font-medium">Search:</span> Full-text indexed</p>
+                          <p><span className="font-medium">Storage:</span> {ragBackendLabel}</p>
+                          <p><span className="font-medium">Search:</span> {neonBackendEnabled ? 'PostgreSQL full-text search' : 'OpenAI vector search'}</p>
                           {doc.metadata?.tags && doc.metadata.tags.length > 0 && (
                             <div className="flex items-center space-x-1 mt-2">
                               <span className="font-medium">Tags:</span>
@@ -749,7 +762,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
               <div className="bg-gray-50 p-6 rounded-lg">
                 <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
                   <Search className="h-5 w-5" />
-                  <span>Search Documents (OpenAI File Search)</span>
+                  <span>Search Documents ({ragBackendLabel})</span>
                 </h3>
 
                 <div className="flex space-x-4 mb-4">
@@ -789,7 +802,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 </div>
 
                 <p className="text-sm text-gray-600">
-                  Search your uploaded documents using PostgreSQL full-text search with ranking. "Test RAG" will generate an AI response using the search results as context.
+                  {ragSearchDescription} "Test RAG" will generate an AI response using the search results as context.
                 </p>
                 
                 {!debugInfo?.success && (
@@ -825,7 +838,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                           {result.text}
                         </p>
                         <div className="mt-2 text-xs text-gray-500">
-                          Chunk {result.chunkIndex + 1} • Document ID: {result.documentId} • Storage: PostgreSQL
+                          Chunk {result.chunkIndex + 1} • Document ID: {result.documentId} • Storage: {neonBackendEnabled ? 'PostgreSQL' : 'OpenAI Vector Store'}
                         </div>
                       </div>
                     ))}
@@ -942,15 +955,15 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     <h4 className="font-medium text-gray-800 mb-2">Function Endpoints</h4>
                     <div className="p-3 bg-white border rounded-md space-y-2">
                       <p className="text-sm">
-                        <strong>OpenAI RAG Function:</strong>
+                        <strong>RAG Function Endpoint:</strong>
                         <code className="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">
-                          {window.location.origin}/.netlify/functions/neon-rag
+                          {`${window.location.origin}${NEON_RAG_FUNCTION}`}
                         </code>
                       </p>
                       <p className="text-sm">
-                        <strong>OpenAI DB Function:</strong>
+                        <strong>Database Function Endpoint:</strong>
                         <code className="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">
-                          {window.location.origin}/.netlify/functions/neon-db
+                          {`${window.location.origin}${NEON_DB_FUNCTION}`}
                         </code>
                       </p>
                     </div>
@@ -960,8 +973,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     <h4 className="font-medium text-gray-800 mb-2">System Capabilities</h4>
                     <div className="p-3 bg-white border rounded-md">
                       <ul className="text-sm space-y-1 text-gray-600">
-                        <li>✅ OpenAI File Search storage</li>
-                        <li>✅ Full-text search with ranking</li>
+                        <li>✅ {neonBackendEnabled ? 'Neon PostgreSQL storage' : 'OpenAI File Search storage'}</li>
+                        <li>✅ {neonBackendEnabled ? 'PostgreSQL full-text search with ranking' : 'OpenAI vector search with ranking'}</li>
                         <li>✅ Document persistence across sessions</li>
                         <li>✅ RAG response generation</li>
                         <li>✅ Advanced conversation analytics</li>

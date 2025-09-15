@@ -3,10 +3,11 @@ import { TextEncoder, TextDecoder } from 'util';
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 const mockGetToken = jest.fn();
+const mockGetUserId = jest.fn().mockResolvedValue('test-user');
 let RAGService;
 let pdfSupported = false;
 beforeAll(async () => {
-  await jest.unstable_mockModule('./authService', () => ({ getToken: mockGetToken, default: {} }));
+  await jest.unstable_mockModule('./authService', () => ({ getToken: mockGetToken, getUserId: mockGetUserId, default: {} }));
   ({ default: RAGService } = await import('./ragService'));
 });
 

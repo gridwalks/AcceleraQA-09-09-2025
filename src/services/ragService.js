@@ -1,9 +1,18 @@
 // src/services/ragService.js - RAG service using OpenAI file search APIs
 import openaiService from './openaiService';
+import { getToken, getUserId } from './authService';
 import { getCurrentModel } from '../config/modelConfig';
+import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION } from '../config/ragConfig';
 
 const USER_DOCS_PREFIX = 'rag_docs_';
 const VECTOR_STORE_PREFIX = 'openai_vector_store_id_';
+
+const DEFAULT_NEON_ENDPOINTS = Array.from(new Set([
+  NEON_RAG_FUNCTION,
+  '/.netlify/functions/neon-rag-fixed',
+  '/.netlify/functions/neon-rag',
+]));
+
 
 function getUserDocsKey(userId) {
   return `${USER_DOCS_PREFIX}${userId}`;
@@ -37,6 +46,81 @@ class RAGService {
     this.apiUrl = openaiService.baseUrl;
     this.vectorStoreId = null;
     this.vectorStoreUserId = null;
+    this.backend = RAG_BACKEND;
+    this.neonEndpoints = DEFAULT_NEON_ENDPOINTS;
+    this.activeNeonEndpointIndex = 0;
+  }
+
+  isNeonBackend() {
+    return this.backend === RAG_BACKENDS.NEON;
+  }
+
+  async makeNeonRequest(action, userId, payload = {}) {
+    if (!this.isNeonBackend()) {
+      throw new Error('Neon RAG backend is not enabled');
+    }
+
+    const resolvedUserId = userId || (await getUserId());
+    if (!resolvedUserId) {
+      throw new Error('User ID is required for Neon RAG operations');
+    }
+
+    let token;
+    try {
+      token = await getToken();
+    } catch (error) {
+      console.error('Failed to fetch token for Neon request:', error);
+      throw new Error(`Authentication failed: ${error.message}`);
+    }
+
+    const requestBody = JSON.stringify({ action, ...payload });
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'x-user-id': resolvedUserId,
+    };
+
+    let lastError;
+
+    for (let i = this.activeNeonEndpointIndex; i < this.neonEndpoints.length; i++) {
+      const endpoint = this.neonEndpoints[i];
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: requestBody,
+        });
+
+        if (response.status === 404 && i < this.neonEndpoints.length - 1) {
+          lastError = new Error('Neon RAG endpoint not found');
+          this.activeNeonEndpointIndex = i + 1;
+          continue;
+        }
+
+        if (!response.ok) {
+          let errorMessage = `Request failed with status ${response.status}`;
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorData.message || errorMessage;
+          } catch (parseError) {
+            console.warn('Failed to parse Neon error response:', parseError);
+          }
+          throw new Error(errorMessage);
+        }
+
+        this.activeNeonEndpointIndex = i;
+        return await response.json();
+      } catch (error) {
+        lastError = error;
+        console.error('Neon request failed:', error);
+        if (i === this.neonEndpoints.length - 1) {
+          throw lastError;
+        }
+      }
+    }
+
+    throw lastError || new Error('Neon RAG request failed');
+
   }
 
   async getVectorStoreId(userId) {
@@ -55,7 +139,24 @@ class RAGService {
     return id;
   }
 
-  async testConnection() {
+  async testConnection(userId) {
+    if (this.isNeonBackend()) {
+      try {
+        const result = await this.makeNeonRequest('test', userId);
+        return {
+          success: true,
+          recommendation: 'Neon RAG service reachable.',
+          message: result?.message || 'Connection established',
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.message,
+          recommendation: 'Verify Neon database connectivity and authentication headers',
+        };
+      }
+    }
+
     try {
       await openaiService.makeRequest('/files', {
         method: 'GET',
@@ -77,6 +178,34 @@ class RAGService {
 
   async uploadDocument(file, metadata = {}, userId) {
     if (!file) throw new Error('File is required');
+
+    if (this.isNeonBackend()) {
+      if (!userId) {
+        throw new Error('User ID is required to upload documents');
+      }
+
+      const textContent = await this.extractTextFromFile(file);
+      const documentPayload = {
+        filename: file.name,
+        size: file.size,
+        type: file.type,
+        text: textContent,
+        metadata: {
+          processingMode: 'neon-postgresql',
+          ...metadata,
+        },
+      };
+
+      const response = await this.makeNeonRequest('upload', userId, {
+        document: documentPayload,
+      });
+
+      return {
+        ...response,
+        metadata: documentPayload.metadata,
+        storage: 'neon-postgresql',
+      };
+    }
 
     const fileId = await openaiService.uploadFile(file);
     const vectorStoreId = await this.getVectorStoreId(userId);
@@ -103,6 +232,14 @@ class RAGService {
   }
 
   async getDocuments(userId) {
+    if (this.isNeonBackend()) {
+      if (!userId) {
+        throw new Error('User ID is required to list documents');
+      }
+      const response = await this.makeNeonRequest('list', userId);
+      return response?.documents || [];
+    }
+
     const userDocs = loadUserDocs(userId);
     if (!userId) return userDocs;
     try {
@@ -120,6 +257,14 @@ class RAGService {
   }
 
   async deleteDocument(documentId, userId) {
+    if (this.isNeonBackend()) {
+      if (!userId) {
+        throw new Error('User ID is required to delete documents');
+      }
+      await this.makeNeonRequest('delete', userId, { documentId });
+      return { success: true };
+    }
+
     await openaiService.makeRequest(`/files/${documentId}`, {
       method: 'DELETE',
       headers: { 'OpenAI-Beta': 'assistants=v2' },
@@ -172,6 +317,21 @@ class RAGService {
 
   async searchDocuments(query, options = {}, userId) {
     if (!query || !query.trim()) throw new Error('Search query is required');
+
+    if (this.isNeonBackend()) {
+      if (!userId) {
+        throw new Error('User ID is required to search documents');
+      }
+      const payload = {
+        query: query.trim(),
+        options: {
+          limit: options.limit || 10,
+          ...options,
+        },
+      };
+      return await this.makeNeonRequest('search', userId, payload);
+    }
+
     const vectorStoreId = await this.getVectorStoreId(userId);
 
     const result = await openaiService.makeRequest(`/vector_stores/${vectorStoreId}/search`, {
@@ -185,7 +345,12 @@ class RAGService {
     return result;
   }
 
-  async generateRAGResponse(query, userId) {
+  async generateRAGResponse(query, userId, options = {}) {
+    if (this.isNeonBackend()) {
+      return this.generateNeonRagResponse(query, userId, options);
+    }
+
+
     const vectorStoreId = await this.getVectorStoreId(userId);
 
     const body = {
@@ -220,6 +385,82 @@ class RAGService {
     };
   }
 
+  async generateNeonRagResponse(query, userId, options = {}) {
+    if (!userId) {
+      throw new Error('User ID is required for Neon RAG responses');
+    }
+
+    const trimmedQuery = (query || '').trim();
+    if (!trimmedQuery) {
+      throw new Error('Search query is required');
+    }
+
+    const searchOptions = {
+      limit: options.limit || options?.searchOptions?.limit || 5,
+      ...options.searchOptions,
+    };
+
+    const searchResult = options.searchResults ||
+      (await this.makeNeonRequest('search', userId, {
+        query: trimmedQuery,
+        options: searchOptions,
+      }));
+
+    const results = searchResult?.results || [];
+
+    if (results.length === 0) {
+      return {
+        answer: 'No relevant documents were found for your question.',
+        sources: [],
+        resources: [],
+        ragMetadata: {
+          totalSources: 0,
+          processingMode: 'neon-postgresql',
+        },
+      };
+    }
+
+    const contextSections = results
+      .map((result, index) => {
+        const snippet = (result.text || '').trim();
+        return `Source ${index + 1}: ${result.filename} (chunk ${result.chunkIndex + 1})\n${snippet}`;
+      })
+      .join('\n\n');
+
+    const prompt = [
+      'You are AcceleraQA, an expert assistant for pharmaceutical quality and compliance.',
+      'Use only the provided document excerpts to answer the user question. Cite the document name when referencing a source.',
+      'If the excerpts do not contain enough information, say so clearly.',
+      '',
+      'Document excerpts:',
+      contextSections,
+      '',
+      `Question: ${trimmedQuery}`,
+      '',
+      'Answer:',
+    ].join('\n');
+
+    const aiResult = await openaiService.getChatResponse(prompt);
+    const answer = aiResult?.answer || '';
+    const resources = aiResult?.resources || [];
+
+    const sources = results.map((result, index) => ({
+      ...result,
+      sourceId: `${result.documentId}:${result.chunkIndex}`,
+      index,
+    }));
+
+    return {
+      answer,
+      sources,
+      resources,
+      ragMetadata: {
+        totalSources: sources.length,
+        processingMode: 'neon-postgresql',
+      },
+    };
+  }
+
   async search(query, userId, options = {}) {
     try {
       const response = await this.generateRAGResponse(query, userId, options);
@@ -235,11 +476,95 @@ class RAGService {
   }
 
   async getStats(userId) {
+    if (this.isNeonBackend()) {
+      if (!userId) {
+        throw new Error('User ID is required to retrieve Neon stats');
+      }
+      const stats = await this.makeNeonRequest('stats', userId);
+      return stats || { totalDocuments: 0, totalChunks: 0, totalSize: 0 };
+    }
+
     const documents = await this.getDocuments(userId);
     return { totalDocuments: documents.length };
   }
 
-  async runDiagnostics() {
+  async runDiagnostics(userId) {
+    if (this.isNeonBackend()) {
+      const diagnostics = {
+        timestamp: new Date().toISOString(),
+        mode: 'neon-postgresql',
+        tests: {},
+      };
+
+      try {
+        diagnostics.tests.connectivity = await this.testConnection(userId);
+      } catch (error) {
+        diagnostics.tests.connectivity = { success: false, error: error.message };
+      }
+
+      try {
+        const documents = await this.getDocuments(userId);
+        diagnostics.tests.documentListing = {
+          success: true,
+          documentCount: documents.length,
+        };
+      } catch (error) {
+        diagnostics.tests.documentListing = { success: false, error: error.message };
+      }
+
+      try {
+        const searchResult = await this.searchDocuments('pharmaceutical quality gmp', { limit: 3 }, userId);
+        const resultCount = Array.isArray(searchResult?.results) ? searchResult.results.length : 0;
+        diagnostics.tests.search = {
+          success: resultCount > 0,
+          resultsFound: resultCount,
+          searchType: 'full-text',
+        };
+      } catch (error) {
+        diagnostics.tests.search = { success: false, error: error.message };
+      }
+
+      try {
+        diagnostics.tests.stats = { success: true, ...(await this.getStats(userId)) };
+      } catch (error) {
+        diagnostics.tests.stats = { success: false, error: error.message };
+      }
+
+      const successful = Object.values(diagnostics.tests).filter(test => test.success).length;
+      const total = Object.keys(diagnostics.tests).length;
+
+      diagnostics.health = {
+        score: total === 0 ? 0 : (successful / total) * 100,
+        status:
+          successful === total
+            ? 'healthy'
+            : successful >= Math.ceil(total / 2)
+            ? 'partial'
+            : 'unhealthy',
+        mode: 'neon-postgresql',
+        features: {
+          databaseStorage: true,
+          fullTextSearch: true,
+          openAIIntegration: true,
+        },
+        recommendations: [],
+      };
+
+      if (!diagnostics.tests.connectivity?.success) {
+        diagnostics.health.recommendations.push('Check Neon database URL and credentials');
+      }
+
+      if (!diagnostics.tests.search?.success) {
+        diagnostics.health.recommendations.push('Upload documents to enable Neon search results');
+      }
+
+      if (diagnostics.health.status === 'healthy') {
+        diagnostics.health.recommendations.push('Neon-backed RAG system operational');
+      }
+
+      return diagnostics;
+    }
+
     try {
       const diagnostics = {
         timestamp: new Date().toISOString(),
@@ -249,7 +574,7 @@ class RAGService {
 
       // Connectivity test
       try {
-        const connectionTest = await this.testConnection();
+        const connectionTest = await this.testConnection(userId);
         diagnostics.tests.connectivity = connectionTest;
       } catch (error) {
         diagnostics.tests.connectivity = { success: false, error: error.message };
@@ -257,7 +582,7 @@ class RAGService {
 
       // Document listing test
       try {
-        const documents = await this.getDocuments();
+        const documents = await this.getDocuments(userId);
         diagnostics.tests.documentListing = { success: true, documentCount: documents.length };
       } catch (error) {
         diagnostics.tests.documentListing = { success: false, error: error.message };
@@ -265,10 +590,10 @@ class RAGService {
 
       // Vector search test
       try {
-        const searchResult = await this.searchDocuments('pharmaceutical quality gmp', { limit: 3 });
+        const searchResult = await this.searchDocuments('pharmaceutical quality gmp', { limit: 3 }, userId);
         diagnostics.tests.search = {
-          success: true,
-          resultsFound: searchResult?.data?.length || 0,
+          success: !!searchResult,
+          resultsFound: searchResult?.data?.length || searchResult?.results?.length || 0,
           searchType: 'vector',
         };
       } catch (error) {
@@ -277,7 +602,7 @@ class RAGService {
 
       // Stats test
       try {
-        const stats = await this.getStats();
+        const stats = await this.getStats(userId);
         diagnostics.tests.stats = { success: true, ...stats };
       } catch (error) {
         diagnostics.tests.stats = { success: false, error: error.message };
@@ -330,16 +655,21 @@ class RAGService {
 
   async testUpload(userId) {
     try {
-      const testContent = `Test Document for OpenAI File Search RAG System
+      const backendName = this.isNeonBackend() ? 'Neon RAG System' : 'OpenAI File Search RAG System';
+      const uploadDescription = this.isNeonBackend()
+        ? 'Neon PostgreSQL upload functionality'
+        : 'OpenAI file-search upload functionality';
+      const testContent = `Test Document for ${backendName}
 
-This is a test document to verify the OpenAI file-search upload functionality.`;
-      const testFile = new File([testContent], 'openai-file-search-test.txt', { type: 'text/plain' });
+This is a test document to verify the ${uploadDescription}.`;
+      const testFile = new File([testContent], `${this.isNeonBackend() ? 'neon' : 'openai'}-rag-test.txt`, { type: 'text/plain' });
 
       const result = await this.uploadDocument(testFile, {
         category: 'test',
-        tags: ['test', 'openai-file-search'],
+        tags: ['test', this.isNeonBackend() ? 'neon-postgresql' : 'openai-file-search'],
         testDocument: true,
-        description: 'Test document for OpenAI file search RAG system',
+        description: `Test document for ${backendName.toLowerCase()}`,
+
       }, userId);
 
       return {
@@ -384,9 +714,10 @@ export const search = (query, userId, options = {}) => ragService.search(query, 
 export const searchDocuments = (query, options = {}, userId) => ragService.searchDocuments(query, options, userId);
 export const getDocuments = (userId) => ragService.getDocuments(userId);
 export const deleteDocument = (documentId, userId) => ragService.deleteDocument(documentId, userId);
-export const generateRAGResponse = (query, userId) => ragService.generateRAGResponse(query, userId);
-export const testConnection = () => ragService.testConnection();
+export const generateRAGResponse = (query, userId, options = {}) => ragService.generateRAGResponse(query, userId, options);
+export const testConnection = (userId) => ragService.testConnection(userId);
 export const getStats = (userId) => ragService.getStats(userId);
-export const runDiagnostics = () => ragService.runDiagnostics();
+export const runDiagnostics = (userId) => ragService.runDiagnostics(userId);
+
 export const testUpload = (userId) => ragService.testUpload(userId);
 export const testSearch = (userId) => ragService.testSearch(userId);

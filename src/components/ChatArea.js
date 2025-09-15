@@ -145,7 +145,7 @@ const ChatArea = ({
       </div>
 
       {/* Input Area */}
-      <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+      <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg sticky bottom-0">
         {cooldown > 0 && (
           <div className="mb-2 text-sm text-yellow-700 bg-yellow-100 px-3 py-2 rounded">
             You're sending messages too quickly. Please wait {cooldown}s before trying again.

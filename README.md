@@ -88,6 +88,10 @@ REACT_APP_AUTH0_AUDIENCE=your_api_audience
 REACT_APP_AUTH0_ROLES_CLAIM=https://your-domain.com/roles
 REACT_APP_AUTH0_ORG_CLAIM=https://your-domain.com/org
 
+# Neon PostgreSQL (Document Metadata Persistence)
+NEON_DATABASE_URL=postgres://user:password@host:port/dbname
+REACT_APP_RAG_DOCS_FUNCTION=/.netlify/functions/rag-documents # optional override
+
 # Jira Service Desk (Optional)
 JIRA_API_EMAIL=your_atlassian_email
 JIRA_API_TOKEN=your_atlassian_api_token
@@ -157,6 +161,7 @@ npm run build
 - OpenAI GPT-4 integration
 - Pharmaceutical-specific prompts
 - File uploads via Files API with in-message file references
+- Document metadata and vector store IDs persisted in Neon PostgreSQL for cross-device access while files remain in OpenAI's File Assistant
 - Error handling and rate limiting
 - Usage tracking
 

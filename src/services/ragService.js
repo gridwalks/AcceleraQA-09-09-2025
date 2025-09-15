@@ -6,11 +6,13 @@ import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION } from '../config/ragConfi
 
 const USER_DOCS_PREFIX = 'rag_docs_';
 const VECTOR_STORE_PREFIX = 'openai_vector_store_id_';
+
 const DEFAULT_NEON_ENDPOINTS = Array.from(new Set([
   NEON_RAG_FUNCTION,
   '/.netlify/functions/neon-rag-fixed',
   '/.netlify/functions/neon-rag',
 ]));
+
 
 function getUserDocsKey(userId) {
   return `${USER_DOCS_PREFIX}${userId}`;
@@ -118,6 +120,7 @@ class RAGService {
     }
 
     throw lastError || new Error('Neon RAG request failed');
+
   }
 
   async getVectorStoreId(userId) {
@@ -346,6 +349,7 @@ class RAGService {
     if (this.isNeonBackend()) {
       return this.generateNeonRagResponse(query, userId, options);
     }
+
 
     const vectorStoreId = await this.getVectorStoreId(userId);
 
@@ -665,6 +669,7 @@ This is a test document to verify the ${uploadDescription}.`;
         tags: ['test', this.isNeonBackend() ? 'neon-postgresql' : 'openai-file-search'],
         testDocument: true,
         description: `Test document for ${backendName.toLowerCase()}`,
+
       }, userId);
 
       return {
@@ -713,5 +718,6 @@ export const generateRAGResponse = (query, userId, options = {}) => ragService.g
 export const testConnection = (userId) => ragService.testConnection(userId);
 export const getStats = (userId) => ragService.getStats(userId);
 export const runDiagnostics = (userId) => ragService.runDiagnostics(userId);
+
 export const testUpload = (userId) => ragService.testUpload(userId);
 export const testSearch = (userId) => ragService.testSearch(userId);

@@ -9,6 +9,7 @@ class ConversationService {
     this.isInitialized = false;
     this.userId = null;
     this.cachedConversations = null;
+    this.cacheKeyPrefix = 'acceleraqa_conversations_';
   }
 
   /**
@@ -20,6 +21,10 @@ class ConversationService {
       this.isInitialized = true;
       console.log('ConversationService initialized for user:', this.userId);
     }
+  }
+
+  getCacheKey() {
+    return `${this.cacheKeyPrefix}${this.userId}`;
   }
 
   /**
@@ -147,7 +152,14 @@ class ConversationService {
       
       // Clear cached conversations to force reload
       this.cachedConversations = null;
-      
+
+      // Refresh local cache immediately for persistence
+      try {
+        await this.loadConversations(false);
+      } catch (cacheError) {
+        console.warn('Failed to refresh conversation cache:', cacheError);
+      }
+
       return result;
     } catch (error) {
       console.error('Failed to save conversation to Netlify Blob:', error);
@@ -183,20 +195,44 @@ class ConversationService {
       
       // Convert server format back to message format
       const messages = this.conversationsToMessages(result.conversations || []);
-      
+
       // Cache the results
       this.cachedConversations = messages;
-      
+
+      // Persist to local storage for offline access
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(this.getCacheKey(), JSON.stringify(messages));
+        } catch (storageError) {
+          console.warn('Failed to cache conversations locally:', storageError);
+        }
+      }
+
       return messages;
     } catch (error) {
       console.error('Failed to load conversations from Netlify Blob:', error);
-      
+
+      // Attempt to load conversations from local storage cache
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const stored = localStorage.getItem(this.getCacheKey());
+          if (stored) {
+            const messages = JSON.parse(stored);
+            this.cachedConversations = messages;
+            console.warn('Loaded conversations from local cache due to error');
+            return messages;
+          }
+        } catch (storageError) {
+          console.warn('Failed to load conversations from local cache:', storageError);
+        }
+      }
+
       // Return empty array instead of throwing to allow app to continue
       if (error.message.includes('401') || error.message.includes('authentication')) {
         console.warn('Authentication required for loading conversations');
         return [];
       }
-      
+
       // For other errors, return empty array but log warning
       console.warn('Returning empty conversations due to error:', error.message);
       return [];
@@ -220,10 +256,19 @@ class ConversationService {
       });
 
       console.log('All conversations cleared successfully from Netlify Blob');
-      
+
       // Clear cache
       this.cachedConversations = null;
-      
+
+      // Remove local cache
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.removeItem(this.getCacheKey());
+        } catch (storageError) {
+          console.warn('Failed to remove local conversation cache:', storageError);
+        }
+      }
+
       return result;
     } catch (error) {
       console.error('Failed to clear conversations from Netlify Blob:', error);

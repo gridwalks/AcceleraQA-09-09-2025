@@ -362,7 +362,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         return;
       }
 
+
       const ragResponse = await ragService.generateRAGResponse(searchQuery, user?.sub, { searchResults });
+
       
       const newWindow = window.open('', '_blank');
       newWindow.document.write(`
@@ -437,36 +439,28 @@ const RAGConfigurationPage = ({ user, onClose }) => {
           <div className="flex items-center space-x-3">
             <Database className="h-6 w-6 text-blue-600" />
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">RAG Configuration</h2>
+              <h2 className="text-xl font-semibold text-gray-900">My Documents</h2>
               <p className="text-sm text-gray-500">Upload documents and configure search with OpenAI File Search</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            aria-label="Close RAG configuration"
+            aria-label="Close My Documents"
           >
             <X className="h-5 w-5 text-gray-500" />
           </button>
         </div>
 
         {/* Enhanced Debug Info */}
-        {debugInfo && (
-          <div className={`p-4 border-b ${debugInfo.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+        {debugInfo && !debugInfo.success && (
+          <div className="p-4 border-b bg-red-50 border-red-200">
             <div className="flex items-center space-x-2">
-              {debugInfo.success ? (
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-red-600" />
-              )}
-              <span className={`text-sm font-medium ${debugInfo.success ? 'text-green-800' : 'text-red-800'}`}>
-                Function Status: {debugInfo.success ? 'Connected' : 'Error'}
-              </span>
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <span className="text-sm font-medium text-red-800">Function Status: Error</span>
             </div>
-            {!debugInfo.success && (
-              <p className="text-sm text-red-700 mt-1">Error: {debugInfo.error}</p>
-            )}
-            
+            <p className="text-sm text-red-700 mt-1">Error: {debugInfo.error}</p>
+
             {/* Authentication Status */}
             {authDebug && (
               <div className="mt-2 text-xs">

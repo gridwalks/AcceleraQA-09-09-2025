@@ -19,7 +19,7 @@ const ChatArea = ({
   cooldown, // rate-limit cooldown (seconds)
 }) => {
   return (
-    <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200">
+    <div className="h-full flex flex-col min-h-0 overflow-hidden bg-white rounded-lg shadow-sm border border-gray-200">
       {/* Chat Header with RAG Toggle */}
       <div className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
         <div className="flex items-center justify-between">
@@ -79,28 +79,8 @@ const ChatArea = ({
             <div className="text-center max-w-md">
               <div className="text-4xl sm:text-6xl mb-4">🚀</div>
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
-                Welcome to AcceleraQA
+                What can I help you with today?
               </h3>
-              <p className="text-sm sm:text-base text-gray-600 mb-6">
-                Your AI-powered learning assistant for pharmaceutical quality and compliance. 
-                Ask questions about GMP, validation, CAPA, or upload documents for personalized guidance.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <div className="font-medium text-blue-900 mb-1 flex items-center space-x-1">
-                    <BookOpen className="h-3 w-3" />
-                    <span>Quick Start</span>
-                  </div>
-                  <div className="text-blue-700">Ask about GMP requirements, validation protocols, or regulatory guidelines</div>
-                </div>
-                <div className="bg-purple-50 p-3 rounded-lg">
-                  <div className="font-medium text-purple-900 mb-1 flex items-center space-x-1">
-                    <Database className="h-3 w-3" />
-                    <span>Upload Documents</span>
-                  </div>
-                  <div className="text-purple-700">Enable document search and upload your company's SOPs or industry documents</div>
-                </div>
-              </div>
             </div>
           </div>
         ) : (
@@ -165,7 +145,7 @@ const ChatArea = ({
       </div>
 
       {/* Input Area */}
-      <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+      <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg mt-auto">
         {cooldown > 0 && (
           <div className="mb-2 text-sm text-yellow-700 bg-yellow-100 px-3 py-2 rounded">
             You're sending messages too quickly. Please wait {cooldown}s before trying again.
@@ -193,7 +173,7 @@ const ChatArea = ({
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask about pharmaceutical quality, compliance, or upload documents for specific guidance..."
+              placeholder="Ask about quality, compliance, or upload documents for specific guidance..."
               className="w-full p-3 sm:p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base min-h-[44px] max-h-32"
               rows={1}
               style={{

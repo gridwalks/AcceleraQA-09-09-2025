@@ -240,7 +240,7 @@ For Netlify deployment:
 
 5. Test the functionality:
    - Open your deployed app
-   - Click "RAG Config" in the header
+   - Click "My Documents" in the header
    - Upload a test document
    - Try searching and testing RAG responses
 

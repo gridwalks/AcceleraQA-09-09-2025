@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 
 // Import services
-import conversationService from '../services/conversationService';
+import neonService from '../services/neonService';
 import ragService from '../services/ragService';
 import { getToken, getTokenInfo } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
@@ -131,7 +131,7 @@ const AdminScreen = ({ user, onBack }) => {
   const getSystemStats = async () => {
     try {
       const [conversationStats, ragStats] = await Promise.all([
-        conversationService.getConversationStats(),
+        neonService.getConversationStats(),
         ragService.getStats(user?.sub)
       ]);
 
@@ -219,7 +219,7 @@ const AdminScreen = ({ user, onBack }) => {
 
   const checkBackendHealth = async () => {
     try {
-      const result = await conversationService.isServiceAvailable();
+      const result = await neonService.isServiceAvailable();
       if (result.ok) {
         return {
           status: 'healthy',
@@ -438,7 +438,7 @@ const AdminScreen = ({ user, onBack }) => {
               { id: 'users', label: 'Users & Auth', icon: Users },
               { id: 'backend', label: 'Backend', icon: Database },
               { id: 'rag', label: 'RAG System', icon: FileText },
-              { id: 'ragConfig', label: 'RAG Config', icon: Search },
+              { id: 'ragConfig', label: 'My Documents', icon: Search },
               { id: 'system', label: 'System Health', icon: Activity },
               { id: 'usage', label: 'Token Usage', icon: BarChart3 },
               { id: 'training', label: 'Training Resources', icon: BookOpen },
@@ -724,7 +724,7 @@ const AdminScreen = ({ user, onBack }) => {
             </div>
           )}
 
-          {/* RAG Configuration Tab */}
+          {/* My Documents Tab */}
           {activeTab === 'ragConfig' && (
             <div className="space-y-6">
               <RAGConfigurationPage user={user} onClose={() => setActiveTab('overview')} />

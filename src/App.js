@@ -12,7 +12,6 @@ import RAGConfigurationPage from './components/RAGConfigurationPage';
 import AdminScreen from './components/AdminScreen';
 import NotebookOverlay from './components/NotebookOverlay';
 import SupportRequestOverlay from './components/SupportRequestOverlay';
-import Footer from './components/Footer';
 
 // Utility
 import { v4 as uuidv4 } from 'uuid';
@@ -20,7 +19,11 @@ import authService, { initializeAuth } from './services/authService';
 import { search as ragSearch } from './services/ragService';
 import openaiService from './services/openaiService';
 
-import { initializeConversationService, loadConversations as loadStoredConversations, saveConversation as saveStoredConversation } from './services/conversationService';
+import {
+  initializeNeonService,
+  loadConversations as loadStoredConversations,
+  saveConversation as saveStoredConversation,
+} from './services/neonService';
 
 import { FEATURE_FLAGS } from './config/featureFlags';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
@@ -77,11 +80,11 @@ function App() {
   useEffect(() => {
     const initAuth = async () => {
       setLoading(true);
-      await initializeAuth(
+      const authUser = await initializeAuth(
         (authUser) => setUser(authUser),
         () => {}
       );
-      const authStatus = await authService.isAuthenticated();
+      const authStatus = !!authUser;
       setIsAuthenticated(authStatus);
       if (!authStatus) {
         setUser(null);
@@ -113,7 +116,7 @@ function App() {
   // Initialize backend services when user is available
   useEffect(() => {
     if (user) {
-      initializeConversationService(user);
+      initializeNeonService(user);
       if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
         loadInitialLearningSuggestions();
       }
@@ -440,11 +443,12 @@ function App() {
             />
 
             {/* Main Layout */}
-            <div className="flex-1">
+            <div className="flex-1 flex flex-col min-h-0">
               {/* Mobile Layout (stacked vertically) */}
-              <div className="lg:hidden h-full flex flex-col">
+              <div className="lg:hidden flex-1 h-full flex flex-col min-h-0">
+
                 {/* Chat takes most space on mobile */}
-                <div className="flex-1 min-h-0 p-4">
+                <div className="flex-1 min-h-0 p-4 pb-0">
                   <ChatArea
                     messages={messages}
                     inputMessage={inputMessage}
@@ -478,9 +482,9 @@ function App() {
               </div>
 
               {/* Desktop Layout (side by side) */}
-              <div className="hidden lg:flex h-full">
+              <div className="hidden lg:flex flex-1 h-full min-h-0">
                 {/* Chat Area - Takes majority of space */}
-                <div className="flex-1 min-w-0 p-6">
+                <div className="flex-1 min-w-0 h-full p-6 pb-0">
                   <ChatArea
                     messages={messages}
                     inputMessage={inputMessage}
@@ -499,7 +503,7 @@ function App() {
                 </div>
 
                 {/* Sidebar - Fixed optimal width with enhanced learning features */}
-                <div className="w-80 xl:w-96 flex-shrink-0 border-l bg-white p-6">
+                <div className="w-80 xl:w-96 flex-shrink-0 h-full border-l bg-white p-6 pb-0">
                   <Sidebar
                     messages={messages}
                     thirtyDayMessages={thirtyDayMessages}
@@ -513,7 +517,6 @@ function App() {
                 </div>
               </div>
             </div>
-            <Footer />
           </div>
 
           {/* Notebook Overlay */}

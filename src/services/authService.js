@@ -30,8 +30,10 @@ class AuthService {
           scope: AUTH0_CONFIG.SCOPE
         },
         cacheLocation: 'localstorage',
+
         useRefreshTokens: true,
         useRefreshTokensFallback: true
+
       });
 
       this.isInitialized = true;
@@ -77,6 +79,7 @@ class AuthService {
     }
 
     try {
+
       let user = await this.auth0Client.getUser();
 
       if (!user) {

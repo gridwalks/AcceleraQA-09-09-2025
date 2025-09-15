@@ -3,11 +3,42 @@ import neonService from './neonService';
 import openaiService from './openaiService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import { OPENAI_CONFIG } from '../config/constants';
+import { findBestResourceMatch } from '../utils/resourceGenerator';
 
 class LearningSuggestionsService {
   constructor() {
     this.cache = new Map();
     this.cacheTTL = 5 * 60 * 1000; // 5 minutes cache
+  }
+
+  attachResourceLink(suggestion) {
+    if (!suggestion) {
+      return suggestion;
+    }
+
+    const textToMatch = `${suggestion.title || ''} ${suggestion.description || ''} ${suggestion.objective || ''}`.trim();
+    const matchedResource = findBestResourceMatch(textToMatch, suggestion.type);
+
+    if (matchedResource?.url) {
+      return {
+        ...suggestion,
+        url: suggestion.url || matchedResource.url,
+        linkedResourceTitle: matchedResource.title,
+        linkedResourceType: matchedResource.type
+      };
+    }
+
+    return {
+      ...suggestion,
+      url: suggestion.url || this.generateFallbackUrl(suggestion.title)
+    };
+  }
+
+  generateFallbackUrl(title) {
+    const baseQuery = title && title.trim()
+      ? `${title} pharmaceutical quality`
+      : 'pharmaceutical quality learning resource';
+    return `https://www.google.com/search?q=${encodeURIComponent(baseQuery)}`;
   }
 
   /**
@@ -99,7 +130,7 @@ class LearningSuggestionsService {
       
       // Parse and format the suggestions
       const suggestions = this.parseSuggestions(response.answer);
-      
+
       return suggestions;
 
     } catch (error) {
@@ -277,7 +308,7 @@ Focus on actionable learning that will help them advance their pharmaceutical qu
       const jsonMatch = response.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         const suggestions = JSON.parse(jsonMatch[0]);
-        return suggestions.map(suggestion => ({
+        const normalizedSuggestions = suggestions.map(suggestion => ({
           id: `suggestion_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           title: suggestion.title || 'Learning Resource',
           type: suggestion.type || 'Reference',
@@ -287,8 +318,11 @@ Focus on actionable learning that will help them advance their pharmaceutical qu
           relevanceScore: suggestion.relevance_score || 5,
           source: 'ai_generated',
           isPersonalized: true,
-          generatedAt: new Date().toISOString()
+          generatedAt: new Date().toISOString(),
+          url: suggestion.url
         }));
+
+        return normalizedSuggestions.map(suggestion => this.attachResourceLink(suggestion));
       }
     } catch (error) {
       console.error('Error parsing ChatGPT suggestions:', error);
@@ -341,7 +375,9 @@ Focus on actionable learning that will help them advance their pharmaceutical qu
       suggestions.push(currentSuggestion);
     }
     
-    return suggestions.slice(0, 6); // Limit to 6 suggestions
+    return suggestions
+      .slice(0, 6)
+      .map(suggestion => this.attachResourceLink(suggestion)); // Limit to 6 suggestions
   }
 
   /**
@@ -362,7 +398,8 @@ Focus on actionable learning that will help them advance their pharmaceutical qu
         difficulty: 'Beginner',
         relevanceScore: 9,
         source: 'default',
-        isPersonalized: false
+        isPersonalized: false,
+        url: 'https://www.fda.gov/drugs/pharmaceutical-quality-resources/current-good-manufacturing-practice-cgmp-regulations'
       },
       {
         id: 'default_validation_lifecycle',
@@ -373,7 +410,8 @@ Focus on actionable learning that will help them advance their pharmaceutical qu
         difficulty: 'Intermediate',
         relevanceScore: 8,
         source: 'default',
-        isPersonalized: false
+        isPersonalized: false,
+        url: 'https://www.fda.gov/regulatory-information/search-fda-guidance-documents/process-validation-general-principles-and-practices'
       },
       {
         id: 'default_capa_effectiveness',
@@ -384,7 +422,8 @@ Focus on actionable learning that will help them advance their pharmaceutical qu
         difficulty: 'Intermediate',
         relevanceScore: 7,
         source: 'default',
-        isPersonalized: false
+        isPersonalized: false,
+        url: 'https://www.fda.gov/regulatory-information/search-fda-guidance-documents/quality-systems-approach-pharmaceutical-cgmp-regulations'
       },
       {
         id: 'default_risk_management',
@@ -395,9 +434,10 @@ Focus on actionable learning that will help them advance their pharmaceutical qu
         difficulty: 'Advanced',
         relevanceScore: 8,
         source: 'default',
-        isPersonalized: false
+        isPersonalized: false,
+        url: 'https://database.ich.org/sites/default/files/Q9%20Guideline.pdf'
       }
-    ];
+    ].map(suggestion => this.attachResourceLink(suggestion));
   }
 
   /**

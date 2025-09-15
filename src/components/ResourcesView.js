@@ -433,8 +433,8 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
                     <div
                       key={i}
                       className={`w-2 h-2 rounded-full ${
-                        i < Math.round(suggestion.relevanceScore / 2) 
-                          ? 'bg-purple-400' 
+                        i < Math.round(suggestion.relevanceScore / 2)
+                          ? 'bg-purple-400'
                           : 'bg-gray-200'
                       }`}
                     />
@@ -443,13 +443,36 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
               </div>
             )}
           </div>
-          
+
           {suggestion.isPersonalized && (
             <span className="text-xs text-purple-600 font-medium">
               Personalized
             </span>
           )}
         </div>
+
+        {suggestion.url && (
+          <div className="mt-4 flex items-center justify-between text-xs text-purple-700">
+            <a
+              href={suggestion.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center space-x-1 font-medium hover:text-purple-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 rounded"
+            >
+              <span>Open recommended resource</span>
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            {suggestion.linkedResourceTitle && (
+              <span
+                className="ml-2 text-[11px] text-gray-500 truncate max-w-[150px]"
+                title={suggestion.linkedResourceTitle}
+              >
+                {suggestion.linkedResourceTitle}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

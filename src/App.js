@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 // Components
 import Header from './components/Header';
 import ChatArea from './components/ChatArea';
+import Sidebar from './components/Sidebar';
 import AuthScreen from './components/AuthScreen';
 import LoadingScreen from './components/LoadingScreen';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -22,6 +23,7 @@ import { initializeConversationService, loadConversations as loadStoredConversat
 
 import { FEATURE_FLAGS } from './config/featureFlags';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
+import { mergeCurrentAndStoredMessages } from './utils/messageUtils';
 
 const COOLDOWN_SECONDS = 10;
 
@@ -46,9 +48,9 @@ function App() {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [cooldown, setCooldown] = useState(0);
 
-  // Learning suggestions state (setters retained for background updates)
-  const [, setLearningSuggestions] = useState([]);
-  const [, setIsLoadingSuggestions] = useState(false);
+  // Learning suggestions state
+  const [learningSuggestions, setLearningSuggestions] = useState([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
   // Save status
   const [isSaving, setIsSaving] = useState(false);
@@ -183,6 +185,15 @@ function App() {
       console.error('Error refreshing learning suggestions:', error);
     }
   }, [user]);
+
+  // Load a previous conversation into the chat window
+  const handleConversationSelect = useCallback((conversationId) => {
+    const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
+    const convMessages = merged.filter(m => m.conversationId === conversationId);
+    if (convMessages.length) {
+      setMessages(convMessages.map(m => ({ ...m, isCurrent: true })));
+    }
+  }, [messages, thirtyDayMessages]);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -369,7 +380,27 @@ function App() {
     }
   }, [selectedMessages]);
 
+  // Handle learning suggestions updates
+  const handleSuggestionsUpdate = useCallback((suggestions) => {
+    console.log('Learning suggestions updated:', suggestions.length);
+    // Could trigger additional UI updates or analytics here
+  }, []);
 
+  const handleAddResourceToNotebook = useCallback((item) => {
+    if (!item || !item.title) return;
+    const { title, url = '', type = item.type || 'Resource' } = item;
+    const newMessage = {
+      id: uuidv4(),
+      role: 'assistant',
+      type: 'ai',
+      content: `${title}${url ? ' - ' + url : ''}`,
+      timestamp: Date.now(),
+      resources: [{ title, url, type, addedAt: Date.now() }],
+      // Mark message so it can be hidden from the chat area
+      isResource: true,
+    };
+    setMessages(prev => [...prev, newMessage]);
+  }, [setMessages]);
 
   const handleShowRAGConfig = useCallback(() => setShowRAGConfig(true), []);
   const handleCloseRAGConfig = useCallback(() => setShowRAGConfig(false), []);
@@ -409,22 +440,77 @@ function App() {
 
             {/* Main Layout */}
             <div className="flex-1 flex flex-col min-h-0">
-              <div className="flex-1 h-full p-4 sm:p-6 pb-0">
-                <ChatArea
-                  messages={messages}
-                  inputMessage={inputMessage}
-                  setInputMessage={setInputMessage}
-                  isLoading={isLoading}
-                  handleSendMessage={handleSendMessage}
-                  handleKeyPress={handleKeyPress}
-                  messagesEndRef={messagesEndRef}
-                  ragEnabled={ragEnabled}
-                  setRAGEnabled={setRAGEnabled}
-                  isSaving={isSaving}
-                  uploadedFile={uploadedFile}
-                  setUploadedFile={setUploadedFile}
-                  cooldown={cooldown}
-                />
+              {/* Mobile Layout (stacked vertically) */}
+              <div className="lg:hidden flex-1 h-full flex flex-col min-h-0">
+
+                {/* Chat takes most space on mobile */}
+                <div className="flex-1 min-h-0 p-4 pb-0">
+                  <ChatArea
+                    messages={messages}
+                    inputMessage={inputMessage}
+                    setInputMessage={setInputMessage}
+                    isLoading={isLoading}
+                    handleSendMessage={handleSendMessage}
+                    handleKeyPress={handleKeyPress}
+                    messagesEndRef={messagesEndRef}
+                    ragEnabled={ragEnabled}
+                    setRAGEnabled={setRAGEnabled}
+                    isSaving={isSaving}
+                    uploadedFile={uploadedFile}
+                    setUploadedFile={setUploadedFile}
+                    cooldown={cooldown}
+                  />
+                </div>
+
+                {/* Sidebar is collapsible on mobile */}
+                <div className="flex-shrink-0 border-t bg-white max-h-60 overflow-hidden">
+                  <Sidebar
+                    messages={messages}
+                    thirtyDayMessages={thirtyDayMessages}
+                    user={user}
+                    learningSuggestions={learningSuggestions}
+                    isLoadingSuggestions={isLoadingSuggestions}
+                    onSuggestionsUpdate={handleSuggestionsUpdate}
+                    onAddResource={handleAddResourceToNotebook}
+                    onConversationSelect={handleConversationSelect}
+                  />
+                </div>
+              </div>
+
+              {/* Desktop Layout (side by side) */}
+              <div className="hidden lg:flex flex-1 h-full min-h-0">
+                {/* Chat Area - Takes majority of space */}
+                <div className="flex-1 min-w-0 h-full p-6 pb-0">
+                  <ChatArea
+                    messages={messages}
+                    inputMessage={inputMessage}
+                    setInputMessage={setInputMessage}
+                    isLoading={isLoading}
+                    handleSendMessage={handleSendMessage}
+                    handleKeyPress={handleKeyPress}
+                    messagesEndRef={messagesEndRef}
+                    ragEnabled={ragEnabled}
+                    setRAGEnabled={setRAGEnabled}
+                    isSaving={isSaving}
+                    uploadedFile={uploadedFile}
+                    setUploadedFile={setUploadedFile}
+                    cooldown={cooldown}
+                  />
+                </div>
+
+                {/* Sidebar - Fixed optimal width with enhanced learning features */}
+                <div className="w-80 xl:w-96 flex-shrink-0 h-full border-l bg-white p-6 pb-0">
+                  <Sidebar
+                    messages={messages}
+                    thirtyDayMessages={thirtyDayMessages}
+                    user={user}
+                    learningSuggestions={learningSuggestions}
+                    isLoadingSuggestions={isLoadingSuggestions}
+                    onSuggestionsUpdate={handleSuggestionsUpdate}
+                    onAddResource={handleAddResourceToNotebook}
+                    onConversationSelect={handleConversationSelect}
+                  />
+                </div>
               </div>
             </div>
           </div>

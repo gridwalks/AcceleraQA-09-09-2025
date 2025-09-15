@@ -257,7 +257,7 @@ function App() {
 
     try {
       const response = ragEnabled && !fileToSend
-        ? await ragSearch(inputMessage)
+        ? await ragSearch(inputMessage, user?.sub)
         : await openaiService.getChatResponse(inputMessage, fileToSend);
 
       const assistantMessage = {
@@ -311,7 +311,7 @@ function App() {
       setIsLoading(false);
       setUploadedFile(null);
     }
-  }, [inputMessage, uploadedFile, ragEnabled, messages.length, refreshLearningSuggestions, cooldown]);
+  }, [inputMessage, uploadedFile, ragEnabled, messages.length, refreshLearningSuggestions, cooldown, user?.sub]);
 
   const handleKeyPress = useCallback(
     (e) => {

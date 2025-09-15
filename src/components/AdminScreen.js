@@ -35,6 +35,7 @@ import RAGConfigurationPage from './RAGConfigurationPage';
 import TrainingResourcesAdmin from './TrainingResourcesAdmin';
 import { MODEL_OPTIONS, getCurrentModel, setCurrentModel } from '../config/modelConfig';
 import { getTokenUsageStats } from '../utils/tokenUsage';
+import { getRagBackendLabel, isNeonBackend } from '../config/ragConfig';
 
 export const checkStorageHealth = async () => {
   // Check browser storage capacity
@@ -74,6 +75,8 @@ const AdminScreen = ({ user, onBack }) => {
   const [error, setError] = useState(null);
   const [chatModel, setChatModel] = useState(getCurrentModel());
   const [tokenUsage, setTokenUsage] = useState({ daily: [], monthly: [] });
+  const ragBackendLabel = getRagBackendLabel();
+  const neonBackendEnabled = isNeonBackend();
 
   const handleModelChange = (e) => {
     const model = e.target.value;
@@ -151,7 +154,7 @@ const AdminScreen = ({ user, onBack }) => {
   // RAG system statistics
   const getRAGStats = async () => {
     try {
-      const diagnostics = await ragService.runDiagnostics();
+      const diagnostics = await ragService.runDiagnostics(user?.sub);
       return {
         ...diagnostics,
         lastCheck: new Date().toISOString()
@@ -241,7 +244,7 @@ const AdminScreen = ({ user, onBack }) => {
 
   const checkRAGHealth = async () => {
     try {
-      const testResult = await ragService.testConnection();
+      const testResult = await ragService.testConnection(user?.sub);
       return {
         status: testResult.success ? 'healthy' : 'unhealthy',
         message: testResult.success ? 'RAG system operational' : `RAG error: ${testResult.error}`,
@@ -311,8 +314,8 @@ const AdminScreen = ({ user, onBack }) => {
     setIsLoading(true);
     try {
       const testResults = await Promise.allSettled([
-        ragService.testUpload(),
-        ragService.testSearch(),
+        ragService.testUpload(user?.sub),
+        ragService.testSearch(user?.sub),
         conversationService.isServiceAvailable()
       ]);
 
@@ -593,7 +596,7 @@ const AdminScreen = ({ user, onBack }) => {
           {activeTab === 'backend' && (
             <div className="space-y-6">
               <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">OpenAI File Search Backend</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">RAG Backend ({ragBackendLabel})</h3>
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="p-4 bg-blue-50 rounded-lg">
@@ -676,6 +679,16 @@ const AdminScreen = ({ user, onBack }) => {
                           <span>Mode:</span>
                           <span className="font-medium">{ragStats?.mode || 'Unknown'}</span>
                         </div>
+                        <div className="flex justify-between">
+                          <span>Backend:</span>
+                          <span className="font-medium">{ragBackendLabel}</span>
+                        </div>
+                        {neonBackendEnabled && (
+                          <div className="flex justify-between">
+                            <span>Storage:</span>
+                            <span className="font-medium">Neon PostgreSQL</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     

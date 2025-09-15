@@ -60,7 +60,7 @@ describe('AdminScreen navigation', () => {
   });
 
   it('renders RAG Configuration page when RAG Config tab is selected', async () => {
-    const user = { roles: ['admin'] };
+    const user = { roles: ['admin'], sub: 'test-user' };
 
     await act(async () => {
       ReactDOM.render(<AdminScreen user={user} onBack={() => {}} />, container);
@@ -79,7 +79,7 @@ describe('AdminScreen navigation', () => {
   });
 
   it('calls onBack when back button is clicked', async () => {
-    const user = { roles: ['admin'] };
+    const user = { roles: ['admin'], sub: 'test-user' };
     const onBack = jest.fn();
 
     await act(async () => {
@@ -98,7 +98,7 @@ describe('AdminScreen navigation', () => {
   });
 
   it('renders Token Usage tab when selected', async () => {
-    const user = { roles: ['admin'] };
+    const user = { roles: ['admin'], sub: 'test-user' };
 
     await act(async () => {
       ReactDOM.render(<AdminScreen user={user} onBack={() => {}} />, container);

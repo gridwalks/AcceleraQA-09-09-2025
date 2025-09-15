@@ -35,18 +35,24 @@ describe('AuthService getUser', () => {
     });
   });
 
-  it('retrieves user even when initial authentication check would fail', async () => {
+  it('attempts silent authentication when user data is initially missing', async () => {
     const authService = require('./authService').default;
 
+    const getUserMock = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ sub: 'user456', name: 'Another User' });
+
     authService.auth0Client = {
-      getUser: jest.fn().mockResolvedValue({ sub: 'user456', name: 'Another User' }),
-      getIdTokenClaims: jest.fn().mockResolvedValue({})
+      getUser: getUserMock,
+      getIdTokenClaims: jest.fn().mockResolvedValue({}),
+      getTokenSilently: jest.fn().mockResolvedValue('fake-token')
     };
-    authService.isAuthenticated = jest.fn().mockResolvedValue(false);
 
     const result = await authService.getUser();
 
-    expect(authService.auth0Client.getUser).toHaveBeenCalled();
+    expect(authService.auth0Client.getTokenSilently).toHaveBeenCalled();
+    expect(getUserMock).toHaveBeenCalledTimes(2);
     expect(result).toEqual({
       sub: 'user456',
       name: 'Another User',

@@ -74,9 +74,25 @@ class AuthService {
     }
 
     try {
-      // Attempt to retrieve the user directly. This will also trigger a
-      // session check with Auth0 so users remain logged in after a refresh.
-      const user = await this.auth0Client.getUser();
+
+      let user = await this.auth0Client.getUser();
+
+      if (!user) {
+        try {
+          // Attempt silent authentication to restore session on refresh
+          await this.auth0Client.getTokenSilently({
+            authorizationParams: {
+              audience: AUTH0_CONFIG.AUDIENCE,
+              scope: AUTH0_CONFIG.SCOPE
+            }
+          });
+          user = await this.auth0Client.getUser();
+        } catch (silentError) {
+          console.warn('Silent authentication failed:', silentError);
+          return null;
+        }
+      }
+
       if (!user) {
         return null;
       }

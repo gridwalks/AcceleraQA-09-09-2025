@@ -34,6 +34,32 @@ describe('AuthService getUser', () => {
       organization: 'Acme Corp'
     });
   });
+
+  it('attempts silent authentication when user data is initially missing', async () => {
+    const authService = require('./authService').default;
+
+    const getUserMock = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ sub: 'user456', name: 'Another User' });
+
+    authService.auth0Client = {
+      getUser: getUserMock,
+      getIdTokenClaims: jest.fn().mockResolvedValue({}),
+      getTokenSilently: jest.fn().mockResolvedValue('fake-token')
+    };
+
+    const result = await authService.getUser();
+
+    expect(authService.auth0Client.getTokenSilently).toHaveBeenCalled();
+    expect(getUserMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      sub: 'user456',
+      name: 'Another User',
+      roles: [],
+      organization: null
+    });
+  });
 });
 
 describe('hasAdminRole', () => {

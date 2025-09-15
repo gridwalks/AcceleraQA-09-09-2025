@@ -74,11 +74,28 @@ class AuthService {
     }
 
     try {
-      const isAuth = await this.isAuthenticated();
-      if (!isAuth) {
+      let user = await this.auth0Client.getUser();
+
+      if (!user) {
+        try {
+          // Attempt silent authentication to restore session on refresh
+          await this.auth0Client.getTokenSilently({
+            authorizationParams: {
+              audience: AUTH0_CONFIG.AUDIENCE,
+              scope: AUTH0_CONFIG.SCOPE
+            }
+          });
+          user = await this.auth0Client.getUser();
+        } catch (silentError) {
+          console.warn('Silent authentication failed:', silentError);
+          return null;
+        }
+      }
+
+      if (!user) {
         return null;
       }
-      const user = await this.auth0Client.getUser();
+
       const claims = await this.auth0Client.getIdTokenClaims();
       const roles = claims?.[AUTH0_CONFIG.ROLES_CLAIM] || [];
       const organization = claims?.[AUTH0_CONFIG.ORG_CLAIM] || null;
@@ -289,16 +306,16 @@ export default authService;
 export const initializeAuth = async (setUser, setIsLoadingAuth, initializeWelcomeMessage) => {
   try {
     await authService.initialize();
-    
+
     // Check if user is returning from redirect
     const query = window.location.search;
     if (query.includes("code=") && query.includes("state=")) {
       await authService.handleRedirectCallback();
     }
 
-    // Check if user is authenticated
+    // Attempt to retrieve the user; this triggers session restoration if possible
     const user = await authService.getUser();
-    
+
     if (user) {
       setUser(user);
       // Only call initializeWelcomeMessage if it's provided
@@ -306,11 +323,13 @@ export const initializeAuth = async (setUser, setIsLoadingAuth, initializeWelcom
         initializeWelcomeMessage();
       }
     }
-    
+
     setIsLoadingAuth(false);
+    return user;
   } catch (error) {
     console.error('Auth initialization error:', error);
     setIsLoadingAuth(false);
+    return null;
   }
 };
 

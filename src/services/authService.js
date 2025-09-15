@@ -76,6 +76,7 @@ class AuthService {
     }
 
     try {
+
       let user = await this.auth0Client.getUser();
 
       if (!user) {

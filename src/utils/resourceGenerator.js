@@ -199,9 +199,59 @@ export function getAvailableTopics() {
 export function searchResources(searchTerm) {
   const lowerSearchTerm = searchTerm.toLowerCase();
   const allResources = Object.values(RESOURCE_DATABASE).flat();
-  
-  return allResources.filter(resource => 
+
+  return allResources.filter(resource =>
     resource.title.toLowerCase().includes(lowerSearchTerm) ||
     resource.type.toLowerCase().includes(lowerSearchTerm)
   );
+}
+
+export function findBestResourceMatch(text, preferredType) {
+  const searchInput = (text || '').toLowerCase();
+  const normalizedType = (preferredType || '').toLowerCase();
+  const allResources = Object.values(RESOURCE_DATABASE).flat();
+
+  const selectFromList = (resources) => {
+    if (!resources || resources.length === 0) {
+      return null;
+    }
+
+    if (normalizedType) {
+      const typeMatch = resources.find(resource => resource.type.toLowerCase() === normalizedType);
+      if (typeMatch) {
+        return typeMatch;
+      }
+    }
+
+    return resources[0];
+  };
+
+  const topics = detectTopics(searchInput);
+
+  if (topics.length > 0) {
+    for (const topic of topics) {
+      const resources = RESOURCE_DATABASE[topic];
+      const match = selectFromList(resources);
+      if (match) {
+        return match;
+      }
+    }
+  }
+
+  if (searchInput) {
+    const searchMatches = searchResources(searchInput);
+    const match = selectFromList(searchMatches);
+    if (match) {
+      return match;
+    }
+  }
+
+  if (normalizedType) {
+    const typeMatch = allResources.find(resource => resource.type.toLowerCase() === normalizedType);
+    if (typeMatch) {
+      return typeMatch;
+    }
+  }
+
+  return DEFAULT_RESOURCES[0] || null;
 }

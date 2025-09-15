@@ -16,7 +16,7 @@ jest.mock('../services/ragService', () => ({
   }
 }));
 
-jest.mock('../services/conversationService', () => ({
+jest.mock('../services/neonService', () => ({
   __esModule: true,
   default: {
     getConversationStats: jest.fn().mockResolvedValue({}),

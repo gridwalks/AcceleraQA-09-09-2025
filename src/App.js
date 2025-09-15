@@ -19,7 +19,11 @@ import authService, { initializeAuth } from './services/authService';
 import { search as ragSearch } from './services/ragService';
 import openaiService from './services/openaiService';
 
-import { initializeConversationService, loadConversations as loadStoredConversations, saveConversation as saveStoredConversation } from './services/conversationService';
+import {
+  initializeNeonService,
+  loadConversations as loadStoredConversations,
+  saveConversation as saveStoredConversation,
+} from './services/neonService';
 
 import { FEATURE_FLAGS } from './config/featureFlags';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
@@ -112,7 +116,7 @@ function App() {
   // Initialize backend services when user is available
   useEffect(() => {
     if (user) {
-      initializeConversationService(user);
+      initializeNeonService(user);
       if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
         loadInitialLearningSuggestions();
       }

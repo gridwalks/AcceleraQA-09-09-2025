@@ -1,5 +1,5 @@
 // src/services/learningSuggestionsService.js
-import conversationService from './conversationService';
+import neonService from './neonService';
 import openaiService from './openaiService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import { OPENAI_CONFIG } from '../config/constants';
@@ -66,7 +66,7 @@ class LearningSuggestionsService {
       return [];
     }
     try {
-      const conversations = await conversationService.loadConversations();
+      const conversations = await neonService.loadConversations();
       return conversations.slice(-10).reverse();
     } catch (error) {
       console.error('Error fetching recent conversations:', error);

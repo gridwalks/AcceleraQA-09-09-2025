@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 
 // Import services
-import conversationService from '../services/conversationService';
+import neonService from '../services/neonService';
 import ragService from '../services/ragService';
 import { getToken, getTokenInfo } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
@@ -128,7 +128,7 @@ const AdminScreen = ({ user, onBack }) => {
   const getSystemStats = async () => {
     try {
       const [conversationStats, ragStats] = await Promise.all([
-        conversationService.getConversationStats(),
+        neonService.getConversationStats(),
         ragService.getStats(user?.sub)
       ]);
 
@@ -216,7 +216,7 @@ const AdminScreen = ({ user, onBack }) => {
 
   const checkBackendHealth = async () => {
     try {
-      const result = await conversationService.isServiceAvailable();
+      const result = await neonService.isServiceAvailable();
       if (result.ok) {
         return {
           status: 'healthy',
@@ -313,7 +313,7 @@ const AdminScreen = ({ user, onBack }) => {
       const testResults = await Promise.allSettled([
         ragService.testUpload(user?.sub),
         ragService.testSearch(user?.sub),
-        conversationService.isServiceAvailable()
+        neonService.isServiceAvailable()
       ]);
 
       const results = {

@@ -27,7 +27,8 @@ describe('AuthService initialize', () => {
     expect(createAuth0Client).toHaveBeenCalledWith(
       expect.objectContaining({
         cacheLocation: 'localstorage',
-        useRefreshTokens: true
+        useRefreshTokens: true,
+        useRefreshTokensFallback: true
       })
     );
   });

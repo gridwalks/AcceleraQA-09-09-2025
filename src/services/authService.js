@@ -30,7 +30,10 @@ class AuthService {
           scope: AUTH0_CONFIG.SCOPE
         },
         cacheLocation: 'localstorage',
-        useRefreshTokens: true
+
+        useRefreshTokens: true,
+        useRefreshTokensFallback: true
+
       });
 
       this.isInitialized = true;

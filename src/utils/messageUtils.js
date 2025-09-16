@@ -452,10 +452,71 @@ export function repairMessage(message) {
       repaired.role = repaired.type === 'ai' ? 'assistant' : 'user';
     }
 
-    // Fix missing or empty content
-    if (!repaired.content || typeof repaired.content !== 'string') {
-      repaired.content = '[Content unavailable]';
+    // Fix missing or empty content by attempting to recover from fallbacks
+    let repairedContent = repaired.content;
+
+    if (Array.isArray(repairedContent)) {
+      repairedContent = repairedContent
+        .map(part => {
+          if (typeof part === 'string') {
+            return part.trim();
+          }
+
+          if (part == null) {
+            return '';
+          }
+
+          try {
+            return JSON.stringify(part);
+          } catch (jsonError) {
+            return String(part);
+          }
+        })
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+    } else if (repairedContent != null && typeof repairedContent !== 'string') {
+      repairedContent = String(repairedContent).trim();
+    } else if (typeof repairedContent === 'string') {
+      repairedContent = repairedContent.trim();
     }
+
+    if (!repairedContent) {
+      const fallbackFields = ['message', 'text', 'body', 'answer', 'summary'];
+
+      for (const field of fallbackFields) {
+        const value = repaired[field];
+
+        if (Array.isArray(value)) {
+          const joined = value
+            .map(part => (typeof part === 'string' ? part.trim() : String(part || '')))
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+
+          if (joined) {
+            repairedContent = joined;
+            break;
+          }
+        } else if (typeof value === 'string' && value.trim()) {
+          repairedContent = value.trim();
+          break;
+        } else if (value != null && value !== '') {
+          const coerced = String(value).trim();
+          if (coerced) {
+            repairedContent = coerced;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!repairedContent) {
+      console.warn('repairMessage: Unable to recover content, skipping message');
+      return null;
+    }
+
+    repaired.content = repairedContent;
 
     // Fix missing timestamp
     if (!repaired.timestamp || isNaN(new Date(repaired.timestamp).getTime())) {

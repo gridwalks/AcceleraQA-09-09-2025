@@ -200,6 +200,51 @@ export function getRecentConversations(messages) {
 }
 
 /**
+ * Builds sanitized chat history for sending to AI services
+ * @param {Object[]} messages - Array of message objects
+ * @returns {Object[]} - Sanitized history with role/content pairs
+ */
+export function buildChatHistory(messages) {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+
+  return messages
+    .filter(msg => {
+      if (!msg || typeof msg !== 'object') {
+        return false;
+      }
+
+      if (msg.isResource || msg.isStudyNotes || msg.isLocalOnly) {
+        return false;
+      }
+
+      const role = msg.role || (msg.type === 'ai' ? 'assistant' : msg.type === 'user' ? 'user' : null);
+      return role === 'user' || role === 'assistant';
+    })
+    .map(msg => {
+      const role = msg.role || (msg.type === 'ai' ? 'assistant' : 'user');
+      let content = msg.content;
+
+      if (Array.isArray(content)) {
+        content = content.join(' ');
+      } else if (content == null) {
+        content = '';
+      } else if (typeof content !== 'string') {
+        content = String(content);
+      }
+
+      const trimmed = typeof content === 'string' ? content.trim() : '';
+      if (!trimmed) {
+        return null;
+      }
+
+      return { role, content };
+    })
+    .filter(Boolean);
+}
+
+/**
  * Separates conversations into current session and stored
  * @param {Object[]} conversations - Array of conversation objects
  * @returns {Object} - Object with current and stored conversation arrays
@@ -283,9 +328,12 @@ export function createMessage(type, content, resources = [], isStudyNotes = fals
   const randomComponent = Math.random().toString(36).substring(2, 15);
   const id = `msg_${Date.now()}_${randomComponent}`;
 
+  const role = type === 'ai' ? 'assistant' : 'user';
+
   return {
     id,
     type,
+    role,
     content: content.trim(),
     timestamp,
     resources: Array.isArray(resources) ? resources : [],
@@ -319,6 +367,10 @@ export function validateMessage(message) {
 
   // Validate message type
   if (message.type !== 'user' && message.type !== 'ai') {
+    return false;
+  }
+
+  if (message.role && message.role !== 'user' && message.role !== 'assistant') {
     return false;
   }
 
@@ -394,6 +446,10 @@ export function repairMessage(message) {
       } else {
         repaired.type = 'user'; // Default to user
       }
+    }
+
+    if (!repaired.role || (repaired.role !== 'user' && repaired.role !== 'assistant')) {
+      repaired.role = repaired.type === 'ai' ? 'assistant' : 'user';
     }
 
     // Fix missing or empty content

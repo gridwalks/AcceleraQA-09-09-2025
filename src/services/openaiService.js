@@ -90,13 +90,59 @@ class OpenAIService {
     }
   }
 
-  createChatPayload(message, model = getCurrentModel()) {
+  normalizeHistory(history) {
+    if (!Array.isArray(history)) {
+      return [];
+    }
+
+    return history
+      .map(item => {
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+
+        if (item.isResource || item.isStudyNotes || item.isLocalOnly) {
+          return null;
+        }
+
+        const role = item.role || (item.type === 'ai' ? 'assistant' : item.type === 'user' ? 'user' : null);
+        if (role !== 'user' && role !== 'assistant') {
+          return null;
+        }
+
+        let content = item.content;
+        if (Array.isArray(content)) {
+          content = content.join(' ');
+        } else if (content == null) {
+          content = '';
+        } else if (typeof content !== 'string') {
+          content = String(content);
+        }
+
+        if (typeof content !== 'string' || content.trim().length === 0) {
+          return null;
+        }
+
+        return { role, content };
+      })
+      .filter(Boolean);
+  }
+
+  createChatPayload(message, history = [], model = getCurrentModel()) {
+    const normalizedHistory = this.normalizeHistory(history);
+
+    const messages = [
+      { role: 'system', content: OPENAI_CONFIG.SYSTEM_PROMPT },
+      ...normalizedHistory.map(item => ({ role: item.role, content: item.content })),
+    ];
+
+    if (typeof message === 'string' && message.trim().length > 0) {
+      messages.push({ role: 'user', content: message });
+    }
+
     return {
       model,
-      messages: [
-        { role: 'system', content: OPENAI_CONFIG.SYSTEM_PROMPT },
-        { role: 'user', content: message },
-      ],
+      messages,
       max_tokens: OPENAI_CONFIG.MAX_TOKENS,
       temperature: OPENAI_CONFIG.TEMPERATURE,
     };
@@ -107,6 +153,123 @@ class OpenAIService {
       return sum + msg.content.split(/\s+/).filter(Boolean).length;
     }, 0);
     return messageTokens + (payload.max_tokens || 0);
+  }
+
+  extractTextFromContentItem(item) {
+    if (!item) {
+      return null;
+    }
+
+    if (typeof item === 'string') {
+      const trimmed = item.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (typeof item.text === 'string') {
+      const trimmed = item.text.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if (item?.text?.value && typeof item.text.value === 'string') {
+      const trimmed = item.text.value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if (typeof item.value === 'string') {
+      const trimmed = item.value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if (typeof item.content === 'string') {
+      const trimmed = item.content.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if (Array.isArray(item.text)) {
+      const combined = item.text
+        .map(part => this.extractTextFromContentItem(part))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+
+      if (combined.length > 0) {
+        return combined;
+      }
+    }
+
+    if (Array.isArray(item.content)) {
+      const combined = item.content
+        .map(part => this.extractTextFromContentItem(part))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+
+      if (combined.length > 0) {
+        return combined;
+      }
+    }
+
+    return null;
+  }
+
+  extractTextFromOutput(outputArray) {
+    if (!Array.isArray(outputArray)) {
+      return null;
+    }
+
+    for (const output of outputArray) {
+      if (!Array.isArray(output?.content)) {
+        continue;
+      }
+
+      for (const item of output.content) {
+        const text = this.extractTextFromContentItem(item);
+        if (text) {
+          return text;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  extractTextFromChoices(choices) {
+    if (!Array.isArray(choices)) {
+      return null;
+    }
+
+    for (const choice of choices) {
+      const messageContent = choice?.message?.content;
+
+      if (typeof messageContent === 'string') {
+        const trimmed = messageContent.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+
+      if (Array.isArray(messageContent)) {
+        const combined = messageContent
+          .map(part => this.extractTextFromContentItem(part))
+          .filter(Boolean)
+          .join('\n')
+          .trim();
+
+        if (combined.length > 0) {
+          return combined;
+        }
+      }
+    }
+
+    return null;
   }
 
   async uploadFile(file) {
@@ -180,21 +343,39 @@ class OpenAIService {
     return await response.json();
   }
 
-  async getChatResponse(message, documentFile = null, model = getCurrentModel()) {
+  async getChatResponse(message, documentFile = null, history = [], model = getCurrentModel()) {
     if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentFile) {
       throw new Error('Invalid message provided');
     }
 
-    let requestBody = { model, input: message };
-    let tokenPayloadMessage = message;
+    const normalizedHistory = this.normalizeHistory(history);
+    const hasDocumentString = typeof documentFile === 'string' && documentFile.trim().length > 0;
+    const userPrompt = hasDocumentString
+      ? `${message}\n\nDocument Content:\n${documentFile}`
+      : message;
 
-    // If second parameter is a string (legacy document content)
-    if (typeof documentFile === 'string' && documentFile.trim().length > 0) {
-      tokenPayloadMessage = `${message}\n\nDocument Content:\n${documentFile}`;
-      requestBody.input = tokenPayloadMessage;
-    }
+    const baseInput = [
+      {
+        role: 'system',
+        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+      },
+      ...normalizedHistory.map(item => ({
+        role: item.role,
+        content: [{ type: 'text', text: item.content }],
+      })),
+    ];
 
-    // If a real file is provided, upload it and reference it in the message
+    let requestBody = {
+      model,
+      input: [
+        ...baseInput,
+        {
+          role: 'user',
+          content: [{ type: 'text', text: userPrompt }],
+        },
+      ],
+    };
+
     const isFile = documentFile && typeof documentFile === 'object' && 'name' in documentFile;
     if (isFile) {
       try {
@@ -211,10 +392,11 @@ class OpenAIService {
         requestBody = {
           model,
           input: [
+            ...baseInput,
             {
               role: 'user',
               content: [
-                { type: 'input_text', text: message || '' },
+                { type: 'text', text: message || '' },
                 { type: 'input_file', file_id: fileId },
               ],
             },
@@ -227,7 +409,7 @@ class OpenAIService {
       }
     }
 
-    const payloadForTokens = this.createChatPayload(tokenPayloadMessage, model);
+    const payloadForTokens = this.createChatPayload(userPrompt, normalizedHistory, model);
     const tokenCount = this.estimateTokens(payloadForTokens);
 
     try {
@@ -240,22 +422,31 @@ class OpenAIService {
         tokenCount
       );
 
-      const outputArrayText = Array.isArray(data.output)
-        ? data.output.find(item => item?.content?.[0]?.text)?.content?.[0]?.text
-        : null;
+      const outputArrayText = this.extractTextFromOutput(data.output);
+      const choicesText = this.extractTextFromChoices(data.choices);
 
-      const aiResponse =
-        data.output_text ||
-        outputArrayText ||
-        data.choices?.[0]?.message?.content ||
-        null;
+      const candidateTexts = [];
+
+      if (typeof data.output_text === 'string' && data.output_text.trim().length > 0) {
+        candidateTexts.push(data.output_text.trim());
+      }
+
+      if (outputArrayText) {
+        candidateTexts.push(outputArrayText);
+      }
+
+      if (choicesText) {
+        candidateTexts.push(choicesText);
+      }
+
+      const aiResponse = candidateTexts.find(text => typeof text === 'string' && text.trim().length > 0) || null;
 
       if (!aiResponse) {
         const rawData = typeof data === 'object' ? JSON.stringify(data) : String(data);
         throw new Error(`No response generated. Raw response: ${rawData}`);
       }
 
-      const resources = generateResources(message, aiResponse);
+      const resources = generateResources(userPrompt, aiResponse);
 
       if (data.usage?.total_tokens || tokenCount) {
         recordTokenUsage(data.usage?.total_tokens || tokenCount);
@@ -349,5 +540,5 @@ export default openAIService;
 
 // Export convenience function for backward compatibility
 export const getChatGPTResponse = async (message, documentContent = '') => {
-  return await openAIService.getChatResponse(message, documentContent);
+  return await openAIService.getChatResponse(message, documentContent, []);
 };

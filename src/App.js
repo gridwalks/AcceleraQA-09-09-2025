@@ -32,7 +32,6 @@ import {
   detectDocumentExportIntent,
   exportMessagesToExcel,
   exportMessagesToWord,
-  exportNotebook,
 } from './utils/exportUtils';
 
 const COOLDOWN_SECONDS = 10;
@@ -272,7 +271,7 @@ function App() {
     const exportIntent = !fileToSend ? detectDocumentExportIntent(trimmedInput) : null;
 
     if (exportIntent) {
-      const exportSourceMessages = mergeCurrentAndStoredMessages(updatedMessages, thirtyDayMessages);
+      const exportSourceMessages = updatedMessages;
 
       try {
         if (exportIntent === 'word') {
@@ -373,7 +372,6 @@ function App() {
     uploadedFile,
     ragEnabled,
     messages,
-    thirtyDayMessages,
     refreshLearningSuggestions,
     cooldown,
     user?.sub,
@@ -426,15 +424,6 @@ function App() {
       setLearningSuggestions([]);
     }
   }, [user]);
-
-  const handleExport = useCallback(() => {
-    try {
-      const mergedMessages = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
-      exportNotebook(mergedMessages);
-    } catch (error) {
-      console.error('Error exporting notebook:', error);
-    }
-  }, [messages, thirtyDayMessages]);
 
   const handleExportSelected = useCallback(() => {
     console.log('Exporting selected messages', Array.from(selectedMessages));
@@ -598,7 +587,6 @@ function App() {
               isGeneratingNotes={isGeneratingNotes}
               storedMessageCount={messages.length}
               isServerAvailable={isServerAvailable}
-              exportNotebook={handleExport}
               onClose={() => setShowNotebook(false)}
             />
           )}

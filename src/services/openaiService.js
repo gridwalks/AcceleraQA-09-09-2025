@@ -29,6 +29,14 @@ class OpenAIService {
       },
     };
 
+    if (
+      endpoint === '/responses' &&
+      defaultOptions.body &&
+      typeof defaultOptions.body !== 'undefined'
+    ) {
+      defaultOptions.body = this.sanitizeResponsesRequestBody(defaultOptions.body);
+    }
+
     const maxRetries = 3;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -62,6 +70,206 @@ class OpenAIService {
       : ERROR_MESSAGES.RATE_LIMIT_EXCEEDED;
 
     throw new Error(finalMsg);
+  }
+
+  sanitizeResponsesRequestBody(body) {
+    if (!body) {
+      return body;
+    }
+
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        const sanitized = this.sanitizeResponsesPayload(parsed);
+        return JSON.stringify(sanitized);
+      } catch {
+        return body;
+      }
+    }
+
+    if (typeof body === 'object') {
+      // Avoid mutating shared references
+      const cloned = Array.isArray(body) ? [...body] : { ...body };
+      const sanitized = this.sanitizeResponsesPayload(cloned);
+      return JSON.stringify(sanitized);
+    }
+
+    return body;
+  }
+
+  sanitizeResponsesPayload(payload) {
+    if (payload == null) {
+      return payload;
+    }
+
+    if (Array.isArray(payload)) {
+      return payload.map(item => this.sanitizeResponsesPayload(item));
+    }
+
+    if (typeof payload !== 'object') {
+      return payload;
+    }
+
+    const sanitized = { ...payload };
+
+    if ('tool_resources' in sanitized) {
+      delete sanitized.tool_resources;
+    }
+
+    if (Array.isArray(sanitized.attachments)) {
+      sanitized.attachments = sanitized.attachments
+        .map(item => this.sanitizeResponsesPayload(item))
+        .filter(item => item && typeof item === 'object');
+    } else if ('attachments' in sanitized && !Array.isArray(sanitized.attachments)) {
+      delete sanitized.attachments;
+    }
+
+    if (Array.isArray(sanitized.content)) {
+      sanitized.content = sanitized.content.map(item => this.sanitizeResponsesPayload(item));
+    }
+
+    if (Array.isArray(sanitized.input)) {
+      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message));
+
+      if (Array.isArray(sanitized.attachments) && sanitized.attachments.length > 0) {
+        const applied = this.applyAttachmentsToLastUserMessage(sanitized.input, sanitized.attachments);
+        if (applied) {
+          delete sanitized.attachments;
+        } else if (sanitized.attachments.length === 0) {
+          delete sanitized.attachments;
+        }
+      }
+    } else if (Array.isArray(sanitized.attachments) && sanitized.attachments.length === 0) {
+      delete sanitized.attachments;
+    }
+
+    return sanitized;
+  }
+
+  normalizeResponseMessage(message) {
+    if (!message || typeof message !== 'object') {
+      return message;
+    }
+
+    const normalized = { ...message };
+
+    if ('tool_resources' in normalized) {
+      delete normalized.tool_resources;
+    }
+
+    const collectedAttachments = Array.isArray(normalized.attachments)
+      ? this.sanitizeResponsesPayload(normalized.attachments)
+      : [];
+
+    if ('attachments' in normalized) {
+      delete normalized.attachments;
+    }
+
+    const normalizePart = (part) => {
+      const normalizedPart = this.normalizeMessageContentPart(part);
+
+      if (normalizedPart && typeof normalizedPart === 'object' && Array.isArray(normalizedPart.attachments)) {
+        const partAttachments = this.sanitizeResponsesPayload(normalizedPart.attachments);
+        if (Array.isArray(partAttachments)) {
+          collectedAttachments.push(...partAttachments);
+        }
+        delete normalizedPart.attachments;
+      }
+
+      return normalizedPart;
+    };
+
+    if (Array.isArray(normalized.content)) {
+      normalized.content = normalized.content.map(part => normalizePart(part));
+    } else if (normalized.content && typeof normalized.content === 'object') {
+      normalized.content = [normalizePart(normalized.content)];
+    } else if (normalized.content != null) {
+      normalized.content = [normalized.content];
+    } else {
+      normalized.content = [];
+    }
+
+    if (collectedAttachments.length > 0) {
+      normalized.attachments = collectedAttachments;
+    }
+
+    return normalized;
+  }
+
+  normalizeMessageContentPart(part) {
+    if (!part || typeof part !== 'object') {
+      return part;
+    }
+
+    const sanitizedPart = { ...part };
+
+    if ('tool_resources' in sanitizedPart) {
+      delete sanitizedPart.tool_resources;
+    }
+
+    if (Array.isArray(sanitizedPart.attachments)) {
+      sanitizedPart.attachments = this.sanitizeResponsesPayload(sanitizedPart.attachments);
+    } else if ('attachments' in sanitizedPart) {
+      delete sanitizedPart.attachments;
+    }
+
+    if (Array.isArray(sanitizedPart.content)) {
+      sanitizedPart.content = sanitizedPart.content.map(item => this.sanitizeResponsesPayload(item));
+    }
+
+    if (Array.isArray(sanitizedPart.input)) {
+      sanitizedPart.input = sanitizedPart.input.map(item => this.normalizeResponseMessage(item));
+    }
+
+    return sanitizedPart;
+  }
+
+  applyAttachmentsToLastUserMessage(messages, attachments) {
+    if (!Array.isArray(messages) || !Array.isArray(attachments) || attachments.length === 0) {
+      return false;
+    }
+
+    const userIndex = this.findLastUserMessageIndex(messages);
+    if (userIndex === -1) {
+      return false;
+    }
+
+    const targetMessage = messages[userIndex] && typeof messages[userIndex] === 'object'
+      ? messages[userIndex]
+      : { role: 'user', content: [] };
+
+    const existingMessageAttachments = Array.isArray(targetMessage.attachments)
+      ? targetMessage.attachments
+      : [];
+
+    const sanitizedAttachments = this.sanitizeResponsesPayload(attachments)
+      .filter(item => item && typeof item === 'object');
+
+    if (sanitizedAttachments.length === 0 && existingMessageAttachments.length === 0) {
+      return false;
+    }
+
+    const combinedMessage = {
+      ...targetMessage,
+      attachments: [...existingMessageAttachments, ...sanitizedAttachments],
+    };
+
+    messages[userIndex] = this.normalizeResponseMessage(combinedMessage);
+    return true;
+  }
+
+  findLastUserMessageIndex(messages) {
+    if (!Array.isArray(messages)) {
+      return -1;
+    }
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index] && messages[index].role === 'user') {
+        return index;
+      }
+    }
+
+    return -1;
   }
 
   async handleApiError(response, tokenCount = 0) {
@@ -419,21 +627,12 @@ class OpenAIService {
           throw vsError;
         }
 
-        const userContent = this.createContentForRole('user', message || '').map((part, index) => {
-          if (index !== 0) {
-            return part;
-          }
-
-          return {
-            ...part,
-            attachments: [
-              {
-                vector_store_id: vectorStoreId,
-                tools: [{ type: 'file_search' }],
-              },
-            ],
-          };
-        });
+        const vectorStoreAttachments = [
+          {
+            vector_store_id: vectorStoreId,
+            tools: [{ type: 'file_search' }],
+          },
+        ];
 
         requestBody = {
           model,
@@ -441,7 +640,8 @@ class OpenAIService {
             ...baseInput,
             {
               role: 'user',
-              content: userContent,
+              content: this.createContentForRole('user', message || ''),
+              attachments: vectorStoreAttachments,
             },
           ],
           tools: [{ type: 'file_search' }],

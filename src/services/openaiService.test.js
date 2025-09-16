@@ -116,11 +116,11 @@ describe('openAIService getChatResponse', () => {
     expect(body.input).toEqual([
       {
         role: 'system',
-        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
       },
       {
         role: 'user',
-        content: [{ type: 'input_text', text: 'hello' }],
+        content: [{ type: 'text', text: 'hello' }],
       },
     ]);
   });
@@ -129,7 +129,15 @@ describe('openAIService getChatResponse', () => {
     openAIService.makeRequest.mockResolvedValue({
       output: [
         { role: 'meta' },
-        { role: 'assistant', content: [{ text: 'response from output array' }] },
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'output_text',
+              text: { value: 'response from output array' },
+            },
+          ],
+        },
       ],
       usage: { total_tokens: 7 },
     });
@@ -146,6 +154,27 @@ describe('openAIService getChatResponse', () => {
 
     const result = await openAIService.getChatResponse('hi');
     expect(result.answer).toBe('response from choices');
+  });
+
+  it('extracts assistant text from structured choice content arrays', async () => {
+    openAIService.makeRequest.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: [
+              {
+                type: 'output_text',
+                text: { value: 'response from structured choices' },
+              },
+            ],
+          },
+        },
+      ],
+      usage: { total_tokens: 6 },
+    });
+
+    const result = await openAIService.getChatResponse('structured');
+    expect(result.answer).toBe('response from structured choices');
   });
 
   it('includes prior messages in payload when history is provided', async () => {
@@ -167,19 +196,19 @@ describe('openAIService getChatResponse', () => {
     expect(body.input).toEqual([
       {
         role: 'system',
-        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
       },
       {
         role: 'user',
-        content: [{ type: 'input_text', text: 'What is GMP?' }],
+        content: [{ type: 'text', text: 'What is GMP?' }],
       },
       {
         role: 'assistant',
-        content: [{ type: 'input_text', text: 'It is Good Manufacturing Practice.' }],
+        content: [{ type: 'text', text: 'It is Good Manufacturing Practice.' }],
       },
       {
         role: 'user',
-        content: [{ type: 'input_text', text: 'Explain validation steps' }],
+        content: [{ type: 'text', text: 'Explain validation steps' }],
       },
     ]);
   });
@@ -214,12 +243,12 @@ describe('openAIService getChatResponse', () => {
     expect(body.input).toEqual([
       {
         role: 'system',
-        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
       },
       {
         role: 'user',
         content: [
-          { type: 'input_text', text: 'hi' },
+          { type: 'text', text: 'hi' },
           { type: 'input_file', file_id: 'file-123' },
         ],
       },

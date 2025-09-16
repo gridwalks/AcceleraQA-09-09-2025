@@ -199,14 +199,17 @@ export async function loadMessagesFromStorage(userId) {
     
     // FIXED: Better message validation and repair
     const validMessages = [];
-    
+
     messages.forEach((msg, index) => {
-      // Skip invalid entries (like standalone version objects)
-      if (!msg || typeof msg !== 'object' || !msg.id || !msg.type || !msg.content) {
+      if (!msg || typeof msg !== 'object') {
         console.log(`Skipping invalid message at index ${index}:`, msg);
         return;
       }
 
+      if (Object.keys(msg).length === 1 && msg.version) {
+        console.log(`Skipping version-only record at index ${index}:`, msg);
+        return;
+      }
       if (validateMessage(msg)) {
         validMessages.push({
           ...msg,

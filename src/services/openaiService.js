@@ -155,6 +155,123 @@ class OpenAIService {
     return messageTokens + (payload.max_tokens || 0);
   }
 
+  extractTextFromContentItem(item) {
+    if (!item) {
+      return null;
+    }
+
+    if (typeof item === 'string') {
+      const trimmed = item.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (typeof item.text === 'string') {
+      const trimmed = item.text.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if (item?.text?.value && typeof item.text.value === 'string') {
+      const trimmed = item.text.value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if (typeof item.value === 'string') {
+      const trimmed = item.value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if (typeof item.content === 'string') {
+      const trimmed = item.content.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if (Array.isArray(item.text)) {
+      const combined = item.text
+        .map(part => this.extractTextFromContentItem(part))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+
+      if (combined.length > 0) {
+        return combined;
+      }
+    }
+
+    if (Array.isArray(item.content)) {
+      const combined = item.content
+        .map(part => this.extractTextFromContentItem(part))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+
+      if (combined.length > 0) {
+        return combined;
+      }
+    }
+
+    return null;
+  }
+
+  extractTextFromOutput(outputArray) {
+    if (!Array.isArray(outputArray)) {
+      return null;
+    }
+
+    for (const output of outputArray) {
+      if (!Array.isArray(output?.content)) {
+        continue;
+      }
+
+      for (const item of output.content) {
+        const text = this.extractTextFromContentItem(item);
+        if (text) {
+          return text;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  extractTextFromChoices(choices) {
+    if (!Array.isArray(choices)) {
+      return null;
+    }
+
+    for (const choice of choices) {
+      const messageContent = choice?.message?.content;
+
+      if (typeof messageContent === 'string') {
+        const trimmed = messageContent.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+
+      if (Array.isArray(messageContent)) {
+        const combined = messageContent
+          .map(part => this.extractTextFromContentItem(part))
+          .filter(Boolean)
+          .join('\n')
+          .trim();
+
+        if (combined.length > 0) {
+          return combined;
+        }
+      }
+    }
+
+    return null;
+  }
+
   async uploadFile(file) {
     const { file: preparedFile } = await convertDocxToPdfIfNeeded(file);
 
@@ -240,11 +357,11 @@ class OpenAIService {
     const baseInput = [
       {
         role: 'system',
-        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
       },
       ...normalizedHistory.map(item => ({
         role: item.role,
-        content: [{ type: 'input_text', text: item.content }],
+        content: [{ type: 'text', text: item.content }],
       })),
     ];
 
@@ -254,7 +371,7 @@ class OpenAIService {
         ...baseInput,
         {
           role: 'user',
-          content: [{ type: 'input_text', text: userPrompt }],
+          content: [{ type: 'text', text: userPrompt }],
         },
       ],
     };
@@ -279,7 +396,7 @@ class OpenAIService {
             {
               role: 'user',
               content: [
-                { type: 'input_text', text: message || '' },
+                { type: 'text', text: message || '' },
                 { type: 'input_file', file_id: fileId },
               ],
             },
@@ -305,15 +422,24 @@ class OpenAIService {
         tokenCount
       );
 
-      const outputArrayText = Array.isArray(data.output)
-        ? data.output.find(item => item?.content?.[0]?.text)?.content?.[0]?.text
-        : null;
+      const outputArrayText = this.extractTextFromOutput(data.output);
+      const choicesText = this.extractTextFromChoices(data.choices);
 
-      const aiResponse =
-        data.output_text ||
-        outputArrayText ||
-        data.choices?.[0]?.message?.content ||
-        null;
+      const candidateTexts = [];
+
+      if (typeof data.output_text === 'string' && data.output_text.trim().length > 0) {
+        candidateTexts.push(data.output_text.trim());
+      }
+
+      if (outputArrayText) {
+        candidateTexts.push(outputArrayText);
+      }
+
+      if (choicesText) {
+        candidateTexts.push(choicesText);
+      }
+
+      const aiResponse = candidateTexts.find(text => typeof text === 'string' && text.trim().length > 0) || null;
 
       if (!aiResponse) {
         const rawData = typeof data === 'object' ? JSON.stringify(data) : String(data);

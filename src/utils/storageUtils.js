@@ -206,10 +206,11 @@ export async function loadMessagesFromStorage(userId) {
         console.log(`Skipping invalid message at index ${index}:`, msg);
         return;
       }
-      
+
       if (validateMessage(msg)) {
         validMessages.push({
           ...msg,
+          role: msg.role || (msg.type === 'ai' ? 'assistant' : 'user'),
           isStored: true,
           isCurrent: false
         });
@@ -220,6 +221,7 @@ export async function loadMessagesFromStorage(userId) {
           console.log(`Successfully repaired message at index ${index}`);
           validMessages.push({
             ...repairedMessage,
+            role: repairedMessage.role || (repairedMessage.type === 'ai' ? 'assistant' : 'user'),
             isStored: true,
             isCurrent: false
           });
@@ -298,7 +300,10 @@ function validateMessagesForStorage(messages) {
     content: m.content.substring(0, 50) + '...'
   })));
   
-  return validMessages;
+  return validMessages.map(msg => ({
+    ...msg,
+    role: msg.role || (msg.type === 'ai' ? 'assistant' : 'user'),
+  }));
 }
 
 /**

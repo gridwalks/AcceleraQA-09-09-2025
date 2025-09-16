@@ -124,7 +124,8 @@ class LearningSuggestionsService {
       // Get suggestions from ChatGPT using a lighter model
       const response = await openaiService.getChatResponse(
         prompt,
-        '',
+        null,
+        [],
         OPENAI_CONFIG.SUGGESTIONS_MODEL
       );
       

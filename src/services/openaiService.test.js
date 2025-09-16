@@ -12,17 +12,39 @@ jest.mock('../config/modelConfig', () => ({
   getCurrentModel: () => 'test-model',
 }));
 
+let mockConvertDocxToPdfIfNeeded = async (file) => ({
+  file,
+  converted: false,
+  originalFileName: file?.name || null,
+  originalMimeType: file?.type || null,
+});
+
+jest.mock('../utils/fileConversion', () => ({
+  convertDocxToPdfIfNeeded: (...args) => mockConvertDocxToPdfIfNeeded(...args),
+}));
+
 import openAIService from './openaiService';
 
 describe('openAIService uploadFile', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
+    mockConvertDocxToPdfIfNeeded = jest.fn(async (file) => ({
+      file,
+      converted: false,
+      originalFileName: file?.name || null,
+      originalMimeType: file?.type || null,
+    }));
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ id: 'file-id' }),
     });
     global.FormData = class {
-      constructor() { this.append = jest.fn(); }
-      append() {}
+      constructor() {
+        this.entries = [];
+      }
+      append(key, value) {
+        this.entries.push([key, value]);
+      }
     };
   });
 
@@ -31,12 +53,41 @@ describe('openAIService uploadFile', () => {
     const id = await openAIService.uploadFile(file);
     expect(id).toBe('file-id');
     expect(fetch).toHaveBeenCalled();
+    expect(mockConvertDocxToPdfIfNeeded).toHaveBeenCalledWith(file);
   });
 
   it('rejects unsupported file types', async () => {
     const file = { name: 'image.png', type: 'image/png' };
-    await expect(openAIService.uploadFile(file)).rejects.toThrow('Unsupported file type; please upload a PDF, TXT, or MD file');
+    await expect(openAIService.uploadFile(file)).rejects.toThrow('Unsupported file type; please upload a PDF, TXT, MD, or DOCX file');
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('converts DOCX files before uploading', async () => {
+    const originalFile = {
+      name: 'policy.docx',
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+
+    const convertedFile = {
+      name: 'policy.pdf',
+      type: 'application/pdf',
+    };
+
+    mockConvertDocxToPdfIfNeeded.mockResolvedValue({
+      file: convertedFile,
+      converted: true,
+      originalFileName: originalFile.name,
+      originalMimeType: originalFile.type,
+    });
+
+    const id = await openAIService.uploadFile(originalFile);
+
+    expect(id).toBe('file-id');
+    expect(mockConvertDocxToPdfIfNeeded).toHaveBeenCalledWith(originalFile);
+    const options = fetch.mock.calls[0][1];
+    expect(options.body).toBeInstanceOf(FormData);
+    const appendedFile = options.body.entries.find(([key]) => key === 'file')[1];
+    expect(appendedFile).toBe(convertedFile);
   });
 });
 

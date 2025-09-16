@@ -473,15 +473,34 @@ class RAGService {
       body: JSON.stringify(body),
     });
 
-    const answer =
-      data.output_text ||
-      data.output?.[0]?.content?.[0]?.text ||
+    const outputMessages = Array.isArray(data.output) ? data.output : [];
+    const contentItems = outputMessages.flatMap(message => message.content || []);
+
+    const answerFromContent = contentItems
+      .map(item => {
+        if (typeof item?.text?.value === 'string') {
+          return item.text.value;
+        }
+        if (typeof item?.text === 'string') {
+          return item.text;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+
+    const rawAnswer =
+      (typeof data.output_text === 'string' && data.output_text.trim()) ||
+      answerFromContent ||
       '';
 
+    const answer = rawAnswer.trim() || 'The document search returned no results.';
+
     const annotations = [];
-    const contentItems = data.output?.[0]?.content || [];
     contentItems.forEach(item => {
-      if (Array.isArray(item.annotations)) annotations.push(...item.annotations);
+      if (Array.isArray(item?.text?.annotations)) annotations.push(...item.text.annotations);
+      if (Array.isArray(item?.annotations)) annotations.push(...item.annotations);
     });
 
     return {

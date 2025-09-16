@@ -29,6 +29,14 @@ class OpenAIService {
       },
     };
 
+    if (
+      endpoint === '/responses' &&
+      defaultOptions.body &&
+      typeof defaultOptions.body !== 'undefined'
+    ) {
+      defaultOptions.body = this.sanitizeResponsesRequestBody(defaultOptions.body);
+    }
+
     const maxRetries = 3;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -62,6 +70,140 @@ class OpenAIService {
       : ERROR_MESSAGES.RATE_LIMIT_EXCEEDED;
 
     throw new Error(finalMsg);
+  }
+
+  sanitizeResponsesRequestBody(body) {
+    if (!body) {
+      return body;
+    }
+
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        const sanitized = this.sanitizeResponsesPayload(parsed);
+        return JSON.stringify(sanitized);
+      } catch {
+        return body;
+      }
+    }
+
+    if (typeof body === 'object') {
+      // Avoid mutating shared references
+      const cloned = Array.isArray(body) ? [...body] : { ...body };
+      const sanitized = this.sanitizeResponsesPayload(cloned);
+      return JSON.stringify(sanitized);
+    }
+
+    return body;
+  }
+
+  sanitizeResponsesPayload(payload) {
+    if (payload == null) {
+      return payload;
+    }
+
+    const context = { attachments: [] };
+    const sanitized = this.cleanResponsesPayload(payload, context, true);
+
+    if (sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)) {
+      const existing = Array.isArray(sanitized.attachments) ? sanitized.attachments : [];
+      const combined = [...existing, ...context.attachments];
+
+      if (combined.length > 0) {
+        sanitized.attachments = combined;
+      } else if ('attachments' in sanitized) {
+        delete sanitized.attachments;
+      }
+    }
+
+    return sanitized;
+  }
+
+  cleanResponsesPayload(node, context, isRoot = false) {
+    if (node == null) {
+      return node;
+    }
+
+    if (Array.isArray(node)) {
+      return node.map(item => this.cleanResponsesPayload(item, context, false));
+    }
+
+    if (typeof node !== 'object') {
+      return node;
+    }
+
+    const cleaned = {};
+    const isMessage = typeof node.role === 'string';
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'tool_resources') {
+        continue;
+      }
+
+      if (key === 'attachments') {
+        if (!Array.isArray(value)) {
+          continue;
+        }
+
+        const cleanedAttachments = value
+          .map(item => this.cleanResponsesPayload(item, context, false))
+          .filter(item => item && typeof item === 'object');
+
+        if (isRoot) {
+          if (cleanedAttachments.length > 0) {
+            cleaned.attachments = cleanedAttachments;
+          }
+        } else if (cleanedAttachments.length > 0) {
+          context.attachments.push(...cleanedAttachments);
+        }
+
+        continue;
+      }
+
+      if (key === 'content') {
+        const sanitizedContent = this.cleanResponsesPayload(value, context, false);
+
+        if (isMessage) {
+          if (Array.isArray(value)) {
+            cleaned.content = Array.isArray(sanitizedContent)
+              ? sanitizedContent
+              : sanitizedContent != null
+                ? [sanitizedContent]
+                : [];
+          } else if (sanitizedContent != null) {
+            cleaned.content = Array.isArray(sanitizedContent)
+              ? sanitizedContent
+              : [sanitizedContent];
+          } else {
+            cleaned.content = [];
+          }
+        } else {
+          cleaned.content = sanitizedContent;
+        }
+
+        continue;
+      }
+
+      if (key === 'input') {
+        const sanitizedInput = this.cleanResponsesPayload(value, context, false);
+
+        if (Array.isArray(value)) {
+          cleaned.input = sanitizedInput;
+        } else if (sanitizedInput != null) {
+          cleaned.input = Array.isArray(sanitizedInput)
+            ? sanitizedInput
+            : [sanitizedInput];
+        } else {
+          cleaned.input = [];
+        }
+
+        continue;
+      }
+
+      cleaned[key] = this.cleanResponsesPayload(value, context, false);
+    }
+
+    return cleaned;
   }
 
   async handleApiError(response, tokenCount = 0) {
@@ -419,21 +561,12 @@ class OpenAIService {
           throw vsError;
         }
 
-        const userContent = this.createContentForRole('user', message || '').map((part, index) => {
-          if (index !== 0) {
-            return part;
-          }
-
-          return {
-            ...part,
-            attachments: [
-              {
-                vector_store_id: vectorStoreId,
-                tools: [{ type: 'file_search' }],
-              },
-            ],
-          };
-        });
+        const vectorStoreAttachments = [
+          {
+            vector_store_id: vectorStoreId,
+            tools: [{ type: 'file_search' }],
+          },
+        ];
 
         requestBody = {
           model,
@@ -441,9 +574,10 @@ class OpenAIService {
             ...baseInput,
             {
               role: 'user',
-              content: userContent,
+              content: this.createContentForRole('user', message || ''),
             },
           ],
+          attachments: vectorStoreAttachments,
           tools: [{ type: 'file_search' }],
         };
       } catch (error) {

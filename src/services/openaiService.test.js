@@ -240,28 +240,103 @@ describe('openAIService getChatResponse', () => {
 
     const [, options] = openAIService.makeRequest.mock.calls[0];
     const body = JSON.parse(options.body);
-    expect(body.input).toEqual([
+    expect(body.input[0]).toEqual({
+      role: 'system',
+      content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+    });
+    expect(body.input[1]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'input_text',
+          text: 'hi',
+        },
+      ],
+    });
+    body.input[1].content.forEach(part => {
+      expect(part.attachments).toBeUndefined();
+    });
+    expect(body.attachments).toEqual([
       {
-        role: 'system',
-        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'input_text',
-            text: 'hi',
-            attachments: [
-              {
-                vector_store_id: 'vs-456',
-                tools: [{ type: 'file_search' }],
-              },
-            ],
-          },
-        ],
+        vector_store_id: 'vs-456',
+        tools: [{ type: 'file_search' }],
       },
     ]);
     expect(body.tools).toEqual([{ type: 'file_search' }]);
-    expect(body.attachments).toBeUndefined();
+    expect(body).not.toHaveProperty('tool_resources');
+  });
+});
+
+describe('openAIService makeRequest sanitization', () => {
+  beforeEach(() => {
+    openAIService.apiKey = 'test-key';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('removes tool_resources and consolidates attachments at the root for responses payloads', async () => {
+    const payload = {
+      model: 'test-model',
+      input: [
+        {
+          role: 'system',
+          content: [{ type: 'input_text', text: 'system prompt' }],
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: 'hello',
+              attachments: [
+                { vector_store_id: 'content-vs', tool_resources: { example: true } },
+              ],
+            },
+          ],
+          attachments: [{ vector_store_id: 'message-vs' }],
+        },
+      ],
+      tool_resources: {
+        file_search: { vector_store_ids: ['root-vs'] },
+      },
+      attachments: [{ vector_store_id: 'root-vs' }],
+    };
+
+    await openAIService.makeRequest('/responses', {
+      body: JSON.stringify(payload),
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [, options] = fetch.mock.calls[0];
+    const sanitized = JSON.parse(options.body);
+
+    expect(sanitized.tool_resources).toBeUndefined();
+    expect(Array.isArray(sanitized.attachments)).toBe(true);
+    expect(sanitized.attachments).toEqual([
+      { vector_store_id: 'root-vs' },
+      { vector_store_id: 'content-vs' },
+      { vector_store_id: 'message-vs' },
+    ]);
+
+    expect(Array.isArray(sanitized.input)).toBe(true);
+    const userMessage = sanitized.input.find(msg => msg.role === 'user');
+    expect(userMessage).toBeDefined();
+    expect(userMessage.attachments).toBeUndefined();
+
+    userMessage.content.forEach(part => {
+      if (part && typeof part === 'object') {
+        expect(part.attachments).toBeUndefined();
+      }
+    });
+
+    sanitized.attachments.forEach(attachment => {
+      expect(attachment.tool_resources).toBeUndefined();
+    });
   });
 });

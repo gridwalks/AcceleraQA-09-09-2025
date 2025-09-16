@@ -109,11 +109,13 @@ class OpenAIService {
     if (typeof payload !== 'object') {
       return payload;
     }
+
     const sanitized = { ...payload };
 
     if ('tool_resources' in sanitized) {
       delete sanitized.tool_resources;
     }
+
     if (Array.isArray(sanitized.attachments)) {
       sanitized.attachments = sanitized.attachments
         .map(item => this.sanitizeResponsesPayload(item))
@@ -139,7 +141,6 @@ class OpenAIService {
       }
     } else if (Array.isArray(sanitized.attachments) && sanitized.attachments.length === 0) {
       delete sanitized.attachments;
-
     }
 
     return sanitized;
@@ -155,6 +156,7 @@ class OpenAIService {
     if ('tool_resources' in normalized) {
       delete normalized.tool_resources;
     }
+
     const collectedAttachments = Array.isArray(normalized.attachments)
       ? this.sanitizeResponsesPayload(normalized.attachments)
       : [];
@@ -513,7 +515,7 @@ class OpenAIService {
     const allowedExtensions = ['.pdf', '.txt', '.md'];
     const allowedMimeTypes = ['application/pdf', 'text/plain', 'text/markdown'];
     const fileName = preparedFile?.name?.toLowerCase() || '';
-    const fileType = preparedFile?.type?.toLowerCase() || '';
+       const fileType = preparedFile?.type?.toLowerCase() || '';
     const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
     const hasValidMime = allowedMimeTypes.includes(fileType);
     if (!hasValidExtension && !hasValidMime) {
@@ -638,9 +640,10 @@ class OpenAIService {
             {
               role: 'user',
               content: this.createContentForRole('user', message || ''),
-              attachments: vectorStoreAttachments,
+              attachments: vectorStoreAttachments, // keep attachments on the user message
             },
           ],
+          attachments: vectorStoreAttachments, // and top-level for Assistants v2
           tools: [{ type: 'file_search' }],
           tool_resources: {
             file_search: {

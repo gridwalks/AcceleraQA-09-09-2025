@@ -240,18 +240,15 @@ describe('openAIService getChatResponse', () => {
 
     const [, options] = openAIService.makeRequest.mock.calls[0];
     const body = JSON.parse(options.body);
+
+    // After sanitization, attachments should be on the user message, not at root.
     expect(body.input[0]).toEqual({
       role: 'system',
       content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
     });
     expect(body.input[1]).toEqual({
       role: 'user',
-      content: [
-        {
-          type: 'input_text',
-          text: 'hi',
-        },
-      ],
+      content: [{ type: 'input_text', text: 'hi' }],
       attachments: [
         {
           vector_store_id: 'vs-456',
@@ -259,9 +256,11 @@ describe('openAIService getChatResponse', () => {
         },
       ],
     });
+
     body.input[1].content.forEach(part => {
       expect(part.attachments).toBeUndefined();
     });
+
     expect(body.tools).toEqual([{ type: 'file_search' }]);
     expect(body).not.toHaveProperty('attachments');
     expect(body).not.toHaveProperty('tool_resources');
@@ -280,7 +279,7 @@ describe('openAIService makeRequest sanitization', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
-  
+
   it('removes tool_resources and keeps attachments at the message level for responses payloads', async () => {
     const payload = {
       model: 'test-model',
@@ -317,9 +316,11 @@ describe('openAIService makeRequest sanitization', () => {
     const [, options] = fetch.mock.calls[0];
     const sanitized = JSON.parse(options.body);
 
+    // root fields removed
     expect(sanitized.tool_resources).toBeUndefined();
     expect(sanitized.attachments).toBeUndefined();
 
+    // user message received consolidated attachments
     expect(Array.isArray(sanitized.input)).toBe(true);
     const userMessage = sanitized.input.find(msg => msg.role === 'user');
     expect(userMessage).toBeDefined();

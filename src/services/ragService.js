@@ -521,12 +521,13 @@ class RAGService {
             {
               type: 'input_text',
               text: trimmedQuery,
-              attachments: [vectorStoreAttachment],
+
             },
           ],
           attachments: [vectorStoreAttachment],
         },
       ],
+      attachments: [vectorStoreAttachment],
       tools: [{ type: 'file_search' }],
       tool_resources: {
         file_search: {

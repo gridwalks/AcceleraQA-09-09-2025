@@ -261,6 +261,8 @@ describe('openAIService getChatResponse', () => {
     });
     expect(body.tools).toEqual([{ type: 'file_search' }]);
     expect(body).not.toHaveProperty('attachments');
+
     expect(body).not.toHaveProperty('tool_resources');
+
   });
 });

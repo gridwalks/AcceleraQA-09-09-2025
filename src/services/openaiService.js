@@ -29,6 +29,14 @@ class OpenAIService {
       },
     };
 
+    if (
+      endpoint === '/responses' &&
+      defaultOptions.body &&
+      typeof defaultOptions.body !== 'undefined'
+    ) {
+      defaultOptions.body = this.sanitizeResponsesRequestBody(defaultOptions.body);
+    }
+
     const maxRetries = 3;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -62,6 +70,212 @@ class OpenAIService {
       : ERROR_MESSAGES.RATE_LIMIT_EXCEEDED;
 
     throw new Error(finalMsg);
+  }
+
+  sanitizeResponsesRequestBody(body) {
+    if (!body) {
+      return body;
+    }
+
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        const sanitized = this.sanitizeResponsesPayload(parsed);
+        return JSON.stringify(sanitized);
+      } catch {
+        return body;
+      }
+    }
+
+    if (typeof body === 'object') {
+      // Avoid mutating shared references
+      const cloned = Array.isArray(body) ? [...body] : { ...body };
+      const sanitized = this.sanitizeResponsesPayload(cloned);
+      return JSON.stringify(sanitized);
+    }
+
+    return body;
+  }
+
+  sanitizeResponsesPayload(payload) {
+    if (payload == null) {
+      return payload;
+    }
+
+    if (Array.isArray(payload)) {
+      return payload.map(item => this.sanitizeResponsesPayload(item));
+    }
+
+    if (typeof payload !== 'object') {
+      return payload;
+    }
+
+    const sanitized = { ...payload };
+
+    if ('tool_resources' in sanitized) {
+      delete sanitized.tool_resources;
+    }
+
+    let rootAttachments = [];
+    if (Array.isArray(sanitized.attachments)) {
+      rootAttachments = this.sanitizeResponsesPayload(sanitized.attachments);
+      delete sanitized.attachments;
+    }
+
+    if (Array.isArray(sanitized.content)) {
+      sanitized.content = sanitized.content.map(item => this.sanitizeResponsesPayload(item));
+    }
+
+    if (Array.isArray(sanitized.input)) {
+      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message));
+      if (rootAttachments.length > 0) {
+        const applied = this.applyAttachmentsToLastUserMessageContent(sanitized.input, rootAttachments);
+        if (!applied) {
+          sanitized.attachments = rootAttachments;
+        }
+      }
+    } else if (rootAttachments.length > 0) {
+      sanitized.attachments = rootAttachments;
+    }
+
+    return sanitized;
+  }
+
+  normalizeResponseMessage(message, options = {}) {
+    if (!message || typeof message !== 'object') {
+      return message;
+    }
+
+    const { attachmentsPrepend = true } = options;
+    const normalized = { ...message };
+
+    if ('tool_resources' in normalized) {
+      delete normalized.tool_resources;
+    }
+
+    const messageAttachments = Array.isArray(normalized.attachments)
+      ? this.sanitizeResponsesPayload(normalized.attachments)
+      : [];
+    if ('attachments' in normalized) {
+      delete normalized.attachments;
+    }
+
+    if (Array.isArray(normalized.content)) {
+      normalized.content = normalized.content.map(part => this.normalizeMessageContentPart(part));
+    } else if (normalized.content && typeof normalized.content === 'object') {
+      normalized.content = [this.normalizeMessageContentPart(normalized.content)];
+    } else if (normalized.content != null) {
+      normalized.content = [normalized.content];
+    } else {
+      normalized.content = [];
+    }
+
+    if (messageAttachments.length > 0) {
+      normalized.content = this.applyAttachmentsToContent(normalized.content, messageAttachments, { prepend: attachmentsPrepend });
+    }
+
+    return normalized;
+  }
+
+  normalizeMessageContentPart(part) {
+    if (!part || typeof part !== 'object') {
+      return part;
+    }
+
+    const sanitizedPart = { ...part };
+
+    if ('tool_resources' in sanitizedPart) {
+      delete sanitizedPart.tool_resources;
+    }
+
+    if (Array.isArray(sanitizedPart.attachments)) {
+      sanitizedPart.attachments = this.sanitizeResponsesPayload(sanitizedPart.attachments);
+    } else if ('attachments' in sanitizedPart) {
+      delete sanitizedPart.attachments;
+    }
+
+    if (Array.isArray(sanitizedPart.content)) {
+      sanitizedPart.content = sanitizedPart.content.map(item => this.sanitizeResponsesPayload(item));
+    }
+
+    if (Array.isArray(sanitizedPart.input)) {
+      sanitizedPart.input = sanitizedPart.input.map(item => this.normalizeResponseMessage(item));
+    }
+
+    return sanitizedPart;
+  }
+
+  applyAttachmentsToContent(content, attachments, options = {}) {
+    const { prepend = false } = options;
+
+    const normalizedContent = Array.isArray(content) ? [...content] : [];
+    const sanitizedAttachments = Array.isArray(attachments)
+      ? attachments.filter(item => item && typeof item === 'object')
+      : [];
+
+    if (sanitizedAttachments.length === 0) {
+      return normalizedContent;
+    }
+
+    let targetIndex = normalizedContent.findIndex(part => part && typeof part === 'object');
+    if (targetIndex === -1) {
+      normalizedContent.push({ type: 'input_text', text: '', attachments: [] });
+      targetIndex = normalizedContent.length - 1;
+    }
+
+    const targetPart = normalizedContent[targetIndex] || {};
+    const existingAttachments = Array.isArray(targetPart.attachments)
+      ? targetPart.attachments
+      : [];
+
+    const nextAttachments = prepend
+      ? [...sanitizedAttachments, ...existingAttachments]
+      : [...existingAttachments, ...sanitizedAttachments];
+
+    normalizedContent[targetIndex] = {
+      ...targetPart,
+      attachments: nextAttachments,
+    };
+
+    return normalizedContent;
+  }
+
+  applyAttachmentsToLastUserMessageContent(messages, attachments) {
+    if (!Array.isArray(messages) || !Array.isArray(attachments) || attachments.length === 0) {
+      return false;
+    }
+
+    const userIndex = this.findLastUserMessageIndex(messages);
+    if (userIndex === -1) {
+      return false;
+    }
+
+    const targetMessage = messages[userIndex];
+    const existingMessageAttachments = Array.isArray(targetMessage.attachments)
+      ? targetMessage.attachments
+      : [];
+
+    const combinedMessage = {
+      ...targetMessage,
+      attachments: [...existingMessageAttachments, ...attachments],
+    };
+
+    messages[userIndex] = this.normalizeResponseMessage(combinedMessage, { attachmentsPrepend: false });
+    return true;
+  }
+
+  findLastUserMessageIndex(messages) {
+    if (!Array.isArray(messages)) {
+      return -1;
+    }
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index] && messages[index].role === 'user') {
+        return index;
+      }
+    }
+
+    return -1;
   }
 
   async handleApiError(response, tokenCount = 0) {
@@ -419,19 +633,21 @@ class OpenAIService {
           throw vsError;
         }
 
+        const vectorStoreAttachments = [
+          {
+            vector_store_id: vectorStoreId,
+            tools: [{ type: 'file_search' }],
+          },
+        ];
+
         const userContent = this.createContentForRole('user', message || '').map((part, index) => {
-          if (index !== 0) {
+          if (!part || typeof part !== 'object' || index !== 0) {
             return part;
           }
 
           return {
             ...part,
-            attachments: [
-              {
-                vector_store_id: vectorStoreId,
-                tools: [{ type: 'file_search' }],
-              },
-            ],
+            attachments: vectorStoreAttachments,
           };
         });
 

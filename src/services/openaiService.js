@@ -434,11 +434,10 @@ class OpenAIService {
             {
               role: 'user',
               content: userContent,
-              attachments,
+              attachments: vectorStoreAttachments,
             },
           ],
           tools: [{ type: 'file_search' }],
-          attachments: vectorStoreAttachments,
           tool_resources: {
             file_search: {
               vector_store_ids: [vectorStoreId],

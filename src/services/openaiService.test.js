@@ -262,10 +262,7 @@ describe('openAIService getChatResponse', () => {
     expect(body.tools).toEqual([{ type: 'file_search' }]);
     expect(body).not.toHaveProperty('attachments');
 
-    expect(body.tool_resources).toEqual({
-      file_search: {
-        vector_store_ids: ['vs-456'],
-      },
-    });
+    expect(body).not.toHaveProperty('tool_resources');
+
   });
 });

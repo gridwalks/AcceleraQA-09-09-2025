@@ -44,7 +44,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     title: '',
     description: '',
     tags: '',
-    category: 'general'
+    category: 'general',
+    version: ''
   });
 
   const ragBackendLabel = getRagBackendLabel();
@@ -229,8 +230,30 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     try {
       const metadata = {
         ...uploadMetadata,
-        tags: uploadMetadata.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
+        tags: uploadMetadata.tags
+          .split(',')
+          .map(tag => tag.trim())
+          .filter(tag => tag)
       };
+
+      if (!metadata.tags.length) {
+        delete metadata.tags;
+      }
+
+      if (typeof metadata.title === 'string') {
+        metadata.title = metadata.title.trim();
+        if (!metadata.title) delete metadata.title;
+      }
+
+      if (typeof metadata.description === 'string') {
+        metadata.description = metadata.description.trim();
+        if (!metadata.description) delete metadata.description;
+      }
+
+      if (typeof metadata.version === 'string') {
+        metadata.version = metadata.version.trim();
+        if (!metadata.version) delete metadata.version;
+      }
 
       console.log('Uploading document with metadata:', metadata);
       const result = await ragService.uploadDocument(selectedFile, metadata, user?.sub);
@@ -255,7 +278,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         title: '',
         description: '',
         tags: '',
-        category: 'general'
+        category: 'general',
+        version: ''
       });
 
       const fileInput = document.getElementById('file-upload');
@@ -662,6 +686,22 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                       </select>
                     </div>
 
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
+                        Document Version (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadMetadata.version}
+                        onChange={(e) => setUploadMetadata(prev => ({ ...prev, version: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        placeholder="e.g. v1.2, Rev B"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Keep track of revisions such as SOP versions or controlled document releases.
+                      </p>
+                    </div>
+
                   </div>
                 </div>
 
@@ -743,6 +783,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
                         <div className="text-sm text-gray-600 space-y-1">
                           <p><span className="font-medium">Category:</span> {doc.metadata?.category || 'General'}</p>
+                          {doc.metadata?.version && (
+                            <p><span className="font-medium">Version:</span> {doc.metadata.version}</p>
+                          )}
                           {doc.metadata?.conversion === 'docx-to-pdf' && doc.metadata?.originalFilename && (
                             <p className="text-sm text-gray-600">
                               <span className="font-medium text-gray-700">Original:</span> {doc.metadata.originalFilename} (converted from DOCX)
@@ -851,8 +894,13 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         <p className="text-gray-700 text-sm leading-relaxed bg-gray-50 p-3 rounded-md">
                           {result.text}
                         </p>
-                        <div className="mt-2 text-xs text-gray-500">
-                          Chunk {result.chunkIndex + 1} • Document ID: {result.documentId} • Storage: {neonBackendEnabled ? 'PostgreSQL' : 'OpenAI Vector Store'}
+                        <div className="mt-2 text-xs text-gray-500 space-y-1">
+                          {result.metadata?.version && (
+                            <div>Version: {result.metadata.version}</div>
+                          )}
+                          <div>
+                            Chunk {result.chunkIndex + 1} • Document ID: {result.documentId} • Storage: {neonBackendEnabled ? 'PostgreSQL' : 'OpenAI Vector Store'}
+                          </div>
                         </div>
                       </div>
                     ))}

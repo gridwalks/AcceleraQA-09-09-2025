@@ -23,6 +23,44 @@ class RAGService {
     this.convertDocxToPdfIfNeeded = convertDocxToPdfIfNeeded;
   }
 
+  sanitizeMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') {
+      return {};
+    }
+
+    const sanitized = { ...metadata };
+
+    if (Array.isArray(sanitized.tags)) {
+      sanitized.tags = sanitized.tags
+        .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
+        .filter(Boolean);
+      if (!sanitized.tags.length) {
+        delete sanitized.tags;
+      }
+    } else if (typeof sanitized.tags === 'string') {
+      const normalizedTags = sanitized.tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag);
+      if (normalizedTags.length) {
+        sanitized.tags = normalizedTags;
+      } else {
+        delete sanitized.tags;
+      }
+    }
+
+    ['title', 'description', 'category', 'version'].forEach(field => {
+      if (typeof sanitized[field] === 'string') {
+        sanitized[field] = sanitized[field].trim();
+        if (!sanitized[field]) {
+          delete sanitized[field];
+        }
+      }
+    });
+
+    return sanitized;
+  }
+
   isNeonBackend() {
     return this.backend === RAG_BACKENDS.NEON;
   }
@@ -223,6 +261,8 @@ class RAGService {
   async uploadDocument(file, metadata = {}, userId) {
     if (!file) throw new Error('File is required');
 
+    const sanitizedMetadata = this.sanitizeMetadata(metadata);
+
     if (this.isNeonBackend()) {
       if (!userId) {
         throw new Error('User ID is required to upload documents');
@@ -236,7 +276,7 @@ class RAGService {
         text: textContent,
         metadata: {
           processingMode: 'neon-postgresql',
-          ...metadata,
+          ...sanitizedMetadata,
         },
       };
 
@@ -278,7 +318,7 @@ class RAGService {
               conversion: 'docx-to-pdf',
             }
           : {}),
-        ...metadata,
+        ...sanitizedMetadata,
       },
       vectorStoreId,
     };

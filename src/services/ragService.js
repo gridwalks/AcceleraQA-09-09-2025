@@ -473,22 +473,76 @@ class RAGService {
       body: JSON.stringify(body),
     });
 
-    const answer =
-      data.output_text ||
-      data.output?.[0]?.content?.[0]?.text ||
+    const outputMessages = Array.isArray(data.output) ? data.output : [];
+    const contentItems = outputMessages.flatMap(message => message.content || []);
+
+    const answerFromContent = contentItems
+      .map(item => {
+        if (typeof item?.text?.value === 'string') {
+          return item.text.value;
+        }
+        if (typeof item?.text === 'string') {
+          return item.text;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+
+    const rawAnswer =
+      (typeof data.output_text === 'string' && data.output_text.trim()) ||
+      answerFromContent ||
       '';
 
+    const answer = rawAnswer.trim() || 'The document search returned no results.';
+
     const annotations = [];
-    const contentItems = data.output?.[0]?.content || [];
     contentItems.forEach(item => {
-      if (Array.isArray(item.annotations)) annotations.push(...item.annotations);
+      if (Array.isArray(item?.text?.annotations)) annotations.push(...item.text.annotations);
+      if (Array.isArray(item?.annotations)) annotations.push(...item.annotations);
     });
+
+    const sources = annotations
+      .filter(Boolean)
+      .map((annotation, index) => {
+        const textSnippet = typeof annotation.text === 'string'
+          ? annotation.text
+          : typeof annotation?.file_citation?.quote === 'string'
+            ? annotation.file_citation.quote
+            : typeof annotation?.quote === 'string'
+              ? annotation.quote
+              : '';
+
+        const filename =
+          annotation.filename ||
+          annotation.file_name ||
+          annotation?.document?.filename ||
+          annotation?.document?.title ||
+          annotation?.file_citation?.filename ||
+          annotation?.file_citation?.file_name ||
+          annotation?.file_citation?.file_id ||
+          `Document ${index + 1}`;
+
+        const sourceId =
+          annotation.id ||
+          annotation?.file_citation?.file_id ||
+          annotation?.file_path ||
+          `source-${index}`;
+
+        return {
+          ...annotation,
+          id: sourceId,
+          filename,
+          text: textSnippet,
+        };
+      });
 
     return {
       answer,
-      sources: annotations,
+      sources,
       ragMetadata: {
-        totalSources: annotations.length,
+        totalSources: sources.length,
         processingMode: 'openai-file-search',
       },
     };

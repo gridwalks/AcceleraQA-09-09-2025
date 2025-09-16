@@ -28,7 +28,7 @@ import {
 
 import { FEATURE_FLAGS } from './config/featureFlags';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
-import { mergeCurrentAndStoredMessages } from './utils/messageUtils';
+import { mergeCurrentAndStoredMessages, buildChatHistory } from './utils/messageUtils';
 import {
   detectDocumentExportIntent,
   exportMessagesToExcel,
@@ -252,6 +252,8 @@ function App() {
 
     setIsLoading(true);
 
+    const conversationHistory = buildChatHistory(messages);
+
     const displayContent = uploadedFile
       ? `${rawInput}\n[Attached: ${uploadedFile.name}]`
       : rawInput;
@@ -319,7 +321,7 @@ function App() {
     try {
       const response = ragEnabled && !fileToSend
         ? await ragSearch(rawInput, user?.sub)
-        : await openaiService.getChatResponse(rawInput, fileToSend);
+        : await openaiService.getChatResponse(rawInput, fileToSend, conversationHistory);
 
       const assistantMessage = {
         id: uuidv4(),

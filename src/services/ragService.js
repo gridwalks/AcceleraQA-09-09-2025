@@ -505,7 +505,12 @@ class RAGService {
     const body = {
       model: getCurrentModel(),
       input: query,
-      tools: [{ type: 'file_search', vector_store_ids: [vectorStoreId] }],
+      tools: [{ type: 'file_search' }],
+      tool_resources: {
+        file_search: {
+          vector_store_ids: [vectorStoreId],
+        },
+      },
     };
 
     const data = await openaiService.makeRequest('/responses', {

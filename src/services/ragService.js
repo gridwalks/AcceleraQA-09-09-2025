@@ -3,6 +3,7 @@ import openaiService from './openaiService';
 import { getToken, getUserId } from './authService';
 import { getCurrentModel } from '../config/modelConfig';
 import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION, RAG_DOCS_FUNCTION } from '../config/ragConfig';
+import { convertDocxToPdfIfNeeded } from '../utils/fileConversion';
 
 const DEFAULT_NEON_ENDPOINTS = Array.from(new Set([
   NEON_RAG_FUNCTION,
@@ -19,6 +20,7 @@ class RAGService {
     this.neonEndpoints = DEFAULT_NEON_ENDPOINTS;
     this.activeNeonEndpointIndex = 0;
     this.docsEndpoint = RAG_DOCS_FUNCTION;
+    this.convertDocxToPdfIfNeeded = convertDocxToPdfIfNeeded;
   }
 
   isNeonBackend() {
@@ -249,20 +251,33 @@ class RAGService {
       };
     }
 
-    const fileId = await openaiService.uploadFile(file);
+    const {
+      file: uploadableFile,
+      converted,
+      originalFileName,
+      originalMimeType,
+    } = await this.convertDocxToPdfIfNeeded(file);
+    const fileId = await openaiService.uploadFile(uploadableFile);
     const vectorStoreId = await this.getVectorStoreId(userId);
     await openaiService.attachFileToVectorStore(vectorStoreId, fileId);
 
     const docInfo = {
       id: fileId,
       fileId,
-      filename: file.name,
-      type: file.type,
-      size: file.size,
+      filename: uploadableFile.name,
+      type: uploadableFile.type,
+      size: uploadableFile.size,
       chunks: 0,
       createdAt: new Date().toISOString(),
       metadata: {
         processingMode: 'openai-file-search',
+        ...(converted
+          ? {
+              originalFilename: originalFileName,
+              originalMimeType,
+              conversion: 'docx-to-pdf',
+            }
+          : {}),
         ...metadata,
       },
       vectorStoreId,

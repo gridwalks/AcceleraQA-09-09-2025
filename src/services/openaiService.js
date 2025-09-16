@@ -2,6 +2,7 @@ import { OPENAI_CONFIG, ERROR_MESSAGES } from '../config/constants';
 import { generateResources } from '../utils/resourceGenerator';
 import { getCurrentModel } from '../config/modelConfig';
 import { recordTokenUsage } from '../utils/tokenUsage';
+import { convertDocxToPdfIfNeeded } from '../utils/fileConversion';
 
 class OpenAIService {
   constructor() {
@@ -109,18 +110,20 @@ class OpenAIService {
   }
 
   async uploadFile(file) {
+    const { file: preparedFile } = await convertDocxToPdfIfNeeded(file);
+
     const allowedExtensions = ['.pdf', '.txt', '.md'];
     const allowedMimeTypes = ['application/pdf', 'text/plain', 'text/markdown'];
-    const fileName = file?.name?.toLowerCase() || '';
-    const fileType = file?.type?.toLowerCase() || '';
+    const fileName = preparedFile?.name?.toLowerCase() || '';
+    const fileType = preparedFile?.type?.toLowerCase() || '';
     const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
     const hasValidMime = allowedMimeTypes.includes(fileType);
     if (!hasValidExtension && !hasValidMime) {
-      throw new Error('Unsupported file type; please upload a PDF, TXT, or MD file');
+      throw new Error('Unsupported file type; please upload a PDF, TXT, MD, or DOCX file');
     }
 
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', preparedFile);
     formData.append('purpose', 'assistants');
 
     const response = await fetch(`${this.baseUrl}/files`, {

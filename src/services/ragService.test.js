@@ -99,6 +99,13 @@ const loadRagService = async ({ documentApiMock, uploadFileId = 'file_mock', vec
 
   const module = await import('./ragService.js');
   const ragServiceInstance = module.default;
+  const convertMock = jest.fn(async (file) => ({
+    file,
+    converted: false,
+    originalFileName: file?.name || null,
+    originalMimeType: file?.type || null,
+  }));
+  ragServiceInstance.convertDocxToPdfIfNeeded = convertMock;
   let documentApiSpy = null;
   if (documentApiMock) {
     documentApiSpy = jest
@@ -117,6 +124,7 @@ const loadRagService = async ({ documentApiMock, uploadFileId = 'file_mock', vec
         attachFileToVectorStore: attachFileSpy,
         makeRequest: makeRequestSpy,
       },
+      convertDocxToPdfIfNeeded: convertMock,
       documentApi: documentApiSpy,
     },
   };
@@ -221,5 +229,43 @@ describe('document persistence with Neon metadata store', () => {
     expect(persistedState.vectorStoreId).toBe('vs_persist_1');
     expect(persistedState.documents).toHaveLength(1);
     expect(persistedState.documents[0].id).toBe('file_doc_1');
+  });
+
+  test('docx uploads are converted and metadata keeps original details', async () => {
+    const uploadOptions = { documentApiMock, uploadFileId: 'file_docx_1', vectorStoreId: 'vs_docx_1' };
+    const { ragService, mocks } = await loadRagService(uploadOptions);
+
+    const originalFile = {
+      name: 'Guideline.docx',
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      size: 1024,
+    };
+
+    const convertedFile = {
+      name: 'Guideline.pdf',
+      type: 'application/pdf',
+      size: 2048,
+    };
+
+    mocks.convertDocxToPdfIfNeeded.mockResolvedValue({
+      file: convertedFile,
+      converted: true,
+      originalFileName: originalFile.name,
+      originalMimeType: originalFile.type,
+    });
+
+    await ragService.uploadDocument(originalFile, { category: 'quality' }, 'user-456');
+
+    expect(mocks.convertDocxToPdfIfNeeded).toHaveBeenCalledWith(originalFile);
+    expect(mocks.openai.uploadFile).toHaveBeenCalledWith(convertedFile);
+
+    const saveCall = documentApiMock.calls.find(([action]) => action === 'save_document');
+    expect(saveCall).toBeTruthy();
+    const savedDoc = saveCall[2].document;
+    expect(savedDoc.filename).toBe(convertedFile.name);
+    expect(savedDoc.type).toBe(convertedFile.type);
+    expect(savedDoc.metadata.originalFilename).toBe(originalFile.name);
+    expect(savedDoc.metadata.originalMimeType).toBe(originalFile.type);
+    expect(savedDoc.metadata.conversion).toBe('docx-to-pdf');
   });
 });

@@ -236,9 +236,18 @@ const RAGConfigurationPage = ({ user, onClose }) => {
       const result = await ragService.uploadDocument(selectedFile, metadata, user?.sub);
       console.log('Upload result:', result);
 
+      const savedDocument = result?.document || null;
+      const savedMetadata = savedDocument?.metadata || result?.metadata || {};
+      const isDocxConversion = savedMetadata?.conversion === 'docx-to-pdf';
+      const originalName = savedMetadata?.originalFilename || selectedFile.name;
+      const storedName = savedDocument?.filename || selectedFile.name;
+      const successMessage = isDocxConversion
+        ? `Converted "${originalName}" to PDF and uploaded as "${storedName}"`
+        : `Successfully uploaded "${storedName}"`;
+
       setUploadStatus({
         type: 'success',
-        message: `Successfully uploaded "${selectedFile.name}"`
+        message: successMessage
       });
       
       setSelectedFile(null);
@@ -605,17 +614,17 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select File (Text files work best)
+                      Select File (PDF, DOCX, TXT, or MD)
                     </label>
                       <input
                         id="file-upload"
                         type="file"
-                        accept=".pdf,.txt,.md"
+                        accept=".pdf,.txt,.md,.docx"
                         onChange={handleFileSelect}
                         className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
                     <p className="text-xs text-gray-500 mt-1">
-                      Persistent storage with the {ragBackendLabel} backend
+                      DOCX files are automatically converted to PDF before upload. Persistent storage with the {ragBackendLabel} backend.
                     </p>
                   </div>
 
@@ -734,6 +743,11 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
                         <div className="text-sm text-gray-600 space-y-1">
                           <p><span className="font-medium">Category:</span> {doc.metadata?.category || 'General'}</p>
+                          {doc.metadata?.conversion === 'docx-to-pdf' && doc.metadata?.originalFilename && (
+                            <p className="text-sm text-gray-600">
+                              <span className="font-medium text-gray-700">Original:</span> {doc.metadata.originalFilename} (converted from DOCX)
+                            </p>
+                          )}
                           <p><span className="font-medium">Uploaded:</span> {new Date(doc.createdAt).toLocaleDateString()}</p>
                           <p><span className="font-medium">Storage:</span> {ragBackendLabel}</p>
                           <p><span className="font-medium">Search:</span> {neonBackendEnabled ? 'PostgreSQL full-text search' : 'OpenAI vector search'}</p>

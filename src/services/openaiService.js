@@ -420,7 +420,7 @@ class OpenAIService {
         }
 
         const userContent = this.createContentForRole('user', message || '');
-        const attachments = [
+        const vectorStoreAttachments = [
           {
             vector_store_id: vectorStoreId,
             tools: [{ type: 'file_search' }],
@@ -438,6 +438,12 @@ class OpenAIService {
             },
           ],
           tools: [{ type: 'file_search' }],
+          attachments: vectorStoreAttachments,
+          tool_resources: {
+            file_search: {
+              vector_store_ids: [vectorStoreId],
+            },
+          },
         };
       } catch (error) {
         console.error('File upload failed:', error);

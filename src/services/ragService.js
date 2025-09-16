@@ -516,17 +516,22 @@ class RAGService {
             {
               type: 'input_text',
               text: trimmedQuery,
-              attachments: [
-                {
-                  vector_store_id: vectorStoreId,
-                  tools: [{ type: 'file_search' }],
-                },
-              ],
             },
           ],
         },
       ],
       tools: [{ type: 'file_search' }],
+      attachments: [
+        {
+          vector_store_id: vectorStoreId,
+          tools: [{ type: 'file_search' }],
+        },
+      ],
+      tool_resources: {
+        file_search: {
+          vector_store_ids: [vectorStoreId],
+        },
+      },
     };
 
     const data = await openaiService.makeRequest('/responses', {

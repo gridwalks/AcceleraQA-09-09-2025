@@ -157,10 +157,15 @@ class NeonService {
           msg.content &&
           msg.timestamp
         )
-        .map(msg => ({
-          ...msg,
-          type: msg.type || (msg.role === 'assistant' ? 'ai' : msg.role),
-        }));
+        .map(msg => {
+          const normalizedType = msg.type || (msg.role === 'assistant' ? 'ai' : msg.role);
+          const normalizedRole = msg.role || (normalizedType === 'ai' ? 'assistant' : 'user');
+          return {
+            ...msg,
+            type: normalizedType,
+            role: normalizedRole,
+          };
+        });
 
       if (validMessages.length === 0) {
         console.warn('No valid messages to save');
@@ -183,6 +188,7 @@ class NeonService {
           messages: validMessages.map(msg => ({
             id: msg.id,
             type: msg.type,
+            role: msg.role || (msg.type === 'ai' ? 'assistant' : 'user'),
             content: msg.content,
             timestamp: msg.timestamp,
             resources: msg.resources || [],
@@ -337,6 +343,7 @@ class NeonService {
       (conversation.messages || []).map(msg => ({
         ...msg,
         type: msg.type === 'assistant' ? 'ai' : msg.type,
+        role: msg.role || (msg.type === 'assistant' || msg.type === 'ai' ? 'assistant' : 'user'),
         isStored: true,
         isCurrent: false,
         conversationId: conversation.id,

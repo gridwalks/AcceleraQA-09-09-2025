@@ -90,13 +90,59 @@ class OpenAIService {
     }
   }
 
-  createChatPayload(message, model = getCurrentModel()) {
+  normalizeHistory(history) {
+    if (!Array.isArray(history)) {
+      return [];
+    }
+
+    return history
+      .map(item => {
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+
+        if (item.isResource || item.isStudyNotes || item.isLocalOnly) {
+          return null;
+        }
+
+        const role = item.role || (item.type === 'ai' ? 'assistant' : item.type === 'user' ? 'user' : null);
+        if (role !== 'user' && role !== 'assistant') {
+          return null;
+        }
+
+        let content = item.content;
+        if (Array.isArray(content)) {
+          content = content.join(' ');
+        } else if (content == null) {
+          content = '';
+        } else if (typeof content !== 'string') {
+          content = String(content);
+        }
+
+        if (typeof content !== 'string' || content.trim().length === 0) {
+          return null;
+        }
+
+        return { role, content };
+      })
+      .filter(Boolean);
+  }
+
+  createChatPayload(message, history = [], model = getCurrentModel()) {
+    const normalizedHistory = this.normalizeHistory(history);
+
+    const messages = [
+      { role: 'system', content: OPENAI_CONFIG.SYSTEM_PROMPT },
+      ...normalizedHistory.map(item => ({ role: item.role, content: item.content })),
+    ];
+
+    if (typeof message === 'string' && message.trim().length > 0) {
+      messages.push({ role: 'user', content: message });
+    }
+
     return {
       model,
-      messages: [
-        { role: 'system', content: OPENAI_CONFIG.SYSTEM_PROMPT },
-        { role: 'user', content: message },
-      ],
+      messages,
       max_tokens: OPENAI_CONFIG.MAX_TOKENS,
       temperature: OPENAI_CONFIG.TEMPERATURE,
     };
@@ -180,21 +226,39 @@ class OpenAIService {
     return await response.json();
   }
 
-  async getChatResponse(message, documentFile = null, model = getCurrentModel()) {
+  async getChatResponse(message, documentFile = null, history = [], model = getCurrentModel()) {
     if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentFile) {
       throw new Error('Invalid message provided');
     }
 
-    let requestBody = { model, input: message };
-    let tokenPayloadMessage = message;
+    const normalizedHistory = this.normalizeHistory(history);
+    const hasDocumentString = typeof documentFile === 'string' && documentFile.trim().length > 0;
+    const userPrompt = hasDocumentString
+      ? `${message}\n\nDocument Content:\n${documentFile}`
+      : message;
 
-    // If second parameter is a string (legacy document content)
-    if (typeof documentFile === 'string' && documentFile.trim().length > 0) {
-      tokenPayloadMessage = `${message}\n\nDocument Content:\n${documentFile}`;
-      requestBody.input = tokenPayloadMessage;
-    }
+    const baseInput = [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+      },
+      ...normalizedHistory.map(item => ({
+        role: item.role,
+        content: [{ type: 'input_text', text: item.content }],
+      })),
+    ];
 
-    // If a real file is provided, upload it and reference it in the message
+    let requestBody = {
+      model,
+      input: [
+        ...baseInput,
+        {
+          role: 'user',
+          content: [{ type: 'input_text', text: userPrompt }],
+        },
+      ],
+    };
+
     const isFile = documentFile && typeof documentFile === 'object' && 'name' in documentFile;
     if (isFile) {
       try {
@@ -211,6 +275,7 @@ class OpenAIService {
         requestBody = {
           model,
           input: [
+            ...baseInput,
             {
               role: 'user',
               content: [
@@ -227,7 +292,7 @@ class OpenAIService {
       }
     }
 
-    const payloadForTokens = this.createChatPayload(tokenPayloadMessage, model);
+    const payloadForTokens = this.createChatPayload(userPrompt, normalizedHistory, model);
     const tokenCount = this.estimateTokens(payloadForTokens);
 
     try {
@@ -255,7 +320,7 @@ class OpenAIService {
         throw new Error(`No response generated. Raw response: ${rawData}`);
       }
 
-      const resources = generateResources(message, aiResponse);
+      const resources = generateResources(userPrompt, aiResponse);
 
       if (data.usage?.total_tokens || tokenCount) {
         recordTokenUsage(data.usage?.total_tokens || tokenCount);
@@ -349,5 +414,5 @@ export default openAIService;
 
 // Export convenience function for backward compatibility
 export const getChatGPTResponse = async (message, documentContent = '') => {
-  return await openAIService.getChatResponse(message, documentContent);
+  return await openAIService.getChatResponse(message, documentContent, []);
 };

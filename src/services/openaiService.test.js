@@ -24,6 +24,7 @@ jest.mock('../utils/fileConversion', () => ({
 }));
 
 import openAIService from './openaiService';
+import { OPENAI_CONFIG } from '../config/constants';
 
 describe('openAIService uploadFile', () => {
   beforeEach(() => {
@@ -109,6 +110,19 @@ describe('openAIService getChatResponse', () => {
 
     const result = await openAIService.getChatResponse('hello');
     expect(result.answer).toBe('response from output_text');
+
+    const [, options] = openAIService.makeRequest.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.input).toEqual([
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+      },
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: 'hello' }],
+      },
+    ]);
   });
 
   it('handles responses API payload with output array not first element', async () => {
@@ -132,6 +146,42 @@ describe('openAIService getChatResponse', () => {
 
     const result = await openAIService.getChatResponse('hi');
     expect(result.answer).toBe('response from choices');
+  });
+
+  it('includes prior messages in payload when history is provided', async () => {
+    openAIService.makeRequest.mockResolvedValue({
+      output_text: 'response with history',
+      usage: { total_tokens: 12 },
+    });
+
+    const history = [
+      { role: 'user', content: 'What is GMP?' },
+      { role: 'assistant', content: 'It is Good Manufacturing Practice.' },
+    ];
+
+    const result = await openAIService.getChatResponse('Explain validation steps', null, history);
+    expect(result.answer).toBe('response with history');
+
+    const [, options] = openAIService.makeRequest.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.input).toEqual([
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+      },
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: 'What is GMP?' }],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'input_text', text: 'It is Good Manufacturing Practice.' }],
+      },
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: 'Explain validation steps' }],
+      },
+    ]);
   });
 
   it('throws descriptive error when response has no text', async () => {
@@ -158,5 +208,22 @@ describe('openAIService getChatResponse', () => {
     expect(openAIService.createVectorStore).toHaveBeenCalled();
     expect(openAIService.attachFileToVectorStore).toHaveBeenCalledWith('vs-456', 'file-123');
     expect(result.answer).toBe('response from file');
+
+    const [, options] = openAIService.makeRequest.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.input).toEqual([
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'hi' },
+          { type: 'input_file', file_id: 'file-123' },
+        ],
+      },
+    ]);
+    expect(body.tools).toEqual([{ type: 'file_search', vector_store_ids: ['vs-456'] }]);
   });
 });

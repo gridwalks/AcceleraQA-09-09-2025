@@ -500,7 +500,8 @@ function App() {
             />
 
             {/* Main Layout */}
-            <div className="flex-1 flex flex-col min-h-0">
+            {/* <div className="flex-1 flex flex-col min-h-0"> */}
+            <div className="h-[calc(100vh-64px)]">
               {/* Mobile Layout (stacked vertically) */}
               <div className="lg:hidden flex-1 h-full flex flex-col min-h-0">
 

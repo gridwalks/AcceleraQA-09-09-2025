@@ -98,6 +98,7 @@ class OpenAIService {
   }
 
   sanitizeResponsesPayload(payload) {
+
     if (payload == null) {
       return payload;
     }
@@ -109,7 +110,6 @@ class OpenAIService {
     if (typeof payload !== 'object') {
       return payload;
     }
-
     const sanitized = { ...payload };
 
     if ('tool_resources' in sanitized) {
@@ -658,9 +658,15 @@ class OpenAIService {
             {
               role: 'user',
               content: userContent,
+              attachments: vectorStoreAttachments,
             },
           ],
           tools: [{ type: 'file_search' }],
+          tool_resources: {
+            file_search: {
+              vector_store_ids: [vectorStoreId],
+            },
+          },
         };
       } catch (error) {
         console.error('File upload failed:', error);

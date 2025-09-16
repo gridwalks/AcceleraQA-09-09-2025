@@ -419,21 +419,13 @@ class OpenAIService {
           throw vsError;
         }
 
-        const userContent = this.createContentForRole('user', message || '').map((part, index) => {
-          if (index !== 0) {
-            return part;
-          }
-
-          return {
-            ...part,
-            attachments: [
-              {
-                vector_store_id: vectorStoreId,
-                tools: [{ type: 'file_search' }],
-              },
-            ],
-          };
-        });
+        const userContent = this.createContentForRole('user', message || '');
+        const vectorStoreAttachments = [
+          {
+            vector_store_id: vectorStoreId,
+            tools: [{ type: 'file_search' }],
+          },
+        ];
 
         requestBody = {
           model,
@@ -445,6 +437,12 @@ class OpenAIService {
             },
           ],
           tools: [{ type: 'file_search' }],
+          attachments: vectorStoreAttachments,
+          tool_resources: {
+            file_search: {
+              vector_store_ids: [vectorStoreId],
+            },
+          },
         };
       } catch (error) {
         console.error('File upload failed:', error);

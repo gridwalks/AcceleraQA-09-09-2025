@@ -254,10 +254,11 @@ describe('openAIService getChatResponse', () => {
       },
     ]);
     expect(body.tools).toEqual([{ type: 'file_search' }]);
-    expect(body.tool_resources).toEqual({
-      file_search: {
-        vector_store_ids: ['vs-456'],
+    expect(body.attachments).toEqual([
+      {
+        vector_store_id: 'vs-456',
+        tools: [{ type: 'file_search' }],
       },
-    });
+    ]);
   });
 });

@@ -506,11 +506,12 @@ class RAGService {
       model: getCurrentModel(),
       input: query,
       tools: [{ type: 'file_search' }],
-      tool_resources: {
-        file_search: {
-          vector_store_ids: [vectorStoreId],
+      attachments: [
+        {
+          vector_store_id: vectorStoreId,
+          tools: [{ type: 'file_search' }],
         },
-      },
+      ],
     };
 
     const data = await openaiService.makeRequest('/responses', {

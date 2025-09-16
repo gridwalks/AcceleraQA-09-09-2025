@@ -521,6 +521,7 @@ class RAGService {
             {
               type: 'input_text',
               text: trimmedQuery,
+              attachments: [vectorStoreAttachment],
             },
           ],
           attachments: [vectorStoreAttachment],

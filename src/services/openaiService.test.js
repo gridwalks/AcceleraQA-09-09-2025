@@ -250,12 +250,12 @@ describe('openAIService getChatResponse', () => {
         {
           type: 'input_text',
           text: 'hi',
-        },
-      ],
-      attachments: [
-        {
-          vector_store_id: 'vs-456',
-          tools: [{ type: 'file_search' }],
+          attachments: [
+            {
+              vector_store_id: 'vs-456',
+              tools: [{ type: 'file_search' }],
+            },
+          ],
         },
       ],
     });
@@ -278,7 +278,7 @@ describe('openAIService makeRequest sanitization', () => {
     jest.restoreAllMocks();
   });
 
-  it('removes tool_resources and hoists attachments for responses payloads', async () => {
+  it('removes tool_resources and nests attachments under content parts for responses payloads', async () => {
     const payload = {
       model: 'test-model',
       input: [
@@ -320,16 +320,18 @@ describe('openAIService makeRequest sanitization', () => {
     expect(Array.isArray(sanitized.input)).toBe(true);
     const userMessage = sanitized.input.find(msg => msg.role === 'user');
     expect(userMessage).toBeDefined();
-    expect(userMessage.attachments).toEqual([
+    expect(userMessage.attachments).toBeUndefined();
+
+    const [contentPart] = userMessage.content;
+    expect(contentPart).toBeDefined();
+    expect(contentPart.attachments).toEqual([
       { vector_store_id: 'message-vs' },
       { vector_store_id: 'content-vs' },
       { vector_store_id: 'root-vs' },
     ]);
 
-    userMessage.content.forEach(part => {
-      if (part && typeof part === 'object') {
-        expect(part.attachments).toBeUndefined();
-      }
+    contentPart.attachments.forEach(attachment => {
+      expect(attachment.tool_resources).toBeUndefined();
     });
   });
 });

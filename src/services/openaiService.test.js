@@ -261,8 +261,75 @@ describe('openAIService getChatResponse', () => {
     });
     expect(body.tools).toEqual([{ type: 'file_search' }]);
     expect(body).not.toHaveProperty('attachments');
-
     expect(body).not.toHaveProperty('tool_resources');
+  });
+});
 
+describe('openAIService makeRequest sanitization', () => {
+  beforeEach(() => {
+    openAIService.apiKey = 'test-key';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('removes tool_resources and hoists attachments for responses payloads', async () => {
+    const payload = {
+      model: 'test-model',
+      input: [
+        {
+          role: 'system',
+          content: [{ type: 'input_text', text: 'system prompt' }],
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: 'hello',
+              attachments: [
+                { vector_store_id: 'content-vs', tool_resources: { example: true } },
+              ],
+            },
+          ],
+          attachments: [{ vector_store_id: 'message-vs' }],
+        },
+      ],
+      tool_resources: {
+        file_search: { vector_store_ids: ['root-vs'] },
+      },
+      attachments: [{ vector_store_id: 'root-vs' }],
+    };
+
+    await openAIService.makeRequest('/responses', {
+      body: JSON.stringify(payload),
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [, options] = fetch.mock.calls[0];
+    const sanitized = JSON.parse(options.body);
+
+    expect(sanitized.tool_resources).toBeUndefined();
+    expect(sanitized.attachments).toBeUndefined();
+
+    expect(Array.isArray(sanitized.input)).toBe(true);
+    const userMessage = sanitized.input.find(msg => msg.role === 'user');
+    expect(userMessage).toBeDefined();
+    expect(userMessage.attachments).toEqual([
+      { vector_store_id: 'message-vs' },
+      { vector_store_id: 'content-vs' },
+      { vector_store_id: 'root-vs' },
+    ]);
+
+    userMessage.content.forEach(part => {
+      if (part && typeof part === 'object') {
+        expect(part.attachments).toBeUndefined();
+      }
+    });
   });
 });

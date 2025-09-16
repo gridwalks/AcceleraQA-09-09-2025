@@ -29,6 +29,14 @@ class OpenAIService {
       },
     };
 
+    if (
+      endpoint === '/responses' &&
+      defaultOptions.body &&
+      typeof defaultOptions.body !== 'undefined'
+    ) {
+      defaultOptions.body = this.sanitizeResponsesRequestBody(defaultOptions.body);
+    }
+
     const maxRetries = 3;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -62,6 +70,134 @@ class OpenAIService {
       : ERROR_MESSAGES.RATE_LIMIT_EXCEEDED;
 
     throw new Error(finalMsg);
+  }
+
+  sanitizeResponsesRequestBody(body) {
+    if (!body) {
+      return body;
+    }
+
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        const sanitized = this.sanitizeResponsesPayload(parsed);
+        return JSON.stringify(sanitized);
+      } catch {
+        return body;
+      }
+    }
+
+    if (typeof body === 'object') {
+      // Avoid mutating shared references
+      const cloned = Array.isArray(body) ? [...body] : { ...body };
+      const sanitized = this.sanitizeResponsesPayload(cloned);
+      return JSON.stringify(sanitized);
+    }
+
+    return body;
+  }
+
+  sanitizeResponsesPayload(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return payload;
+    }
+
+    if (Array.isArray(payload)) {
+      return payload.map(item => this.sanitizeResponsesPayload(item));
+    }
+
+    const sanitized = { ...payload };
+
+    if ('tool_resources' in sanitized) {
+      delete sanitized.tool_resources;
+    }
+
+    const rootAttachments = Array.isArray(sanitized.attachments)
+      ? sanitized.attachments.map(item => this.sanitizeResponsesPayload(item))
+      : [];
+
+    if (rootAttachments.length > 0) {
+      delete sanitized.attachments;
+    }
+
+    if (Array.isArray(sanitized.input)) {
+      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message));
+
+      if (rootAttachments.length > 0) {
+        const userIndex = this.findLastUserMessageIndex(sanitized.input);
+        if (userIndex !== -1) {
+          const targetMessage = sanitized.input[userIndex];
+          const existingAttachments = Array.isArray(targetMessage.attachments)
+            ? targetMessage.attachments
+            : [];
+          sanitized.input[userIndex] = {
+            ...targetMessage,
+            attachments: [...existingAttachments, ...rootAttachments],
+          };
+        } else {
+          sanitized.attachments = rootAttachments;
+        }
+      }
+    }
+
+    return sanitized;
+  }
+
+  normalizeResponseMessage(message) {
+    if (!message || typeof message !== 'object') {
+      return message;
+    }
+
+    const normalized = { ...message };
+
+    if ('tool_resources' in normalized) {
+      delete normalized.tool_resources;
+    }
+
+    const aggregatedAttachments = Array.isArray(normalized.attachments)
+      ? normalized.attachments.map(item => this.sanitizeResponsesPayload(item))
+      : [];
+
+    if (Array.isArray(normalized.content)) {
+      const normalizedContent = normalized.content.map(part => {
+        if (!part || typeof part !== 'object') {
+          return part;
+        }
+
+        const { attachments: partAttachments, ...rest } = part;
+        if (Array.isArray(partAttachments) && partAttachments.length > 0) {
+          aggregatedAttachments.push(
+            ...partAttachments.map(item => this.sanitizeResponsesPayload(item))
+          );
+        }
+
+        return this.sanitizeResponsesPayload(rest);
+      });
+
+      normalized.content = normalizedContent;
+    }
+
+    if (aggregatedAttachments.length > 0) {
+      normalized.attachments = aggregatedAttachments;
+    } else {
+      delete normalized.attachments;
+    }
+
+    return normalized;
+  }
+
+  findLastUserMessageIndex(messages) {
+    if (!Array.isArray(messages)) {
+      return -1;
+    }
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index] && messages[index].role === 'user') {
+        return index;
+      }
+    }
+
+    return -1;
   }
 
   async handleApiError(response, tokenCount = 0) {

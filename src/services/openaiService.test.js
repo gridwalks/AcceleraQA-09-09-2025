@@ -247,18 +247,16 @@ describe('openAIService getChatResponse', () => {
       },
       {
         role: 'user',
-        content: [
-          { type: 'input_text', text: 'hi' },
-          { type: 'input_file', file_id: 'file-123' },
+        content: [{ type: 'input_text', text: 'hi' }],
+        attachments: [
+          {
+            vector_store_id: 'vs-456',
+            tools: [{ type: 'file_search' }],
+          },
         ],
       },
     ]);
     expect(body.tools).toEqual([{ type: 'file_search' }]);
-    expect(body.attachments).toEqual([
-      {
-        vector_store_id: 'vs-456',
-        tools: [{ type: 'file_search' }],
-      },
-    ]);
+    expect(body.attachments).toBeUndefined();
   });
 });

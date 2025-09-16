@@ -425,20 +425,16 @@ class OpenAIService {
             ...baseInput,
             {
               role: 'user',
-              content: [
-                ...this.createContentForRole('user', message || ''),
-
-                { type: 'input_file', file_id: fileId },
+              content: this.createContentForRole('user', message || ''),
+              attachments: [
+                {
+                  vector_store_id: vectorStoreId,
+                  tools: [{ type: 'file_search' }],
+                },
               ],
             },
           ],
           tools: [{ type: 'file_search' }],
-          attachments: [
-            {
-              vector_store_id: vectorStoreId,
-              tools: [{ type: 'file_search' }],
-            },
-          ],
         };
       } catch (error) {
         console.error('File upload failed:', error);

@@ -502,16 +502,26 @@ class RAGService {
 
     const vectorStoreId = await this.getVectorStoreId(userId);
 
+    const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+    if (!trimmedQuery) {
+      throw new Error('Query is required to generate a response');
+    }
+
     const body = {
       model: getCurrentModel(),
-      input: query,
-      tools: [{ type: 'file_search' }],
-      attachments: [
+      input: [
         {
-          vector_store_id: vectorStoreId,
-          tools: [{ type: 'file_search' }],
+          role: 'user',
+          content: [{ type: 'input_text', text: trimmedQuery }],
+          attachments: [
+            {
+              vector_store_id: vectorStoreId,
+              tools: [{ type: 'file_search' }],
+            },
+          ],
         },
       ],
+      tools: [{ type: 'file_search' }],
     };
 
     const data = await openaiService.makeRequest('/responses', {

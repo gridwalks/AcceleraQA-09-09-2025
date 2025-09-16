@@ -128,6 +128,36 @@ class OpenAIService {
       .filter(Boolean);
   }
 
+  createContentForRole(role, text) {
+    let normalizedText = '';
+
+    if (typeof text === 'string') {
+      normalizedText = text;
+    } else if (Array.isArray(text)) {
+      normalizedText = text.filter(part => typeof part === 'string').join(' ');
+    } else if (text != null) {
+      normalizedText = String(text);
+    }
+
+    const contentType = role === 'assistant' ? 'output_text' : 'input_text';
+
+    if (contentType === 'output_text') {
+      return [
+        {
+          type: 'output_text',
+          text: { value: normalizedText },
+        },
+      ];
+    }
+
+    return [
+      {
+        type: 'input_text',
+        text: normalizedText,
+      },
+    ];
+  }
+
   createChatPayload(message, history = [], model = getCurrentModel()) {
     const normalizedHistory = this.normalizeHistory(history);
 
@@ -357,11 +387,11 @@ class OpenAIService {
     const baseInput = [
       {
         role: 'system',
-        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+        content: this.createContentForRole('system', OPENAI_CONFIG.SYSTEM_PROMPT),
       },
       ...normalizedHistory.map(item => ({
         role: item.role,
-        content: [{ type: 'text', text: item.content }],
+        content: this.createContentForRole(item.role, item.content),
       })),
     ];
 
@@ -371,7 +401,7 @@ class OpenAIService {
         ...baseInput,
         {
           role: 'user',
-          content: [{ type: 'text', text: userPrompt }],
+          content: this.createContentForRole('user', userPrompt),
         },
       ],
     };
@@ -396,12 +426,18 @@ class OpenAIService {
             {
               role: 'user',
               content: [
-                { type: 'text', text: message || '' },
+                ...this.createContentForRole('user', message || ''),
+
                 { type: 'input_file', file_id: fileId },
               ],
             },
           ],
-          tools: [{ type: 'file_search', vector_store_ids: [vectorStoreId] }],
+          tools: [{ type: 'file_search' }],
+          tool_resources: {
+            file_search: {
+              vector_store_ids: [vectorStoreId],
+            },
+          },
         };
       } catch (error) {
         console.error('File upload failed:', error);

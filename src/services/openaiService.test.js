@@ -116,11 +116,11 @@ describe('openAIService getChatResponse', () => {
     expect(body.input).toEqual([
       {
         role: 'system',
-        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
       },
       {
         role: 'user',
-        content: [{ type: 'text', text: 'hello' }],
+        content: [{ type: 'input_text', text: 'hello' }],
       },
     ]);
   });
@@ -196,19 +196,19 @@ describe('openAIService getChatResponse', () => {
     expect(body.input).toEqual([
       {
         role: 'system',
-        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
       },
       {
         role: 'user',
-        content: [{ type: 'text', text: 'What is GMP?' }],
+        content: [{ type: 'input_text', text: 'What is GMP?' }],
       },
       {
         role: 'assistant',
-        content: [{ type: 'text', text: 'It is Good Manufacturing Practice.' }],
+        content: [{ type: 'output_text', text: { value: 'It is Good Manufacturing Practice.' } }],
       },
       {
         role: 'user',
-        content: [{ type: 'text', text: 'Explain validation steps' }],
+        content: [{ type: 'input_text', text: 'Explain validation steps' }],
       },
     ]);
   });
@@ -243,16 +243,21 @@ describe('openAIService getChatResponse', () => {
     expect(body.input).toEqual([
       {
         role: 'system',
-        content: [{ type: 'text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
       },
       {
         role: 'user',
         content: [
-          { type: 'text', text: 'hi' },
+          { type: 'input_text', text: 'hi' },
           { type: 'input_file', file_id: 'file-123' },
         ],
       },
     ]);
-    expect(body.tools).toEqual([{ type: 'file_search', vector_store_ids: ['vs-456'] }]);
+    expect(body.tools).toEqual([{ type: 'file_search' }]);
+    expect(body.tool_resources).toEqual({
+      file_search: {
+        vector_store_ids: ['vs-456'],
+      },
+    });
   });
 });

@@ -210,6 +210,7 @@ export async function loadMessagesFromStorage(userId) {
         console.log(`Skipping version-only record at index ${index}:`, msg);
         return;
       }
+
       if (validateMessage(msg)) {
         validMessages.push({
           ...msg,

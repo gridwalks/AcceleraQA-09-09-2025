@@ -204,7 +204,7 @@ describe('openAIService getChatResponse', () => {
       },
       {
         role: 'assistant',
-        content: [{ type: 'output_text', text: { value: 'It is Good Manufacturing Practice.' } }],
+        content: [{ type: 'output_text', text: 'It is Good Manufacturing Practice.' }],
       },
       {
         role: 'user',

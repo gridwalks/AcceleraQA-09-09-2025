@@ -145,7 +145,7 @@ class OpenAIService {
       return [
         {
           type: 'output_text',
-          text: { value: normalizedText },
+          text: normalizedText,
         },
       ];
     }

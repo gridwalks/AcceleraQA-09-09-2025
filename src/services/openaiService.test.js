@@ -240,28 +240,27 @@ describe('openAIService getChatResponse', () => {
 
     const [, options] = openAIService.makeRequest.mock.calls[0];
     const body = JSON.parse(options.body);
-    expect(body.input).toEqual([
-      {
-        role: 'system',
-        content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'input_text',
-            text: 'hi',
-            attachments: [
-              {
-                vector_store_id: 'vs-456',
-                tools: [{ type: 'file_search' }],
-              },
-            ],
-          },
-        ],
-      },
-    ]);
+    expect(body.input[0]).toEqual({
+      role: 'system',
+      content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
+    });
+    expect(body.input[1]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'input_text',
+          text: 'hi',
+        },
+      ],
+      attachments: [
+        {
+          vector_store_id: 'vs-456',
+          tools: [{ type: 'file_search' }],
+        },
+      ],
+    });
     expect(body.tools).toEqual([{ type: 'file_search' }]);
-    expect(body.attachments).toBeUndefined();
+    expect(body).not.toHaveProperty('attachments');
+    expect(body).not.toHaveProperty('tool_resources');
   });
 });

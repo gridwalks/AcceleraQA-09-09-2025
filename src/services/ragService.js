@@ -507,6 +507,11 @@ class RAGService {
       throw new Error('Query is required to generate a response');
     }
 
+    const vectorStoreAttachment = {
+      vector_store_id: vectorStoreId,
+      tools: [{ type: 'file_search' }],
+    };
+
     const body = {
       model: getCurrentModel(),
       input: [
@@ -516,14 +521,9 @@ class RAGService {
             {
               type: 'input_text',
               text: trimmedQuery,
-              attachments: [
-                {
-                  vector_store_id: vectorStoreId,
-                  tools: [{ type: 'file_search' }],
-                },
-              ],
             },
           ],
+          attachments: [vectorStoreAttachment],
         },
       ],
       tools: [{ type: 'file_search' }],

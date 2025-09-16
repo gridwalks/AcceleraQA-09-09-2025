@@ -512,11 +512,16 @@ class RAGService {
       input: [
         {
           role: 'user',
-          content: [{ type: 'input_text', text: trimmedQuery }],
-          attachments: [
+          content: [
             {
-              vector_store_id: vectorStoreId,
-              tools: [{ type: 'file_search' }],
+              type: 'input_text',
+              text: trimmedQuery,
+              attachments: [
+                {
+                  vector_store_id: vectorStoreId,
+                  tools: [{ type: 'file_search' }],
+                },
+              ],
             },
           ],
         },

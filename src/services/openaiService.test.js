@@ -247,11 +247,16 @@ describe('openAIService getChatResponse', () => {
       },
       {
         role: 'user',
-        content: [{ type: 'input_text', text: 'hi' }],
-        attachments: [
+        content: [
           {
-            vector_store_id: 'vs-456',
-            tools: [{ type: 'file_search' }],
+            type: 'input_text',
+            text: 'hi',
+            attachments: [
+              {
+                vector_store_id: 'vs-456',
+                tools: [{ type: 'file_search' }],
+              },
+            ],
           },
         ],
       },

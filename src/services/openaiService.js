@@ -419,19 +419,29 @@ class OpenAIService {
           throw vsError;
         }
 
+        const userContent = this.createContentForRole('user', message || '').map((part, index) => {
+          if (index !== 0) {
+            return part;
+          }
+
+          return {
+            ...part,
+            attachments: [
+              {
+                vector_store_id: vectorStoreId,
+                tools: [{ type: 'file_search' }],
+              },
+            ],
+          };
+        });
+
         requestBody = {
           model,
           input: [
             ...baseInput,
             {
               role: 'user',
-              content: this.createContentForRole('user', message || ''),
-              attachments: [
-                {
-                  vector_store_id: vectorStoreId,
-                  tools: [{ type: 'file_search' }],
-                },
-              ],
+              content: userContent,
             },
           ],
           tools: [{ type: 'file_search' }],

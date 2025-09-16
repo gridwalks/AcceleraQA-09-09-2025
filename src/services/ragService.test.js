@@ -268,4 +268,21 @@ describe('document persistence with Neon metadata store', () => {
     expect(savedDoc.metadata.originalMimeType).toBe(originalFile.type);
     expect(savedDoc.metadata.conversion).toBe('docx-to-pdf');
   });
+
+  test('captures version metadata when provided', async () => {
+    const uploadOptions = { documentApiMock, uploadFileId: 'file_version_1', vectorStoreId: 'vs_version_1' };
+    const { ragService } = await loadRagService(uploadOptions);
+
+    const file = { name: 'Procedure.pdf', type: 'application/pdf', size: 4096 };
+    await ragService.uploadDocument(file, { category: 'quality', version: '  Rev 2 ' }, 'user-789');
+
+    const saveCall = documentApiMock.calls.find(([action]) => action === 'save_document');
+    expect(saveCall).toBeTruthy();
+    const savedMetadata = saveCall[2].document.metadata;
+    expect(savedMetadata.version).toBe('Rev 2');
+
+    const docs = await ragService.getDocuments('user-789');
+    expect(docs).toHaveLength(1);
+    expect(docs[0].metadata.version).toBe('Rev 2');
+  });
 });

@@ -12,6 +12,7 @@ import RAGConfigurationPage from './components/RAGConfigurationPage';
 import AdminScreen from './components/AdminScreen';
 import NotebookOverlay from './components/NotebookOverlay';
 import SupportRequestOverlay from './components/SupportRequestOverlay';
+import StorageNotification, { useStorageNotifications } from './components/StorageNotification';
 
 // Utility
 import { v4 as uuidv4 } from 'uuid';
@@ -73,6 +74,10 @@ function App() {
   const messagesEndRef = useRef(null);
   const messagesLoadedRef = useRef(false);
   const isAdmin = useMemo(() => user?.roles?.includes('admin'), [user]);
+  const { StorageWelcomeModal: StorageWelcomeModalComponent } = useStorageNotifications(
+    isAuthenticated ? user : null,
+    messages.length
+  );
 
   useEffect(() => {
     if (cooldown > 0) {
@@ -598,6 +603,10 @@ function App() {
               onClose={() => setShowSupport(false)}
             />
           )}
+
+          {/* Storage notifications to highlight local persistence status */}
+          <StorageNotification user={user} messagesCount={messages.length} />
+          <StorageWelcomeModalComponent />
         </>
       )}
     </ErrorBoundary>

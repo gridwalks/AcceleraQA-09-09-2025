@@ -98,7 +98,6 @@ class OpenAIService {
   }
 
   sanitizeResponsesPayload(payload) {
-
     if (payload == null) {
       return payload;
     }
@@ -115,10 +114,11 @@ class OpenAIService {
     if ('tool_resources' in sanitized) {
       delete sanitized.tool_resources;
     }
-
-    let rootAttachments = [];
     if (Array.isArray(sanitized.attachments)) {
-      rootAttachments = this.sanitizeResponsesPayload(sanitized.attachments);
+      sanitized.attachments = sanitized.attachments
+        .map(item => this.sanitizeResponsesPayload(item))
+        .filter(item => item && typeof item === 'object');
+    } else if ('attachments' in sanitized && !Array.isArray(sanitized.attachments)) {
       delete sanitized.attachments;
     }
 
@@ -128,50 +128,67 @@ class OpenAIService {
 
     if (Array.isArray(sanitized.input)) {
       sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message));
-      if (rootAttachments.length > 0) {
-        const applied = this.applyAttachmentsToLastUserMessageContent(sanitized.input, rootAttachments);
-        if (!applied) {
-          sanitized.attachments = rootAttachments;
+
+      if (Array.isArray(sanitized.attachments) && sanitized.attachments.length > 0) {
+        const applied = this.applyAttachmentsToLastUserMessage(sanitized.input, sanitized.attachments);
+        if (applied) {
+          delete sanitized.attachments;
+        } else if (sanitized.attachments.length === 0) {
+          delete sanitized.attachments;
         }
       }
-    } else if (rootAttachments.length > 0) {
-      sanitized.attachments = rootAttachments;
+    } else if (Array.isArray(sanitized.attachments) && sanitized.attachments.length === 0) {
+      delete sanitized.attachments;
+
     }
 
     return sanitized;
   }
 
-  normalizeResponseMessage(message, options = {}) {
+  normalizeResponseMessage(message) {
     if (!message || typeof message !== 'object') {
       return message;
     }
 
-    const { attachmentsPrepend = true } = options;
     const normalized = { ...message };
 
     if ('tool_resources' in normalized) {
       delete normalized.tool_resources;
     }
-
-    const messageAttachments = Array.isArray(normalized.attachments)
+    const collectedAttachments = Array.isArray(normalized.attachments)
       ? this.sanitizeResponsesPayload(normalized.attachments)
       : [];
+
     if ('attachments' in normalized) {
       delete normalized.attachments;
     }
 
+    const normalizePart = (part) => {
+      const normalizedPart = this.normalizeMessageContentPart(part);
+
+      if (normalizedPart && typeof normalizedPart === 'object' && Array.isArray(normalizedPart.attachments)) {
+        const partAttachments = this.sanitizeResponsesPayload(normalizedPart.attachments);
+        if (Array.isArray(partAttachments)) {
+          collectedAttachments.push(...partAttachments);
+        }
+        delete normalizedPart.attachments;
+      }
+
+      return normalizedPart;
+    };
+
     if (Array.isArray(normalized.content)) {
-      normalized.content = normalized.content.map(part => this.normalizeMessageContentPart(part));
+      normalized.content = normalized.content.map(part => normalizePart(part));
     } else if (normalized.content && typeof normalized.content === 'object') {
-      normalized.content = [this.normalizeMessageContentPart(normalized.content)];
+      normalized.content = [normalizePart(normalized.content)];
     } else if (normalized.content != null) {
       normalized.content = [normalized.content];
     } else {
       normalized.content = [];
     }
 
-    if (messageAttachments.length > 0) {
-      normalized.content = this.applyAttachmentsToContent(normalized.content, messageAttachments, { prepend: attachmentsPrepend });
+    if (collectedAttachments.length > 0) {
+      normalized.attachments = collectedAttachments;
     }
 
     return normalized;
@@ -205,42 +222,7 @@ class OpenAIService {
     return sanitizedPart;
   }
 
-  applyAttachmentsToContent(content, attachments, options = {}) {
-    const { prepend = false } = options;
-
-    const normalizedContent = Array.isArray(content) ? [...content] : [];
-    const sanitizedAttachments = Array.isArray(attachments)
-      ? attachments.filter(item => item && typeof item === 'object')
-      : [];
-
-    if (sanitizedAttachments.length === 0) {
-      return normalizedContent;
-    }
-
-    let targetIndex = normalizedContent.findIndex(part => part && typeof part === 'object');
-    if (targetIndex === -1) {
-      normalizedContent.push({ type: 'input_text', text: '', attachments: [] });
-      targetIndex = normalizedContent.length - 1;
-    }
-
-    const targetPart = normalizedContent[targetIndex] || {};
-    const existingAttachments = Array.isArray(targetPart.attachments)
-      ? targetPart.attachments
-      : [];
-
-    const nextAttachments = prepend
-      ? [...sanitizedAttachments, ...existingAttachments]
-      : [...existingAttachments, ...sanitizedAttachments];
-
-    normalizedContent[targetIndex] = {
-      ...targetPart,
-      attachments: nextAttachments,
-    };
-
-    return normalizedContent;
-  }
-
-  applyAttachmentsToLastUserMessageContent(messages, attachments) {
+  applyAttachmentsToLastUserMessage(messages, attachments) {
     if (!Array.isArray(messages) || !Array.isArray(attachments) || attachments.length === 0) {
       return false;
     }
@@ -250,17 +232,26 @@ class OpenAIService {
       return false;
     }
 
-    const targetMessage = messages[userIndex];
+    const targetMessage = messages[userIndex] && typeof messages[userIndex] === 'object'
+      ? messages[userIndex]
+      : { role: 'user', content: [] };
     const existingMessageAttachments = Array.isArray(targetMessage.attachments)
       ? targetMessage.attachments
       : [];
 
+    const sanitizedAttachments = this.sanitizeResponsesPayload(attachments)
+      .filter(item => item && typeof item === 'object');
+
+    if (sanitizedAttachments.length === 0 && existingMessageAttachments.length === 0) {
+      return false;
+    }
+
     const combinedMessage = {
       ...targetMessage,
-      attachments: [...existingMessageAttachments, ...attachments],
+      attachments: [...existingMessageAttachments, ...sanitizedAttachments],
     };
 
-    messages[userIndex] = this.normalizeResponseMessage(combinedMessage, { attachmentsPrepend: false });
+    messages[userIndex] = this.normalizeResponseMessage(combinedMessage);
     return true;
   }
 
@@ -640,24 +631,13 @@ class OpenAIService {
           },
         ];
 
-        const userContent = this.createContentForRole('user', message || '').map((part, index) => {
-          if (!part || typeof part !== 'object' || index !== 0) {
-            return part;
-          }
-
-          return {
-            ...part,
-            attachments: vectorStoreAttachments,
-          };
-        });
-
         requestBody = {
           model,
           input: [
             ...baseInput,
             {
               role: 'user',
-              content: userContent,
+              content: this.createContentForRole('user', message || ''),
               attachments: vectorStoreAttachments,
             },
           ],

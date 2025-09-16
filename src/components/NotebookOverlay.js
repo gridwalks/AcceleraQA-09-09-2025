@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Download, Search } from 'lucide-react';
+import { X, Search } from 'lucide-react';
 import NotebookView from './NotebookView';
 
 const NotebookOverlay = ({
@@ -11,19 +11,10 @@ const NotebookOverlay = ({
   isGeneratingNotes,
   storedMessageCount,
   isServerAvailable,
-  exportNotebook,
   onClose
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState('desc');
-
-  const handleExportClick = () => {
-    try {
-      exportNotebook();
-    } catch (error) {
-      console.error('Export failed:', error);
-    }
-  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -51,15 +42,6 @@ const NotebookOverlay = ({
                 <option value="desc">Newest first</option>
                 <option value="asc">Oldest first</option>
               </select>
-              <button
-                onClick={handleExportClick}
-                className="flex items-center space-x-2 px-4 py-2 bg-white text-black rounded hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                aria-label="Export notebook"
-                title="Export conversations to CSV file"
-              >
-                <Download className="h-4 w-4" />
-                <span>Export</span>
-              </button>
               <button
                 onClick={onClose}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"

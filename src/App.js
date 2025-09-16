@@ -28,6 +28,11 @@ import {
 import { FEATURE_FLAGS } from './config/featureFlags';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
 import { mergeCurrentAndStoredMessages } from './utils/messageUtils';
+import {
+  detectDocumentExportIntent,
+  exportMessagesToExcel,
+  exportMessagesToWord,
+} from './utils/exportUtils';
 
 const COOLDOWN_SECONDS = 10;
 
@@ -234,14 +239,17 @@ function App() {
   }, [messages, user]);
 
   const handleSendMessage = useCallback(async () => {
-    if (!inputMessage.trim() && !uploadedFile) return;
+    const rawInput = inputMessage;
+    const trimmedInput = rawInput.trim();
+
+    if (!trimmedInput && !uploadedFile) return;
     if (cooldown > 0) return;
 
     setIsLoading(true);
 
     const displayContent = uploadedFile
-      ? `${inputMessage}\n[Attached: ${uploadedFile.name}]`
-      : inputMessage;
+      ? `${rawInput}\n[Attached: ${uploadedFile.name}]`
+      : rawInput;
 
     const userMessage = {
       id: uuidv4(),
@@ -252,16 +260,61 @@ function App() {
       resources: [],
     };
 
+    const updatedMessages = [...messages, userMessage];
+
     // Add user's message immediately
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage('');
 
-    let fileToSend = uploadedFile;
+    const fileToSend = uploadedFile;
+
+    const exportIntent = !fileToSend ? detectDocumentExportIntent(trimmedInput) : null;
+
+    if (exportIntent) {
+      const exportSourceMessages = updatedMessages;
+
+      try {
+        if (exportIntent === 'word') {
+          exportMessagesToWord(exportSourceMessages);
+        } else {
+          exportMessagesToExcel(exportSourceMessages);
+        }
+
+        const confirmationMessage = {
+          id: uuidv4(),
+          role: 'assistant',
+          type: 'ai',
+          content: `I've exported your recent conversations to a ${exportIntent === 'word' ? 'Word document' : 'Excel file'}. Check your downloads folder to access it.`,
+          timestamp: Date.now(),
+          sources: [],
+          resources: [],
+        };
+
+        setMessages((prev) => [...prev, confirmationMessage]);
+      } catch (error) {
+        console.error('Export generation failed:', error);
+        const errorMessage = {
+          id: uuidv4(),
+          role: 'assistant',
+          type: 'ai',
+          content: `I wasn't able to create the export: ${error.message || 'Unknown error occurred.'}`,
+          timestamp: Date.now(),
+          sources: [],
+          resources: [],
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
+        setUploadedFile(null);
+      }
+
+      return;
+    }
 
     try {
       const response = ragEnabled && !fileToSend
-        ? await ragSearch(inputMessage, user?.sub)
-        : await openaiService.getChatResponse(inputMessage, fileToSend);
+        ? await ragSearch(rawInput, user?.sub)
+        : await openaiService.getChatResponse(rawInput, fileToSend);
 
       const assistantMessage = {
         id: uuidv4(),
@@ -314,7 +367,15 @@ function App() {
       setIsLoading(false);
       setUploadedFile(null);
     }
-  }, [inputMessage, uploadedFile, ragEnabled, messages.length, refreshLearningSuggestions, cooldown, user?.sub]);
+  }, [
+    inputMessage,
+    uploadedFile,
+    ragEnabled,
+    messages,
+    refreshLearningSuggestions,
+    cooldown,
+    user?.sub,
+  ]);
 
   const handleKeyPress = useCallback(
     (e) => {
@@ -363,10 +424,6 @@ function App() {
       setLearningSuggestions([]);
     }
   }, [user]);
-
-  const handleExport = useCallback(() => {
-    console.log('Exporting conversation', messages);
-  }, [messages]);
 
   const handleExportSelected = useCallback(() => {
     console.log('Exporting selected messages', Array.from(selectedMessages));
@@ -530,7 +587,6 @@ function App() {
               isGeneratingNotes={isGeneratingNotes}
               storedMessageCount={messages.length}
               isServerAvailable={isServerAvailable}
-              exportNotebook={handleExport}
               onClose={() => setShowNotebook(false)}
             />
           )}

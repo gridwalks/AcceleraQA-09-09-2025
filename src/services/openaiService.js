@@ -434,6 +434,7 @@ class OpenAIService {
             {
               role: 'user',
               content: userContent,
+              attachments,
             },
           ],
           tools: [{ type: 'file_search' }],

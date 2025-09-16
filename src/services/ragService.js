@@ -503,11 +503,46 @@ class RAGService {
       if (Array.isArray(item?.annotations)) annotations.push(...item.annotations);
     });
 
+    const sources = annotations
+      .filter(Boolean)
+      .map((annotation, index) => {
+        const textSnippet = typeof annotation.text === 'string'
+          ? annotation.text
+          : typeof annotation?.file_citation?.quote === 'string'
+            ? annotation.file_citation.quote
+            : typeof annotation?.quote === 'string'
+              ? annotation.quote
+              : '';
+
+        const filename =
+          annotation.filename ||
+          annotation.file_name ||
+          annotation?.document?.filename ||
+          annotation?.document?.title ||
+          annotation?.file_citation?.filename ||
+          annotation?.file_citation?.file_name ||
+          annotation?.file_citation?.file_id ||
+          `Document ${index + 1}`;
+
+        const sourceId =
+          annotation.id ||
+          annotation?.file_citation?.file_id ||
+          annotation?.file_path ||
+          `source-${index}`;
+
+        return {
+          ...annotation,
+          id: sourceId,
+          filename,
+          text: textSnippet,
+        };
+      });
+
     return {
       answer,
-      sources: annotations,
+      sources,
       ragMetadata: {
-        totalSources: annotations.length,
+        totalSources: sources.length,
         processingMode: 'openai-file-search',
       },
     };

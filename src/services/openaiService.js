@@ -427,6 +427,7 @@ class OpenAIService {
               role: 'user',
               content: [
                 ...this.createContentForRole('user', message || ''),
+
                 { type: 'input_file', file_id: fileId },
               ],
             },

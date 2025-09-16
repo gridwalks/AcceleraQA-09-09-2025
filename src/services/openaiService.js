@@ -109,13 +109,11 @@ class OpenAIService {
     if (typeof payload !== 'object') {
       return payload;
     }
-
     const sanitized = { ...payload };
 
     if ('tool_resources' in sanitized) {
       delete sanitized.tool_resources;
     }
-
     if (Array.isArray(sanitized.attachments)) {
       sanitized.attachments = sanitized.attachments
         .map(item => this.sanitizeResponsesPayload(item))
@@ -141,6 +139,7 @@ class OpenAIService {
       }
     } else if (Array.isArray(sanitized.attachments) && sanitized.attachments.length === 0) {
       delete sanitized.attachments;
+
     }
 
     return sanitized;
@@ -156,7 +155,6 @@ class OpenAIService {
     if ('tool_resources' in normalized) {
       delete normalized.tool_resources;
     }
-
     const collectedAttachments = Array.isArray(normalized.attachments)
       ? this.sanitizeResponsesPayload(normalized.attachments)
       : [];
@@ -237,7 +235,6 @@ class OpenAIService {
     const targetMessage = messages[userIndex] && typeof messages[userIndex] === 'object'
       ? messages[userIndex]
       : { role: 'user', content: [] };
-
     const existingMessageAttachments = Array.isArray(targetMessage.attachments)
       ? targetMessage.attachments
       : [];
@@ -645,6 +642,11 @@ class OpenAIService {
             },
           ],
           tools: [{ type: 'file_search' }],
+          tool_resources: {
+            file_search: {
+              vector_store_ids: [vectorStoreId],
+            },
+          },
         };
       } catch (error) {
         console.error('File upload failed:', error);

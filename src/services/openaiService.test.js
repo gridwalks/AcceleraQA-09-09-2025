@@ -280,7 +280,7 @@ describe('openAIService makeRequest sanitization', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
-
+  
   it('removes tool_resources and keeps attachments at the message level for responses payloads', async () => {
     const payload = {
       model: 'test-model',

@@ -1,13 +1,74 @@
 // src/components/ChatArea.js - DEPLOYMENT READY (fixes DatabaseOff issue)
 
 import React from 'react';
-import { Send, Loader2, Database, Paperclip, X } from 'lucide-react';
+import { Send, Loader2, Database, Paperclip, X, ExternalLink } from 'lucide-react';
 
 const isPdfAttachment = (file) => {
   if (!file) return false;
   const name = typeof file.name === 'string' ? file.name.toLowerCase() : '';
   const type = typeof file.type === 'string' ? file.type.toLowerCase() : '';
   return name.endsWith('.pdf') || type === 'application/pdf';
+};
+
+const getSourceUrl = (source) => {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  const candidateValues = [
+    source.url,
+    source.link,
+    source.href,
+    source.downloadUrl,
+    source.sourceUrl,
+    source.webUrl,
+    source.fileUrl,
+    source.file_url,
+    source.location,
+  ];
+
+  const nestedCandidates = [
+    source.metadata,
+    source.document,
+    source.file_citation,
+  ];
+
+  nestedCandidates.forEach(candidate => {
+    if (!candidate || typeof candidate !== 'object') {
+      return;
+    }
+
+    candidateValues.push(
+      candidate.url,
+      candidate.link,
+      candidate.href,
+      candidate.downloadUrl,
+      candidate.sourceUrl,
+      candidate.webUrl,
+      candidate.fileUrl,
+      candidate.file_url,
+    );
+  });
+
+  const isValidUrl = (value) => {
+    if (typeof value !== 'string') {
+      return false;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    if (/^(https?:\/\/|\/)/i.test(trimmed)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const resolved = candidateValues.find(isValidUrl);
+  return resolved ? resolved.trim() : null;
 };
 
 const AttachmentPreview = ({ file, onRemove }) => {
@@ -203,16 +264,46 @@ const ChatArea = ({
                             <span>Sources from uploaded documents:</span>
                           </div>
                           <div className="space-y-1">
-                            {message.sources.slice(0, 3).map((source, idx) => (
-                              <div key={idx} className="text-xs bg-white bg-opacity-50 p-2 rounded border">
-                                <div className="font-medium truncate" title={source.filename}>
-                                  {source.filename}
-                                </div>
-                                <div className="text-gray-600 line-clamp-2">
-                                  {source.text.substring(0, 150)}...
-                                </div>
-                              </div>
-                            ))}
+                            {message.sources.slice(0, 3).map((source, idx) => {
+                              const sourceUrl = getSourceUrl(source);
+                              const SourceWrapper = sourceUrl ? 'a' : 'div';
+                              const isAbsoluteLink = sourceUrl ? /^https?:\/\//i.test(sourceUrl) : false;
+                              const wrapperProps = sourceUrl
+                                ? {
+                                    href: sourceUrl,
+                                    ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
+                                  }
+                                : {};
+
+                              const baseClasses = 'text-xs bg-white bg-opacity-50 p-2 rounded border transition-colors';
+                              const interactiveClasses = sourceUrl
+                                ? 'block group hover:border-blue-400 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:ring-offset-1'
+                                : '';
+
+                              return (
+                                <SourceWrapper
+                                  key={idx}
+                                  className={`${baseClasses} ${interactiveClasses}`.trim()}
+                                  {...wrapperProps}
+                                >
+                                  <div
+                                    className={`font-medium truncate ${sourceUrl ? 'text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700' : ''}`.trim()}
+                                    title={source.filename}
+                                  >
+                                    {source.filename || `Document ${idx + 1}`}
+                                  </div>
+                                  <div className="text-gray-600 line-clamp-2">
+                                    {(source.text || '').substring(0, 150)}...
+                                  </div>
+                                  {sourceUrl && (
+                                    <div className="mt-1 flex items-center gap-1 text-[11px] text-blue-600">
+                                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                                      <span>Open source</span>
+                                    </div>
+                                  )}
+                                </SourceWrapper>
+                              );
+                            })}
                             {message.sources.length > 3 && (
                               <div className="text-xs text-gray-500 italic">
                                 ...and {message.sources.length - 3} more sources

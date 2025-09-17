@@ -20,6 +20,20 @@ class TrainingResourceService {
   }
 
   /**
+   * Synchronously load training resources from localStorage
+   * @returns {Array} array of resources
+   */
+  getTrainingResourcesSync() {
+    try {
+      const raw = localStorage.getItem(this.storageKey);
+      return raw ? JSON.parse(raw) : [];
+    } catch (error) {
+      console.error('Failed to load training resources from storage:', error);
+      return [];
+    }
+  }
+
+  /**
    * Add a training resource to localStorage
    * @param {Object} resource resource data
    * @returns {Promise<Object>} newly stored resource with id

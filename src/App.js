@@ -35,6 +35,12 @@ import {
   exportMessagesToWord,
 } from './utils/exportUtils';
 import { convertFileToPdfIfNeeded } from './utils/fileConversion';
+import trainingResourceService from './services/trainingResourceService';
+import {
+  createAttachmentResources,
+  buildInternalResources,
+  dedupeResources,
+} from './utils/internalResourceUtils';
 
 const COOLDOWN_SECONDS = 10;
 
@@ -59,6 +65,7 @@ function App() {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [activeDocument, setActiveDocument] = useState(null);
   const [cooldown, setCooldown] = useState(0);
+  const [adminResources, setAdminResources] = useState([]);
 
   // Learning suggestions state
   const [learningSuggestions, setLearningSuggestions] = useState([]);
@@ -80,6 +87,31 @@ function App() {
     isAuthenticated ? user : null,
     messages.length
   );
+  const adminResourcesLoadedRef = useRef(false);
+
+  const refreshAdminResources = useCallback(async () => {
+    try {
+      const stored = await trainingResourceService.getTrainingResources();
+      setAdminResources(Array.isArray(stored) ? stored : []);
+    } catch (error) {
+      console.error('Failed to load admin resources:', error);
+      setAdminResources([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAdminResources()
+      .catch(error => console.error('Initial admin resource load failed:', error))
+      .finally(() => {
+        adminResourcesLoadedRef.current = true;
+      });
+  }, [refreshAdminResources]);
+
+  useEffect(() => {
+    if (adminResourcesLoadedRef.current && !showAdmin) {
+      refreshAdminResources();
+    }
+  }, [showAdmin, refreshAdminResources]);
 
   useEffect(() => {
     if (cooldown > 0) {
@@ -301,13 +333,15 @@ function App() {
         ]
       : [];
 
+    const attachmentResources = createAttachmentResources(attachments);
+
     const userMessage = {
       id: uuidv4(),
       role: 'user',
       type: 'user',
       content: rawInput,
       timestamp: Date.now(),
-      resources: [],
+      resources: attachmentResources,
       ...(attachments.length > 0 ? { attachments } : {}),
     };
 
@@ -372,6 +406,19 @@ function App() {
             vectorStoreIdToUse
           );
 
+      const combinedInternalResources = buildInternalResources({
+        attachments,
+        sources: response.sources || [],
+        adminResources,
+        contextText: `${trimmedInput}\n${response.answer || ''}`,
+      });
+
+      const responseResources = Array.isArray(response.resources) ? response.resources : [];
+      const mergedResources = dedupeResources([
+        ...responseResources,
+        ...combinedInternalResources,
+      ]);
+
       const assistantMessage = {
         id: uuidv4(),
         role: 'assistant',
@@ -379,7 +426,7 @@ function App() {
         content: response.answer,
         timestamp: Date.now(),
         sources: response.sources || [],
-        resources: response.resources || [],
+        resources: mergedResources,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -474,6 +521,7 @@ function App() {
     cooldown,
     user?.sub,
     activeDocument,
+    adminResources,
   ]);
 
   const handleKeyPress = useCallback(

@@ -38,7 +38,17 @@ function formatResourcesForExport(resources) {
   if (!resources || resources.length === 0) return '';
 
   return resources
-    .map(r => `${r.title}: ${r.url}`)
+    .map(r => {
+      const title = r.title || 'Untitled Resource';
+      const typeLabel = r.type ? ` (${r.type})` : '';
+
+      if (r.url) {
+        return `${title}${typeLabel}: ${r.url}`;
+      }
+
+      const locationLabel = r.location ? ` - ${r.location}` : '';
+      return `${title}${typeLabel}${locationLabel}`;
+    })
     .join(' | ');
 }
 

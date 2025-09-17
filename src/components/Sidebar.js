@@ -79,12 +79,18 @@ const extractResourcesFromMessages = (messages) => {
   }
 
   const resourcesMap = new Map();
-  
+
   messages.forEach(message => {
     if (message.resources && Array.isArray(message.resources)) {
       message.resources.forEach(resource => {
-        if (resource.url && resource.title) {
-          resourcesMap.set(resource.url, resource);
+        if (!resource || !resource.title) {
+          return;
+        }
+
+        const key = resource.url || resource.id || `${resource.title}-${resource.type || ''}`;
+
+        if (!resourcesMap.has(key)) {
+          resourcesMap.set(key, resource);
         }
       });
     }

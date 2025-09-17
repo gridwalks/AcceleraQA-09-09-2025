@@ -228,7 +228,6 @@ class OpenAIService {
     if (!item || typeof item !== 'object') {
       return null;
     }
-
     const sanitized = { ...item };
 
     if ('tool_resources' in sanitized) {

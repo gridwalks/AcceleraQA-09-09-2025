@@ -268,20 +268,30 @@ const NotebookView = memo(({
               allResources.map((resource, idx) => (
                 <div
                   key={idx}
-                  className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
-                  <a
-                    href={resource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-medium text-blue-600 hover:text-blue-800 block truncate">
-                    {resource.title}
-                  </a>
-                  <span className="text-xs text-gray-500">
-                    {resource.type}
-                    {resource.addedAt && (
-                      <> • {new Date(resource.addedAt).toLocaleString()}</>
-                    )}
+                  className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors space-y-1">
+                  {resource.url ? (
+                    <a
+                      href={resource.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium text-blue-600 hover:text-blue-800 block truncate">
+                      {resource.title}
+                    </a>
+                  ) : (
+                    <span className="text-sm font-medium text-gray-900 block truncate">{resource.title}</span>
+                  )}
+                  <span className="text-xs text-gray-500 flex items-center justify-between">
+                    <span>
+                      {resource.type || 'Resource'}
+                      {resource.location ? ` • ${resource.location}` : ''}
+                      {resource.addedAt && (
+                        <> • {new Date(resource.addedAt).toLocaleString()}</>
+                      )}
+                    </span>
                   </span>
+                  {resource.description && (
+                    <p className="text-xs text-gray-500 line-clamp-2">{resource.description}</p>
+                  )}
                 </div>
               ))
             )}

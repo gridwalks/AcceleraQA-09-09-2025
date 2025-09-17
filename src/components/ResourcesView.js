@@ -1,6 +1,6 @@
 // Enhanced with Learning Suggestions
 import React, { memo, useState, useEffect, useRef, useMemo } from 'react';
-import { Search, ChevronRight, ExternalLink, BookOpen, Brain, Sparkles, Target, Award, BookmarkPlus, Check, MessageSquare } from 'lucide-react';
+import { Search, ChevronRight, ExternalLink, BookOpen, Brain, Sparkles, Target, Award, BookmarkPlus, Check, MessageSquare, FileText } from 'lucide-react';
 import learningSuggestionsService from '../services/learningSuggestionsService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import ConversationList from './ConversationList';
@@ -40,10 +40,20 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     if (!searchTerm.trim()) {
       setFilteredResources(currentResources);
     } else {
-      const filtered = currentResources.filter(resource =>
-        resource.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        resource.type.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const term = searchTerm.trim().toLowerCase();
+      const filtered = currentResources.filter(resource => {
+        if (!resource) return false;
+        const fields = [
+          resource.title,
+          resource.type,
+          resource.description,
+          resource.origin,
+          resource.location,
+          resource.tag,
+        ];
+
+        return fields.some(value => typeof value === 'string' && value.toLowerCase().includes(term));
+      });
       setFilteredResources(filtered);
     }
   }, [currentResources, searchTerm]);
@@ -149,7 +159,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     'Framework': 'bg-indigo-50 text-indigo-700 border-indigo-200',
     'Template': 'bg-pink-50 text-pink-700 border-pink-200',
     'Report': 'bg-yellow-50 text-yellow-700 border-yellow-200',
-    'Reference': 'bg-teal-50 text-teal-700 border-teal-200'
+    'Reference': 'bg-teal-50 text-teal-700 border-teal-200',
+    'Admin Resource': 'bg-amber-50 text-amber-700 border-amber-200',
+    'Knowledge Base': 'bg-sky-50 text-sky-700 border-sky-200',
+    'User Upload': 'bg-slate-100 text-slate-700 border-slate-300',
+    default: 'bg-gray-100 text-gray-700 border-gray-200'
   };
 
   const displayedSuggestions = showAllSuggestions ? learningSuggestions : learningSuggestions.slice(0, 3);
@@ -275,10 +289,10 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
                 filteredResources.length > 0 ? (
                   filteredResources.map((resource, index) => (
                     <ResourceCard
-                      key={`${resource.url}-${index}`}
+                      key={`${resource.id || resource.url || resource.title || 'resource'}-${index}`}
                       resource={resource}
                       onClick={() => handleResourceClick(resource)}
-                      colorClass={resourceTypeColors[resource.type] || resourceTypeColors['Reference']}
+                      colorClass={resourceTypeColors[resource.type] || resourceTypeColors.default}
                       onAdd={() => handleAdd(resource)}
                       isAdded={addedResources.has(resource.url || resource.id || resource.title)}
                     />
@@ -481,6 +495,17 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
 // Individual resource card component (existing)
 const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const badgeClass = colorClass || 'bg-gray-100 text-gray-800 border-gray-200';
+  const hasUrl = Boolean(resource?.url);
+
+  let hostname = '';
+  if (hasUrl) {
+    try {
+      hostname = new URL(resource.url).hostname;
+    } catch (error) {
+      hostname = resource.url;
+    }
+  }
 
   return (
     <div
@@ -502,24 +527,44 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded }) =>
           <div className="flex-1 min-w-0">
             <div className="flex items-center space-x-2 mb-3">
               <span
-                className={`text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full border ${colorClass}`}
+                className={`text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full border ${badgeClass}`}
               >
-                {resource.type}
+                {resource.type || 'Resource'}
               </span>
             </div>
-            
+
             <h4 className="font-semibold text-gray-900 group-hover:text-black mb-2 leading-snug">
               {resource.title}
             </h4>
-            
-            <div className="flex items-center text-sm text-gray-500">
-              <ExternalLink className="h-3 w-3 mr-1" />
-              <span className="truncate">
-                {new URL(resource.url).hostname}
-              </span>
+
+            {resource.description && (
+              <p className="text-sm text-gray-600 mb-3 line-clamp-3">{resource.description}</p>
+            )}
+
+            <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+              <div className="flex items-center space-x-2">
+                {hasUrl ? (
+                  <>
+                    <ExternalLink className="h-3 w-3" />
+                    <span className="truncate">{hostname}</span>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-3 w-3" />
+                    <span className="truncate">
+                      {resource.location || resource.origin || 'Stored in workspace'}
+                    </span>
+                  </>
+                )}
+              </div>
+              {resource.tag && (
+                <span className="ml-2 text-[11px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                  #{resource.tag}
+                </span>
+              )}
             </div>
           </div>
-          
+
           <div className="flex items-center space-x-1">
             <button
               onClick={(e) => { e.stopPropagation(); if (!isAdded) onAdd?.(); }}

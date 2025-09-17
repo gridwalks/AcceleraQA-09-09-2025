@@ -242,14 +242,14 @@ const ChatArea = ({
             <input
               type="file"
               id="chat-file-upload"
-              accept=".pdf,.txt,.md,.docx"
+              accept=".pdf,.txt,.md,.docx,.csv,.xlsx"
               className="hidden"
               onChange={(e) => setUploadedFile(e.target.files[0] || null)}
             />
             <label
               htmlFor="chat-file-upload"
               className="flex min-w-[44px] cursor-pointer items-center justify-center rounded-lg bg-gray-200 px-3 py-3 text-gray-700 transition hover:bg-gray-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:px-4 sm:py-4"
-              title="Attach a PDF, Word (.docx), Markdown (.md), or Text (.txt) document. Non-PDF files will be converted automatically."
+              title="Attach a PDF, Word (.docx), Markdown (.md), Text (.txt), CSV (.csv), or Excel (.xlsx) document. Non-PDF files will be converted automatically."
             >
               <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
             </label>

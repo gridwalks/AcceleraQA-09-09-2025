@@ -28,6 +28,22 @@ import {
   NEON_RAG_FUNCTION,
 } from '../config/ragConfig';
 
+const describeConversionSource = (conversion) => {
+  if (!conversion) {
+    return null;
+  }
+
+  const conversionLabels = {
+    'docx-to-pdf': 'DOCX',
+    'markdown-to-pdf': 'Markdown',
+    'text-to-pdf': 'text',
+    'csv-to-pdf': 'CSV',
+    'xlsx-to-pdf': 'Excel',
+  };
+
+  return conversionLabels[conversion] || null;
+};
+
 const RAGConfigurationPage = ({ user, onClose }) => {
   const [documents, setDocuments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -638,17 +654,17 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select File (PDF, DOCX, TXT, or MD)
+                      Select File (PDF, DOCX, TXT, MD, CSV, or XLSX)
                     </label>
                       <input
                         id="file-upload"
                         type="file"
-                        accept=".pdf,.txt,.md,.docx"
+                        accept=".pdf,.txt,.md,.docx,.csv,.xlsx"
                         onChange={handleFileSelect}
                         className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
                     <p className="text-xs text-gray-500 mt-1">
-                      DOCX files are automatically converted to PDF before upload. Persistent storage with the {ragBackendLabel} backend.
+                      DOCX, CSV, and XLSX files are automatically converted to PDF before upload. Persistent storage with the {ragBackendLabel} backend.
                     </p>
                   </div>
 
@@ -786,9 +802,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                           {doc.metadata?.version && (
                             <p><span className="font-medium">Version:</span> {doc.metadata.version}</p>
                           )}
-                          {doc.metadata?.conversion === 'docx-to-pdf' && doc.metadata?.originalFilename && (
+                          {doc.metadata?.conversion && doc.metadata?.originalFilename && (
                             <p className="text-sm text-gray-600">
-                              <span className="font-medium text-gray-700">Original:</span> {doc.metadata.originalFilename} (converted from DOCX)
+                              <span className="font-medium text-gray-700">Original:</span> {doc.metadata.originalFilename} (converted from {describeConversionSource(doc.metadata.conversion) || 'the uploaded format'})
                             </p>
                           )}
                           <p><span className="font-medium">Uploaded:</span> {new Date(doc.createdAt).toLocaleDateString()}</p>

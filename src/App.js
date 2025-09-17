@@ -273,7 +273,7 @@ function App() {
             type: 'ai',
             content:
               conversionError.message ||
-              'I was unable to process the attached document. Please upload a PDF, Word (.docx), Markdown (.md), or text (.txt) file.',
+              'I was unable to process the attached document. Please upload a PDF, Word (.docx), Markdown (.md), text (.txt), CSV (.csv), or Excel (.xlsx) file.',
             timestamp: Date.now(),
             sources: [],
             resources: [],

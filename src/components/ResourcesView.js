@@ -11,6 +11,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredResources, setFilteredResources] = useState(currentResources);
+  const [conversationSearchTerm, setConversationSearchTerm] = useState('');
   const [learningSuggestions, setLearningSuggestions] = useState([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [openSections, setOpenSections] = useState({
@@ -27,6 +28,18 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
     return combineMessagesIntoConversations(merged).slice(-20).reverse();
   }, [messages, thirtyDayMessages]);
+
+  const filteredConversations = useMemo(() => {
+    if (!conversationSearchTerm.trim()) {
+      return conversations;
+    }
+
+    const term = conversationSearchTerm.trim().toLowerCase();
+    return conversations.filter(conv =>
+      (conv.userContent && typeof conv.userContent === 'string' && conv.userContent.toLowerCase().includes(term)) ||
+      (conv.aiContent && typeof conv.aiContent === 'string' && conv.aiContent.toLowerCase().includes(term))
+    );
+  }, [conversations, conversationSearchTerm]);
 
   // Load learning suggestions on component mount and user change
   useEffect(() => {
@@ -344,8 +357,44 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
             <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.conversations ? 'rotate-90' : ''}`} />
           </button>
           {openSections.conversations && (
-            <div className="p-4 space-y-2 border-t border-gray-200">
-              <ConversationList conversations={conversations} onSelect={onConversationSelect} />
+            <div className="p-4 space-y-4 border-t border-gray-200">
+              {conversations.length > 0 && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search conversations..."
+                    value={conversationSearchTerm}
+                    onChange={(e) => setConversationSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+
+              {conversations.length === 0 ? (
+                <div className="text-center py-8 text-gray-600">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg mx-auto mb-3 flex items-center justify-center">
+                    <MessageSquare className="h-6 w-6 text-green-600" />
+                  </div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">No conversations yet</h4>
+                  <p className="text-sm">Start chatting to see your learning history here.</p>
+                </div>
+              ) : filteredConversations.length > 0 ? (
+                <ConversationList conversations={filteredConversations} onSelect={onConversationSelect} />
+              ) : (
+                <div className="text-center py-8">
+                  <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-600 text-sm">
+                    No conversations match "{conversationSearchTerm}"
+                  </p>
+                  <button
+                    onClick={() => setConversationSearchTerm('')}
+                    className="mt-2 text-sm text-green-600 hover:text-green-800"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

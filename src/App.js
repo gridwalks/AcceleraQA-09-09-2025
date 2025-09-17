@@ -305,7 +305,7 @@ function App() {
       id: uuidv4(),
       role: 'user',
       type: 'user',
-      content: displayContent,
+      content: rawInput,
       timestamp: Date.now(),
       resources: [],
       ...(attachments.length > 0 ? { attachments } : {}),

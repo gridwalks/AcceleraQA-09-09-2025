@@ -25,6 +25,8 @@ Principles:
 2. Always cite or reference global guidance where relevant.
 3. Concise but complete (aim 150-250 words unless detail requested).
 4. Prioritize practicality, continuous improvement, and adaptability to digital health.
+
+When available, ensure the response includes a reference to the regulation, standard operating procedure, work instruction, etc., along with its name and section number.
 `,
 };
 // Auth0 Configuration with enhanced validation

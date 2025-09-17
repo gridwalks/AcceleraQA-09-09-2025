@@ -116,16 +116,7 @@ class OpenAIService {
       delete sanitized.tool_resources;
     }
 
-    let rootAttachments = [];
-
-    if (Array.isArray(sanitized.attachments)) {
-      rootAttachments = this.collectSanitizedAttachments(sanitized.attachments);
-      if (rootAttachments.length > 0) {
-        sanitized.attachments = rootAttachments;
-      } else {
-        delete sanitized.attachments;
-      }
-    } else if ('attachments' in sanitized) {
+    if ('attachments' in sanitized) {
       delete sanitized.attachments;
     }
 
@@ -134,21 +125,13 @@ class OpenAIService {
     }
 
     if (Array.isArray(sanitized.input)) {
-      const collectedAttachments = [];
-      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message, collectedAttachments));
-
-      const mergedAttachments = this.mergeAttachmentArrays(rootAttachments, collectedAttachments);
-      if (mergedAttachments.length > 0) {
-        sanitized.attachments = mergedAttachments;
-      } else {
-        delete sanitized.attachments;
-      }
+      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message));
     }
 
     return sanitized;
   }
 
-  normalizeResponseMessage(message, attachmentCollector = []) {
+  normalizeResponseMessage(message) {
     if (!message || typeof message !== 'object') {
       return message;
     }
@@ -159,16 +142,11 @@ class OpenAIService {
       delete normalized.tool_resources;
     }
 
-    const messageAttachments = this.collectSanitizedAttachments(normalized.attachments);
-    if (messageAttachments.length > 0) {
-      attachmentCollector.push(...messageAttachments);
-    }
-
     if ('attachments' in normalized) {
       delete normalized.attachments;
     }
 
-    const normalizePart = (part) => this.normalizeMessageContentPart(part, attachmentCollector);
+    const normalizePart = (part) => this.normalizeMessageContentPart(part);
 
     if (Array.isArray(normalized.content)) {
       normalized.content = normalized.content.map(part => normalizePart(part));
@@ -183,7 +161,7 @@ class OpenAIService {
     return normalized;
   }
 
-  normalizeMessageContentPart(part, attachmentCollector = []) {
+  normalizeMessageContentPart(part) {
     if (!part || typeof part !== 'object') {
       return part;
     }
@@ -192,11 +170,6 @@ class OpenAIService {
 
     if ('tool_resources' in sanitizedPart) {
       delete sanitizedPart.tool_resources;
-    }
-
-    const partAttachments = this.collectSanitizedAttachments(sanitizedPart.attachments);
-    if (partAttachments.length > 0) {
-      attachmentCollector.push(...partAttachments);
     }
 
     if ('attachments' in sanitizedPart) {
@@ -208,66 +181,10 @@ class OpenAIService {
     }
 
     if (Array.isArray(sanitizedPart.input)) {
-      sanitizedPart.input = sanitizedPart.input.map(item => this.normalizeResponseMessage(item, attachmentCollector));
+      sanitizedPart.input = sanitizedPart.input.map(item => this.normalizeResponseMessage(item));
     }
 
     return sanitizedPart;
-  }
-
-  collectSanitizedAttachments(rawAttachments) {
-    if (!Array.isArray(rawAttachments)) {
-      return [];
-    }
-
-    return rawAttachments
-      .map(item => this.sanitizeAttachmentItem(item))
-      .filter(item => item && typeof item === 'object');
-  }
-
-  sanitizeAttachmentItem(item) {
-    if (!item || typeof item !== 'object') {
-      return null;
-    }
-    const sanitized = { ...item };
-
-    if ('tool_resources' in sanitized) {
-      delete sanitized.tool_resources;
-    }
-
-    if ('attachments' in sanitized) {
-      delete sanitized.attachments;
-    }
-
-    if ('content' in sanitized) {
-      delete sanitized.content;
-    }
-
-    if ('input' in sanitized) {
-      delete sanitized.input;
-    }
-
-    return sanitized;
-  }
-
-  mergeAttachmentArrays(existing = [], additional = []) {
-    const merged = [];
-    const seen = new Set();
-
-    [...existing, ...additional].forEach((attachment) => {
-      if (!attachment || typeof attachment !== 'object') {
-        return;
-      }
-
-      const cloned = { ...attachment };
-      const key = JSON.stringify(cloned);
-
-      if (!seen.has(key)) {
-        seen.add(key);
-        merged.push(cloned);
-      }
-    });
-
-    return merged;
   }
 
   async handleApiError(response, tokenCount = 0) {
@@ -631,12 +548,10 @@ class OpenAIService {
           throw vsError;
         }
 
-        const vectorStoreAttachments = [
-          {
-            vector_store_id: vectorStoreId,
-            tools: [{ type: 'file_search' }],
-          },
-        ];
+        const fileSearchTool = {
+          type: 'file_search',
+          vector_store_ids: [vectorStoreId],
+        };
 
         requestBody = {
           model,
@@ -647,13 +562,7 @@ class OpenAIService {
               content: this.createContentForRole('user', message || ''),
             },
           ],
-          attachments: vectorStoreAttachments, // keep attachments at the root level for Assistants v2
-          tools: [{ type: 'file_search' }],
-          tool_resources: {
-            file_search: {
-              vector_store_ids: [vectorStoreId],
-            },
-          },
+          tools: [fileSearchTool],
         };
       } catch (error) {
         console.error('File upload failed:', error);
@@ -676,7 +585,6 @@ class OpenAIService {
       const data = await this.makeRequest(
         '/responses',
         {
-          headers: { 'OpenAI-Beta': 'assistants=v2' },
           body: JSON.stringify(sanitizedRequestBody),
         },
         tokenCount

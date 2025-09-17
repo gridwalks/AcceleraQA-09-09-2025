@@ -508,9 +508,9 @@ class RAGService {
       throw new Error('Query is required to generate a response');
     }
 
-    const vectorStoreAttachment = {
-      vector_store_id: vectorStoreId,
-      tools: [{ type: 'file_search' }],
+    const fileSearchTool = {
+      type: 'file_search',
+      vector_store_ids: [vectorStoreId],
     };
 
     const body = {
@@ -525,20 +525,12 @@ class RAGService {
 
             },
           ],
-          attachments: [vectorStoreAttachment],
         },
       ],
-      attachments: [vectorStoreAttachment],
-      tools: [{ type: 'file_search' }],
-      tool_resources: {
-        file_search: {
-          vector_store_ids: [vectorStoreId],
-        },
-      },
+      tools: [fileSearchTool],
     };
 
     const data = await openaiService.makeRequest('/responses', {
-      headers: { 'OpenAI-Beta': 'assistants=v2' },
       body: JSON.stringify(body),
     });
 

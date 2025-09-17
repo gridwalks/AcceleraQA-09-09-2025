@@ -253,13 +253,10 @@ describe('openAIService getChatResponse', () => {
       content: [{ type: 'input_text', text: 'hi' }],
     });
 
-    expect(body.tools).toEqual([{ type: 'file_search' }]);
-    expect(body.attachments).toEqual([
-      {
-        vector_store_id: 'vs-456',
-        tools: [{ type: 'file_search' }],
-      },
+    expect(body.tools).toEqual([
+      { type: 'file_search', vector_store_ids: ['vs-456'] },
     ]);
+    expect(body).not.toHaveProperty('attachments');
     expect(body).not.toHaveProperty('tool_resources');
   });
 });
@@ -277,7 +274,7 @@ describe('openAIService makeRequest sanitization', () => {
     jest.restoreAllMocks();
   });
 
-  it('removes tool_resources and consolidates attachments at the root for responses payloads', async () => {
+  it('removes tool_resources and all attachments for responses payloads', async () => {
     const payload = {
       model: 'test-model',
       input: [
@@ -313,14 +310,9 @@ describe('openAIService makeRequest sanitization', () => {
     const [, options] = fetch.mock.calls[0];
     const sanitized = JSON.parse(options.body);
 
-    // tool resources removed, attachments consolidated at root
+    // tool resources removed, attachments stripped from payload
     expect(sanitized.tool_resources).toBeUndefined();
-    expect(sanitized.attachments).toHaveLength(3);
-    expect(sanitized.attachments).toEqual(expect.arrayContaining([
-      { vector_store_id: 'message-vs' },
-      { vector_store_id: 'content-vs' },
-      { vector_store_id: 'root-vs' },
-    ]));
+    expect(sanitized.attachments).toBeUndefined();
 
     expect(Array.isArray(sanitized.input)).toBe(true);
     const userMessage = sanitized.input.find(msg => msg.role === 'user');

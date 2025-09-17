@@ -116,11 +116,16 @@ class OpenAIService {
       delete sanitized.tool_resources;
     }
 
+    let rootAttachments = [];
+
     if (Array.isArray(sanitized.attachments)) {
-      sanitized.attachments = sanitized.attachments
-        .map(item => this.sanitizeResponsesPayload(item))
-        .filter(item => item && typeof item === 'object');
-    } else if ('attachments' in sanitized && !Array.isArray(sanitized.attachments)) {
+      rootAttachments = this.collectSanitizedAttachments(sanitized.attachments);
+      if (rootAttachments.length > 0) {
+        sanitized.attachments = rootAttachments;
+      } else {
+        delete sanitized.attachments;
+      }
+    } else if ('attachments' in sanitized) {
       delete sanitized.attachments;
     }
 
@@ -129,24 +134,21 @@ class OpenAIService {
     }
 
     if (Array.isArray(sanitized.input)) {
-      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message));
+      const collectedAttachments = [];
+      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message, collectedAttachments));
 
-      if (Array.isArray(sanitized.attachments) && sanitized.attachments.length > 0) {
-        const applied = this.applyAttachmentsToLastUserMessage(sanitized.input, sanitized.attachments);
-        if (applied) {
-          delete sanitized.attachments;
-        } else if (sanitized.attachments.length === 0) {
-          delete sanitized.attachments;
-        }
+      const mergedAttachments = this.mergeAttachmentArrays(rootAttachments, collectedAttachments);
+      if (mergedAttachments.length > 0) {
+        sanitized.attachments = mergedAttachments;
+      } else {
+        delete sanitized.attachments;
       }
-    } else if (Array.isArray(sanitized.attachments) && sanitized.attachments.length === 0) {
-      delete sanitized.attachments;
     }
 
     return sanitized;
   }
 
-  normalizeResponseMessage(message) {
+  normalizeResponseMessage(message, attachmentCollector = []) {
     if (!message || typeof message !== 'object') {
       return message;
     }
@@ -157,27 +159,16 @@ class OpenAIService {
       delete normalized.tool_resources;
     }
 
-    const collectedAttachments = Array.isArray(normalized.attachments)
-      ? this.sanitizeResponsesPayload(normalized.attachments)
-      : [];
+    const messageAttachments = this.collectSanitizedAttachments(normalized.attachments);
+    if (messageAttachments.length > 0) {
+      attachmentCollector.push(...messageAttachments);
+    }
 
     if ('attachments' in normalized) {
       delete normalized.attachments;
     }
 
-    const normalizePart = (part) => {
-      const normalizedPart = this.normalizeMessageContentPart(part);
-
-      if (normalizedPart && typeof normalizedPart === 'object' && Array.isArray(normalizedPart.attachments)) {
-        const partAttachments = this.sanitizeResponsesPayload(normalizedPart.attachments);
-        if (Array.isArray(partAttachments)) {
-          collectedAttachments.push(...partAttachments);
-        }
-        delete normalizedPart.attachments;
-      }
-
-      return normalizedPart;
-    };
+    const normalizePart = (part) => this.normalizeMessageContentPart(part, attachmentCollector);
 
     if (Array.isArray(normalized.content)) {
       normalized.content = normalized.content.map(part => normalizePart(part));
@@ -189,14 +180,10 @@ class OpenAIService {
       normalized.content = [];
     }
 
-    if (collectedAttachments.length > 0) {
-      normalized.attachments = collectedAttachments;
-    }
-
     return normalized;
   }
 
-  normalizeMessageContentPart(part) {
+  normalizeMessageContentPart(part, attachmentCollector = []) {
     if (!part || typeof part !== 'object') {
       return part;
     }
@@ -207,9 +194,12 @@ class OpenAIService {
       delete sanitizedPart.tool_resources;
     }
 
-    if (Array.isArray(sanitizedPart.attachments)) {
-      sanitizedPart.attachments = this.sanitizeResponsesPayload(sanitizedPart.attachments);
-    } else if ('attachments' in sanitizedPart) {
+    const partAttachments = this.collectSanitizedAttachments(sanitizedPart.attachments);
+    if (partAttachments.length > 0) {
+      attachmentCollector.push(...partAttachments);
+    }
+
+    if ('attachments' in sanitizedPart) {
       delete sanitizedPart.attachments;
     }
 
@@ -218,75 +208,66 @@ class OpenAIService {
     }
 
     if (Array.isArray(sanitizedPart.input)) {
-      sanitizedPart.input = sanitizedPart.input.map(item => this.normalizeResponseMessage(item));
+      sanitizedPart.input = sanitizedPart.input.map(item => this.normalizeResponseMessage(item, attachmentCollector));
     }
 
     return sanitizedPart;
   }
 
-  applyAttachmentsToLastUserMessage(messages, attachments) {
-    if (!Array.isArray(messages) || !Array.isArray(attachments) || attachments.length === 0) {
-      return false;
+  collectSanitizedAttachments(rawAttachments) {
+    if (!Array.isArray(rawAttachments)) {
+      return [];
     }
 
-    const userIndex = this.findLastUserMessageIndex(messages);
-    if (userIndex === -1) {
-      return false;
-    }
-
-    const targetMessage = messages[userIndex] && typeof messages[userIndex] === 'object'
-      ? messages[userIndex]
-      : { role: 'user', content: [] };
-    const existingRaw = Array.isArray(targetMessage.attachments)
-      ? targetMessage.attachments
-      : [];
-
-    const existingMessageAttachments = this.sanitizeResponsesPayload(existingRaw)
+    return rawAttachments
+      .map(item => this.sanitizeAttachmentItem(item))
       .filter(item => item && typeof item === 'object');
+  }
 
-    const sanitizedAttachments = this.sanitizeResponsesPayload(attachments)
-      .filter(item => item && typeof item === 'object');
+  sanitizeAttachmentItem(item) {
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
+    const sanitized = { ...item };
 
-    if (sanitizedAttachments.length === 0 && existingMessageAttachments.length === 0) {
-      return false;
+    if ('tool_resources' in sanitized) {
+      delete sanitized.tool_resources;
     }
 
-    const combined = [...existingMessageAttachments];
-    const seenKeys = new Set(combined.map(item => JSON.stringify(item)));
+    if ('attachments' in sanitized) {
+      delete sanitized.attachments;
+    }
 
-    sanitizedAttachments.forEach((attachment) => {
-      const key = JSON.stringify(attachment);
-      if (!seenKeys.has(key)) {
-        combined.push(attachment);
-        seenKeys.add(key);
+    if ('content' in sanitized) {
+      delete sanitized.content;
+    }
+
+    if ('input' in sanitized) {
+      delete sanitized.input;
+    }
+
+    return sanitized;
+  }
+
+  mergeAttachmentArrays(existing = [], additional = []) {
+    const merged = [];
+    const seen = new Set();
+
+    [...existing, ...additional].forEach((attachment) => {
+      if (!attachment || typeof attachment !== 'object') {
+        return;
+      }
+
+      const cloned = { ...attachment };
+      const key = JSON.stringify(cloned);
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(cloned);
       }
     });
 
-    if (combined.length === existingMessageAttachments.length && sanitizedAttachments.length === 0) {
-      return false;
-    }
-
-    const combinedMessage = {
-      ...targetMessage,
-      attachments: combined,
-    };
-
-    messages[userIndex] = this.normalizeResponseMessage(combinedMessage);
-    return true;
-  }
-
-  findLastUserMessageIndex(messages) {
-    if (!Array.isArray(messages)) {
-      return -1;
-    }
-
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index] && messages[index].role === 'user') {
-        return index;
-      }
-    }
-
-    return -1;
+    return merged;
   }
 
   async handleApiError(response, tokenCount = 0) {
@@ -664,10 +645,9 @@ class OpenAIService {
             {
               role: 'user',
               content: this.createContentForRole('user', message || ''),
-              attachments: vectorStoreAttachments, // keep attachments on the user message
             },
           ],
-          attachments: vectorStoreAttachments, // and top-level for Assistants v2
+          attachments: vectorStoreAttachments, // keep attachments at the root level for Assistants v2
           tools: [{ type: 'file_search' }],
           tool_resources: {
             file_search: {

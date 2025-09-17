@@ -119,58 +119,112 @@ const ChatArea = ({
           <>
             {messages
               .filter(message => !message.isResource)
-              .map((message, index) => (
-                <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[85%] lg:max-w-[75%] p-3 sm:p-4 rounded-lg ${
-                      message.role === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-900 border border-gray-200'
-                    }`}
-                  >
-                    {/* Message Content */}
-                    <div className="whitespace-pre-wrap text-sm sm:text-base leading-relaxed">
-                      {message.content}
-                    </div>
+              .map((message, index) => {
+                const isUserMessage = message.role === 'user';
+                const messageText = typeof message.content === 'string' ? message.content : '';
+                const hasMessageText = messageText.trim().length > 0;
+                const attachments = Array.isArray(message.attachments) ? message.attachments : [];
 
-                    {/* RAG Sources Display */}
-                    {message.sources && message.sources.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-gray-300">
-                        <div className="text-xs font-medium text-gray-600 mb-2 flex items-center space-x-1">
-                          <Database className="h-3 w-3" />
-                          <span>Sources from uploaded documents:</span>
-                        </div>
-                        <div className="space-y-1">
-                          {message.sources.slice(0, 3).map((source, idx) => (
-                            <div key={idx} className="text-xs bg-white bg-opacity-50 p-2 rounded border">
-                              <div className="font-medium truncate" title={source.filename}>
-                                {source.filename}
-                              </div>
-                              <div className="text-gray-600 line-clamp-2">
-                                {source.text.substring(0, 150)}...
-                              </div>
-                            </div>
-                          ))}
-                          {message.sources.length > 3 && (
-                            <div className="text-xs text-gray-500 italic">
-                              ...and {message.sources.length - 3} more sources
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Timestamp */}
+                return (
+                  <div key={index} className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}>
                     <div
-                      className={`text-xs mt-2 ${
-                        message.role === 'user' ? 'text-blue-200' : 'text-gray-500'
+                      className={`max-w-[85%] lg:max-w-[75%] p-3 sm:p-4 rounded-lg ${
+                        isUserMessage
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-900 border border-gray-200'
                       }`}
                     >
-                      {new Date(message.timestamp).toLocaleTimeString()}
+                      {/* Message Content */}
+                      {hasMessageText && (
+                        <div className="whitespace-pre-wrap text-sm sm:text-base leading-relaxed">
+                          {messageText}
+                        </div>
+                      )}
+
+                      {/* Attachments Display */}
+                      {attachments.length > 0 && (
+                        <div className={`space-y-2 ${hasMessageText ? 'mt-3' : ''}`}>
+                          {attachments.map((attachment, attachmentIndex) => {
+                            const hasDifferentNames =
+                              attachment.originalFileName &&
+                              attachment.finalFileName &&
+                              attachment.originalFileName !== attachment.finalFileName;
+
+                            let detailText = null;
+
+                            if (attachment.converted) {
+                              detailText = hasDifferentNames
+                                ? `Converted from ${attachment.originalFileName}`
+                                : 'Converted to PDF';
+                            } else if (hasDifferentNames) {
+                              detailText = `Uploaded as ${attachment.originalFileName}`;
+                            }
+
+                            return (
+                              <div
+                                key={attachmentIndex}
+                                className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${
+                                  isUserMessage
+                                    ? 'border-blue-300/60 bg-blue-500/20 text-blue-50'
+                                    : 'border-gray-300 bg-white text-gray-700'
+                                }`}
+                              >
+                                <Paperclip
+                                  className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
+                                    isUserMessage ? 'text-blue-100' : 'text-gray-500'
+                                  }`}
+                                />
+                                <div className="min-w-0">
+                                  <div
+                                    className={`truncate font-medium ${
+                                      isUserMessage ? 'text-white' : 'text-gray-900'
+                                    }`}
+                                    title={attachment.finalFileName || attachment.originalFileName || 'Attachment'}
+                                  >
+                                    {attachment.finalFileName || attachment.originalFileName || 'Attachment'}
+                                  </div>
+                                  {detailText && (
+                                    <div className={isUserMessage ? 'text-blue-100' : 'text-gray-600'}>
+                                      {detailText}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* RAG Sources Display */}
+                      {message.sources && message.sources.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-300">
+                          <div className="text-xs font-medium text-gray-600 mb-2 flex items-center space-x-1">
+                            <Database className="h-3 w-3" />
+                            <span>Sources from uploaded documents:</span>
+                          </div>
+                          <div className="space-y-1">
+                            {message.sources.slice(0, 3).map((source, idx) => (
+                              <div key={idx} className="text-xs bg-white bg-opacity-50 p-2 rounded border">
+                                <div className="font-medium truncate" title={source.filename}>
+                                  {source.filename}
+                                </div>
+                                <div className="text-gray-600 line-clamp-2">
+                                  {source.text.substring(0, 150)}...
+                                </div>
+                              </div>
+                            ))}
+                            {message.sources.length > 3 && (
+                              <div className="text-xs text-gray-500 italic">
+                                ...and {message.sources.length - 3} more sources
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             <div ref={messagesEndRef} />
           </>
         )}

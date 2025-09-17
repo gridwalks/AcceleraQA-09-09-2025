@@ -18,7 +18,7 @@ const Sidebar = ({
     <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 lg:min-h-0">
       {/* Sidebar Header */}
         <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900">Learning Center</h3>
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900">Resource Center</h3>
         </div>
 
       {/* Sidebar Content */}

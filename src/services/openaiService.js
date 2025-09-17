@@ -667,6 +667,12 @@ class OpenAIService {
     const sanitizedRequestBody = this.sanitizeResponsesPayload(requestBody);
 
     try {
+      console.info('Sending ChatGPT request payload:', {
+        endpoint: '/responses',
+        tokenCount,
+        body: sanitizedRequestBody,
+      });
+
       const data = await this.makeRequest(
         '/responses',
         {
@@ -712,7 +718,12 @@ class OpenAIService {
         usage: data.usage || null,
       };
     } catch (error) {
-      console.error('OpenAI API Error:', error);
+      console.error('OpenAI API Error. Payload sent to ChatGPT:', {
+        endpoint: '/responses',
+        tokenCount,
+        body: sanitizedRequestBody,
+        error,
+      });
       throw error;
     }
   }

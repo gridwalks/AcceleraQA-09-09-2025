@@ -1,5 +1,8 @@
 export const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+const MARKDOWN_MIME_TYPES = ['text/markdown', 'text/x-markdown'];
+const TEXT_MIME_TYPES = ['text/plain'];
+
 const MAX_CHARS_PER_LINE = 90;
 const PDF_LINE_HEIGHT = 16;
 const PAGE_WIDTH = 612; // 8.5 inches * 72 dpi
@@ -8,11 +11,56 @@ const LEFT_MARGIN = 72;
 const TOP_MARGIN = 72;
 const BOTTOM_MARGIN = 72;
 
-const isDocxFile = (file) => {
+const toLowerCase = (value) => (typeof value === 'string' ? value.toLowerCase() : '');
+
+const hasExtension = (name, extension) => name.endsWith(extension);
+
+const baseFileName = (name = '') => {
+  if (typeof name !== 'string') {
+    return 'document';
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return 'document';
+  }
+  const withoutExt = trimmed.replace(/\.[^/.]+$/, '');
+  return withoutExt && withoutExt !== trimmed ? withoutExt : trimmed;
+};
+
+const ensurePdfFileName = (name) => {
+  const lowered = toLowerCase(name);
+  if (lowered.endsWith('.pdf')) {
+    return name;
+  }
+  return `${baseFileName(name)}.pdf`;
+};
+
+export const isDocxFile = (file) => {
   if (!file) return false;
-  const name = typeof file.name === 'string' ? file.name.toLowerCase() : '';
-  const type = typeof file.type === 'string' ? file.type.toLowerCase() : '';
-  return name.endsWith('.docx') || type === DOCX_MIME_TYPE;
+  const name = toLowerCase(file.name);
+  const type = toLowerCase(file.type);
+  return hasExtension(name, '.docx') || type === toLowerCase(DOCX_MIME_TYPE);
+};
+
+export const isPdfFile = (file) => {
+  if (!file) return false;
+  const name = toLowerCase(file.name);
+  const type = toLowerCase(file.type);
+  return hasExtension(name, '.pdf') || type === 'application/pdf';
+};
+
+const isMarkdownFile = (file) => {
+  if (!file) return false;
+  const name = toLowerCase(file.name);
+  const type = toLowerCase(file.type);
+  return hasExtension(name, '.md') || hasExtension(name, '.markdown') || MARKDOWN_MIME_TYPES.includes(type);
+};
+
+const isTextFile = (file) => {
+  if (!file) return false;
+  const name = toLowerCase(file.name);
+  const type = toLowerCase(file.type);
+  return hasExtension(name, '.txt') || TEXT_MIME_TYPES.includes(type);
 };
 
 const ensureFileInstance = (blob, name, lastModified) => {
@@ -94,7 +142,7 @@ const chunkLinesIntoPages = (lines) => {
 };
 
 const buildContentStream = (lines) => {
-  const sanitizedLines = lines.map(line => sanitizePdfLine(line || ' '));
+  const sanitizedLines = lines.map((line) => sanitizePdfLine(line || ' '));
   const commands = [
     'BT',
     '/F1 12 Tf',
@@ -166,58 +214,166 @@ const buildSimplePdf = (pages) => {
   return encoder.encode(pdfString);
 };
 
-export const convertDocxToPdfIfNeeded = async (file) => {
-  if (!isDocxFile(file)) {
+const readFileAsText = async (file) => {
+  if (file && typeof file.text === 'function') {
+    return file.text();
+  }
+
+  if (file && typeof file.arrayBuffer === 'function') {
+    const arrayBuffer = await file.arrayBuffer();
+    const decoder = new TextDecoder('utf-8', { fatal: false });
+    return decoder.decode(arrayBuffer);
+  }
+
+  throw new Error('Text conversion requires text() or arrayBuffer support on the provided file.');
+};
+
+const markdownToPlainText = (markdown = '') => {
+  return markdown
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```/g, ''))
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\!\[[^\]]*\]\([^\)]+\)/g, '')
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+    .replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, '$1')
+    .replace(/#{1,6}\s*/g, '')
+    .replace(/^>\s?/gm, '')
+    .replace(/^[\s]*[-+*]\s+/gm, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+};
+
+const buildPdfFromText = (textContent, file, emptyMessage) => {
+  const normalizedText = (textContent || '')
+    .replace(/\uFEFF/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+
+  const paragraphs = normalizedText.split('\n');
+  const lines = [];
+
+  paragraphs.forEach((paragraph) => {
+    if (!paragraph.trim()) {
+      lines.push('');
+      return;
+    }
+    const wrapped = wrapParagraph(paragraph, MAX_CHARS_PER_LINE);
+    lines.push(...wrapped);
+  });
+
+  if (lines.length === 0) {
+    lines.push(emptyMessage || 'This document contained no extractable text.');
+  }
+
+  const pages = chunkLinesIntoPages(lines);
+  const pdfBytes = buildSimplePdf(pages);
+  const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const pdfFileName = ensurePdfFileName(file?.name);
+  const pdfFile = ensureFileInstance(pdfBlob, pdfFileName, file?.lastModified || Date.now());
+
+  if (typeof pdfFile.arrayBuffer !== 'function') {
+    const baseBuffer = pdfBytes.buffer.slice(
+      pdfBytes.byteOffset,
+      pdfBytes.byteOffset + pdfBytes.byteLength
+    );
+
+    Object.defineProperty(pdfFile, 'arrayBuffer', {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: async () => baseBuffer.slice(0),
+    });
+  }
+
+  return pdfFile;
+};
+
+export const convertFileToPdfIfNeeded = async (file) => {
+  if (!file) {
+    return {
+      file: null,
+      converted: false,
+      originalFileName: null,
+      originalMimeType: null,
+      conversion: null,
+    };
+  }
+
+  if (isPdfFile(file)) {
     return {
       file,
       converted: false,
-      originalFileName: file?.name || null,
-      originalMimeType: file?.type || null,
+      originalFileName: file.name || null,
+      originalMimeType: file.type || 'application/pdf',
+      conversion: null,
     };
   }
 
-  if (typeof file.arrayBuffer !== 'function') {
-    throw new Error('DOCX conversion requires arrayBuffer support on the provided file.');
-  }
-
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const mammothModule = await import('mammoth');
-    const { value: rawText = '' } = await mammothModule.extractRawText({ arrayBuffer });
-
-    const normalizedText = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const paragraphs = normalizedText.split('\n');
-
-    const lines = [];
-    paragraphs.forEach((paragraph) => {
-      if (!paragraph.trim()) {
-        lines.push('');
-        return;
-      }
-      const wrapped = wrapParagraph(paragraph, MAX_CHARS_PER_LINE);
-      lines.push(...wrapped);
-    });
-
-    if (lines.length === 0) {
-      lines.push('This document was converted from DOCX but contained no extractable text.');
+  if (isDocxFile(file)) {
+    if (typeof file.arrayBuffer !== 'function') {
+      throw new Error('DOCX conversion requires arrayBuffer support on the provided file.');
     }
 
-    const pages = chunkLinesIntoPages(lines);
-    const pdfBytes = buildSimplePdf(pages);
-    const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
-    const pdfFileName = (file.name || 'document.docx').replace(/\.docx$/i, '.pdf');
-    const convertedFile = ensureFileInstance(pdfBlob, pdfFileName, file.lastModified || Date.now());
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const mammothModule = await import('mammoth');
+      const { value: rawText = '' } = await mammothModule.extractRawText({ arrayBuffer });
 
-    return {
-      file: convertedFile,
-      converted: true,
-      originalFileName: file.name || null,
-      originalMimeType: file.type || DOCX_MIME_TYPE,
-    };
-  } catch (error) {
-    console.error('Failed to convert DOCX to PDF:', error);
-    throw new Error(`Failed to convert DOCX to PDF: ${error.message}`);
+      const convertedFile = buildPdfFromText(
+        rawText,
+        file,
+        'This document was converted from DOCX but contained no extractable text.'
+      );
+
+      return {
+        file: convertedFile,
+        converted: true,
+        originalFileName: file.name || null,
+        originalMimeType: file.type || DOCX_MIME_TYPE,
+        conversion: 'docx-to-pdf',
+      };
+    } catch (error) {
+      console.error('Failed to convert DOCX to PDF:', error);
+      throw new Error(`Failed to convert DOCX to PDF: ${error.message}`);
+    }
   }
+
+  if (isTextFile(file) || isMarkdownFile(file)) {
+    if (typeof file.text !== 'function' && typeof file.arrayBuffer !== 'function') {
+      throw new Error('Text conversion requires text() or arrayBuffer support on the provided file.');
+    }
+
+    try {
+      const rawContent = await readFileAsText(file);
+      const plainText = isMarkdownFile(file) ? markdownToPlainText(rawContent) : rawContent;
+      const convertedFile = buildPdfFromText(
+        plainText,
+        file,
+        `This document was converted from ${isMarkdownFile(file) ? 'Markdown' : 'text'} but contained no extractable content.`
+      );
+
+      return {
+        file: convertedFile,
+        converted: true,
+        originalFileName: file.name || null,
+        originalMimeType:
+          file.type || (isMarkdownFile(file) ? MARKDOWN_MIME_TYPES[0] : TEXT_MIME_TYPES[0]),
+        conversion: isMarkdownFile(file) ? 'markdown-to-pdf' : 'text-to-pdf',
+      };
+    } catch (error) {
+      console.error('Failed to convert text-based file to PDF:', error);
+      throw new Error(`Failed to convert ${isMarkdownFile(file) ? 'Markdown' : 'text'} file to PDF: ${error.message}`);
+    }
+  }
+
+  return {
+    file,
+    converted: false,
+    originalFileName: file.name || null,
+    originalMimeType: file.type || null,
+    conversion: null,
+  };
 };
 
-export default convertDocxToPdfIfNeeded;
+export const convertDocxToPdfIfNeeded = convertFileToPdfIfNeeded;
+
+export default convertFileToPdfIfNeeded;

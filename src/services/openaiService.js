@@ -237,9 +237,12 @@ class OpenAIService {
     const targetMessage = messages[userIndex] && typeof messages[userIndex] === 'object'
       ? messages[userIndex]
       : { role: 'user', content: [] };
-    const existingMessageAttachments = Array.isArray(targetMessage.attachments)
+    const existingRaw = Array.isArray(targetMessage.attachments)
       ? targetMessage.attachments
       : [];
+
+    const existingMessageAttachments = this.sanitizeResponsesPayload(existingRaw)
+      .filter(item => item && typeof item === 'object');
 
     const sanitizedAttachments = this.sanitizeResponsesPayload(attachments)
       .filter(item => item && typeof item === 'object');
@@ -248,9 +251,24 @@ class OpenAIService {
       return false;
     }
 
+    const combined = [...existingMessageAttachments];
+    const seenKeys = new Set(combined.map(item => JSON.stringify(item)));
+
+    sanitizedAttachments.forEach((attachment) => {
+      const key = JSON.stringify(attachment);
+      if (!seenKeys.has(key)) {
+        combined.push(attachment);
+        seenKeys.add(key);
+      }
+    });
+
+    if (combined.length === existingMessageAttachments.length && sanitizedAttachments.length === 0) {
+      return false;
+    }
+
     const combinedMessage = {
       ...targetMessage,
-      attachments: [...existingMessageAttachments, ...sanitizedAttachments],
+      attachments: combined,
     };
 
     messages[userIndex] = this.normalizeResponseMessage(combinedMessage);
@@ -510,16 +528,22 @@ class OpenAIService {
   }
 
   async uploadFile(file) {
-    const { file: preparedFile } = await convertDocxToPdfIfNeeded(file);
+    const { file: preparedFile, converted } = await convertDocxToPdfIfNeeded(file);
 
-    const allowedExtensions = ['.pdf', '.txt', '.md'];
-    const allowedMimeTypes = ['application/pdf', 'text/plain', 'text/markdown'];
+    if (!preparedFile) {
+      throw new Error('No file provided for upload.');
+    }
+
     const fileName = preparedFile?.name?.toLowerCase() || '';
-       const fileType = preparedFile?.type?.toLowerCase() || '';
-    const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-    const hasValidMime = allowedMimeTypes.includes(fileType);
-    if (!hasValidExtension && !hasValidMime) {
-      throw new Error('Unsupported file type; please upload a PDF, TXT, MD, or DOCX file');
+    const fileType = preparedFile?.type?.toLowerCase() || '';
+    const isPdf = fileName.endsWith('.pdf') || fileType === 'application/pdf';
+    const supportedDescription = 'PDF, Word (.docx), Markdown (.md), or plain text (.txt) file.';
+
+    if (!isPdf) {
+      if (converted) {
+        throw new Error(`Converted file is not a valid PDF. Please upload a ${supportedDescription}`);
+      }
+      throw new Error(`Unsupported file type; please upload a ${supportedDescription}`);
     }
 
     const formData = new FormData();
@@ -660,12 +684,14 @@ class OpenAIService {
     const payloadForTokens = this.createChatPayload(userPrompt, normalizedHistory, model);
     const tokenCount = this.estimateTokens(payloadForTokens);
 
+    const sanitizedRequestBody = this.sanitizeResponsesPayload(requestBody);
+
     try {
       const data = await this.makeRequest(
         '/responses',
         {
           headers: { 'OpenAI-Beta': 'assistants=v2' },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify(sanitizedRequestBody),
         },
         tokenCount
       );

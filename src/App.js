@@ -34,6 +34,7 @@ import {
   exportMessagesToExcel,
   exportMessagesToWord,
 } from './utils/exportUtils';
+import { convertFileToPdfIfNeeded } from './utils/fileConversion';
 
 const COOLDOWN_SECONDS = 10;
 
@@ -252,10 +253,47 @@ function App() {
 
     setIsLoading(true);
 
+    let conversionDetails = null;
+    let preparedFile = null;
+
+    if (uploadedFile) {
+      try {
+        conversionDetails = await convertFileToPdfIfNeeded(uploadedFile);
+        preparedFile = conversionDetails.file;
+      } catch (conversionError) {
+        console.error('File conversion failed:', conversionError);
+        setIsLoading(false);
+        setUploadedFile(null);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: uuidv4(),
+            role: 'assistant',
+            type: 'ai',
+            content:
+              conversionError.message ||
+              'I was unable to process the attached document. Please upload a PDF, Word (.docx), Markdown (.md), or text (.txt) file.',
+            timestamp: Date.now(),
+            sources: [],
+            resources: [],
+          },
+        ]);
+        return;
+      }
+    }
+
     const conversationHistory = buildChatHistory(messages);
 
-    const displayContent = uploadedFile
-      ? `${rawInput}\n[Attached: ${uploadedFile.name}]`
+    const attachmentLabel = uploadedFile
+      ? conversionDetails?.converted && preparedFile
+        ? `${uploadedFile.name} → ${preparedFile.name}`
+        : uploadedFile.name
+      : null;
+
+    const attachmentSuffix = conversionDetails?.converted ? ' (converted to PDF)' : '';
+
+    const displayContent = attachmentLabel
+      ? `${rawInput}${rawInput ? '\n' : ''}[Attached: ${attachmentLabel}${attachmentSuffix}]`
       : rawInput;
 
     const userMessage = {
@@ -269,13 +307,10 @@ function App() {
 
     const updatedMessages = [...messages, userMessage];
 
-    // Add user's message immediately
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage('');
 
-    const fileToSend = uploadedFile;
-
-    const exportIntent = !fileToSend ? detectDocumentExportIntent(trimmedInput) : null;
+    const exportIntent = !preparedFile ? detectDocumentExportIntent(trimmedInput) : null;
 
     if (exportIntent) {
       const exportSourceMessages = updatedMessages;
@@ -319,9 +354,9 @@ function App() {
     }
 
     try {
-      const response = ragEnabled && !fileToSend
+      const response = ragEnabled && !preparedFile
         ? await ragSearch(rawInput, user?.sub)
-        : await openaiService.getChatResponse(rawInput, fileToSend, conversationHistory);
+        : await openaiService.getChatResponse(rawInput, preparedFile, conversationHistory);
 
       const assistantMessage = {
         id: uuidv4(),

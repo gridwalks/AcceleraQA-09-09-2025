@@ -296,6 +296,7 @@ class RAGService {
       converted,
       originalFileName,
       originalMimeType,
+      conversion: conversionType,
     } = await this.convertDocxToPdfIfNeeded(file);
     const fileId = await openaiService.uploadFile(uploadableFile);
     const vectorStoreId = await this.getVectorStoreId(userId);
@@ -315,7 +316,7 @@ class RAGService {
           ? {
               originalFilename: originalFileName,
               originalMimeType,
-              conversion: 'docx-to-pdf',
+              conversion: conversionType || 'file-to-pdf',
             }
           : {}),
         ...sanitizedMetadata,

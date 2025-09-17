@@ -17,6 +17,7 @@ let mockConvertDocxToPdfIfNeeded = async (file) => ({
   converted: false,
   originalFileName: file?.name || null,
   originalMimeType: file?.type || null,
+  conversion: null,
 });
 
 jest.mock('../utils/fileConversion', () => ({
@@ -34,6 +35,7 @@ describe('openAIService uploadFile', () => {
       converted: false,
       originalFileName: file?.name || null,
       originalMimeType: file?.type || null,
+      conversion: null,
     }));
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -59,7 +61,7 @@ describe('openAIService uploadFile', () => {
 
   it('rejects unsupported file types', async () => {
     const file = { name: 'image.png', type: 'image/png' };
-    await expect(openAIService.uploadFile(file)).rejects.toThrow('Unsupported file type; please upload a PDF, TXT, MD, or DOCX file');
+    await expect(openAIService.uploadFile(file)).rejects.toThrow('Unsupported file type; please upload a PDF, Word (.docx), Markdown (.md), or plain text (.txt) file.');
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -79,6 +81,7 @@ describe('openAIService uploadFile', () => {
       converted: true,
       originalFileName: originalFile.name,
       originalMimeType: originalFile.type,
+      conversion: 'docx-to-pdf',
     });
 
     const id = await openAIService.uploadFile(originalFile);

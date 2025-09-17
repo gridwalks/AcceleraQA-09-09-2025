@@ -435,7 +435,7 @@ class OpenAIService {
     const fileName = preparedFile?.name?.toLowerCase() || '';
     const fileType = preparedFile?.type?.toLowerCase() || '';
     const isPdf = fileName.endsWith('.pdf') || fileType === 'application/pdf';
-    const supportedDescription = 'PDF, Word (.docx), Markdown (.md), or plain text (.txt) file.';
+    const supportedDescription = 'PDF, Word (.docx), Markdown (.md), plain text (.txt), CSV (.csv), or Excel (.xlsx) file.';
 
     if (!isPdf) {
       if (converted) {

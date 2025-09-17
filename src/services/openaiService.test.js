@@ -61,7 +61,7 @@ describe('openAIService uploadFile', () => {
 
   it('rejects unsupported file types', async () => {
     const file = { name: 'image.png', type: 'image/png' };
-    await expect(openAIService.uploadFile(file)).rejects.toThrow('Unsupported file type; please upload a PDF, Word (.docx), Markdown (.md), or plain text (.txt) file.');
+    await expect(openAIService.uploadFile(file)).rejects.toThrow('Unsupported file type; please upload a PDF, Word (.docx), Markdown (.md), plain text (.txt), CSV (.csv), or Excel (.xlsx) file.');
     expect(fetch).not.toHaveBeenCalled();
   });
 

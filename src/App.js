@@ -284,25 +284,30 @@ function App() {
 
     const conversationHistory = buildChatHistory(messages);
 
-    const attachmentLabel = uploadedFile
-      ? conversionDetails?.converted && preparedFile
-        ? `${uploadedFile.name} → ${preparedFile.name}`
-        : uploadedFile.name
-      : null;
-
-    const attachmentSuffix = conversionDetails?.converted ? ' (converted to PDF)' : '';
-
-    const displayContent = attachmentLabel
-      ? `${rawInput}${rawInput ? '\n' : ''}[Attached: ${attachmentLabel}${attachmentSuffix}]`
-      : rawInput;
+    const attachments = uploadedFile
+      ? [
+          {
+            originalFileName:
+              conversionDetails?.originalFileName || uploadedFile.name || null,
+            finalFileName:
+              preparedFile?.name ||
+              conversionDetails?.originalFileName ||
+              uploadedFile.name ||
+              null,
+            converted: Boolean(conversionDetails?.converted),
+            conversionType: conversionDetails?.conversion || null,
+          },
+        ]
+      : [];
 
     const userMessage = {
       id: uuidv4(),
       role: 'user',
       type: 'user',
-      content: displayContent,
+      content: rawInput,
       timestamp: Date.now(),
       resources: [],
+      ...(attachments.length > 0 ? { attachments } : {}),
     };
 
     const updatedMessages = [...messages, userMessage];

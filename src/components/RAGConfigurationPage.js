@@ -773,56 +773,115 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {documents.map((doc) => (
-                      <div key={doc.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center space-x-3">
-                            <span className="text-2xl">{getFileTypeIcon(doc.type)}</span>
-                            <div>
-                              <h4 className="font-medium text-gray-900 truncate max-w-[200px]" title={doc.filename}>
-                                {doc.filename}
-                              </h4>
-                              <p className="text-sm text-gray-500">
-                                {formatFileSize(doc.size)} • {doc.chunks} chunks
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleDelete(doc.id, doc.filename)}
-                            className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                            aria-label={`Delete ${doc.filename}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-
-                        <div className="text-sm text-gray-600 space-y-1">
-                          <p><span className="font-medium">Category:</span> {doc.metadata?.category || 'General'}</p>
-                          {doc.metadata?.version && (
-                            <p><span className="font-medium">Version:</span> {doc.metadata.version}</p>
-                          )}
-                          {doc.metadata?.conversion && doc.metadata?.originalFilename && (
-                            <p className="text-sm text-gray-600">
-                              <span className="font-medium text-gray-700">Original:</span> {doc.metadata.originalFilename} (converted from {describeConversionSource(doc.metadata.conversion) || 'the uploaded format'})
-                            </p>
-                          )}
-                          <p><span className="font-medium">Uploaded:</span> {new Date(doc.createdAt).toLocaleDateString()}</p>
-                          <p><span className="font-medium">Storage:</span> {ragBackendLabel}</p>
-                          <p><span className="font-medium">Search:</span> {neonBackendEnabled ? 'PostgreSQL full-text search' : 'OpenAI vector search'}</p>
-                          {doc.metadata?.tags && doc.metadata.tags.length > 0 && (
-                            <div className="flex items-center space-x-1 mt-2">
-                              <span className="font-medium">Tags:</span>
-                              {doc.metadata.tags.map((tag, index) => (
-                                <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Document
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Category
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Version
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Size
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Chunks
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Uploaded
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Storage
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Search
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Tags
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {documents.map((doc) => (
+                            <tr key={doc.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center space-x-3">
+                                  <span className="text-2xl">{getFileTypeIcon(doc.type)}</span>
+                                  <div className="min-w-0">
+                                    <p
+                                      className="text-sm font-medium text-gray-900 truncate max-w-[240px]"
+                                      title={doc.filename}
+                                    >
+                                      {doc.filename}
+                                    </p>
+                                    {doc.metadata?.conversion && doc.metadata?.originalFilename && (
+                                      <p className="text-xs text-gray-500 mt-1">
+                                        <span className="font-medium text-gray-600">Original:</span> {doc.metadata.originalFilename} (converted from {describeConversionSource(doc.metadata.conversion) || 'the uploaded format'})
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">
+                                {(doc.metadata?.category || 'General')}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">
+                                {doc.metadata?.version || '—'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">
+                                {formatFileSize(doc.size)}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">
+                                {doc.chunks}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                                {new Date(doc.createdAt).toLocaleDateString()}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                                {ragBackendLabel}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">
+                                {neonBackendEnabled ? 'PostgreSQL full-text search' : 'OpenAI vector search'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">
+                                {doc.metadata?.tags && doc.metadata.tags.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {doc.metadata.tags.map((tag, index) => (
+                                      <span
+                                        key={index}
+                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  onClick={() => handleDelete(doc.id, doc.filename)}
+                                  className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                  aria-label={`Delete ${doc.filename}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>

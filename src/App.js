@@ -57,6 +57,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [ragEnabled, setRAGEnabled] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
+  const [activeDocument, setActiveDocument] = useState(null);
   const [cooldown, setCooldown] = useState(0);
 
   // Learning suggestions state
@@ -353,10 +354,18 @@ function App() {
       return;
     }
 
+    const vectorStoreIdToUse = preparedFile ? null : activeDocument?.vectorStoreId || null;
+
     try {
       const response = ragEnabled && !preparedFile
         ? await ragSearch(rawInput, user?.sub)
-        : await openaiService.getChatResponse(rawInput, preparedFile, conversationHistory);
+        : await openaiService.getChatResponse(
+            rawInput,
+            preparedFile,
+            conversationHistory,
+            undefined,
+            vectorStoreIdToUse
+          );
 
       const assistantMessage = {
         id: uuidv4(),
@@ -369,6 +378,48 @@ function App() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      if (response.vectorStoreId) {
+        if (preparedFile) {
+          const now = Date.now();
+          setActiveDocument({
+            vectorStoreId: response.vectorStoreId,
+            originalName:
+              conversionDetails?.originalFileName || uploadedFile?.name || preparedFile?.name || null,
+            processedName: preparedFile?.name || null,
+            mimeType:
+              conversionDetails?.originalMimeType || uploadedFile?.type || preparedFile?.type || null,
+            size: uploadedFile?.size ?? preparedFile?.size ?? null,
+            converted: Boolean(conversionDetails?.converted),
+            lastUpdated: now,
+          });
+        } else {
+          const now = Date.now();
+          setActiveDocument((prev) => {
+            if (!prev) {
+              return {
+                vectorStoreId: response.vectorStoreId,
+                lastUpdated: now,
+              };
+            }
+
+            if (prev.vectorStoreId === response.vectorStoreId) {
+              return {
+                ...prev,
+                lastUpdated: now,
+              };
+            }
+
+            return {
+              ...prev,
+              vectorStoreId: response.vectorStoreId,
+              lastUpdated: now,
+            };
+          });
+        }
+      } else if (preparedFile) {
+        setActiveDocument(null);
+      }
 
       // Refresh learning suggestions after every few messages
       const totalMessages = messages.length + 2; // +2 for the new messages we just added
@@ -417,6 +468,7 @@ function App() {
     refreshLearningSuggestions,
     cooldown,
     user?.sub,
+    activeDocument,
   ]);
 
   const handleKeyPress = useCallback(
@@ -446,6 +498,8 @@ function App() {
 
   const clearChat = useCallback(() => {
     setMessages([]);
+    setUploadedFile(null);
+    setActiveDocument(null);
     // Refresh suggestions when chat is cleared (might reveal different patterns)
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
       setTimeout(() => {
@@ -456,6 +510,8 @@ function App() {
 
   const clearAllConversations = useCallback(() => {
     setMessages([]);
+    setUploadedFile(null);
+    setActiveDocument(null);
     setSelectedMessages(new Set());
     setThirtyDayMessages([]);
     // Clear learning suggestions cache when all conversations are cleared

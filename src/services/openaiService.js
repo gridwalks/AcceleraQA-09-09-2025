@@ -502,7 +502,13 @@ class OpenAIService {
     return await response.json();
   }
 
-  async getChatResponse(message, documentFile = null, history = [], model = getCurrentModel()) {
+  async getChatResponse(
+    message,
+    documentFile = null,
+    history = [],
+    model = getCurrentModel(),
+    existingVectorStoreId = null
+  ) {
     if ((!message || typeof message !== 'string' || message.trim().length === 0) && !documentFile) {
       throw new Error('Invalid message provided');
     }
@@ -536,38 +542,47 @@ class OpenAIService {
     };
 
     const isFile = documentFile && typeof documentFile === 'object' && 'name' in documentFile;
+    let vectorStoreId = existingVectorStoreId || null;
+    let shouldUseVectorStore = false;
+
     if (isFile) {
       try {
         const fileId = await this.uploadFile(documentFile);
-        let vectorStoreId;
         try {
-          vectorStoreId = await this.createVectorStore();
+          if (!vectorStoreId) {
+            vectorStoreId = await this.createVectorStore();
+          }
           await this.attachFileToVectorStore(vectorStoreId, fileId);
+          shouldUseVectorStore = true;
         } catch (vsError) {
           console.error('Vector store setup failed:', vsError);
           throw vsError;
         }
-
-        const fileSearchTool = {
-          type: 'file_search',
-          vector_store_ids: [vectorStoreId],
-        };
-
-        requestBody = {
-          model,
-          input: [
-            ...baseInput,
-            {
-              role: 'user',
-              content: this.createContentForRole('user', message || ''),
-            },
-          ],
-          tools: [fileSearchTool],
-        };
       } catch (error) {
         console.error('File upload failed:', error);
         throw error;
       }
+    } else if (vectorStoreId) {
+      shouldUseVectorStore = true;
+    }
+
+    if (shouldUseVectorStore && vectorStoreId) {
+      const fileSearchTool = {
+        type: 'file_search',
+        vector_store_ids: [vectorStoreId],
+      };
+
+      requestBody = {
+        model,
+        input: [
+          ...baseInput,
+          {
+            role: 'user',
+            content: this.createContentForRole('user', message || ''),
+          },
+        ],
+        tools: [fileSearchTool],
+      };
     }
 
     const payloadForTokens = this.createChatPayload(userPrompt, normalizedHistory, model);
@@ -624,6 +639,7 @@ class OpenAIService {
         answer: aiResponse,
         resources,
         usage: data.usage || null,
+        vectorStoreId: shouldUseVectorStore && vectorStoreId ? vectorStoreId : null,
       };
     } catch (error) {
       console.error('OpenAI API Error. Payload sent to ChatGPT:', {

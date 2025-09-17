@@ -240,6 +240,7 @@ describe('openAIService getChatResponse', () => {
     expect(openAIService.createVectorStore).toHaveBeenCalled();
     expect(openAIService.attachFileToVectorStore).toHaveBeenCalledWith('vs-456', 'file-123');
     expect(result.answer).toBe('response from file');
+    expect(result.vectorStoreId).toBe('vs-456');
 
     const [, options] = openAIService.makeRequest.mock.calls[0];
     const body = JSON.parse(options.body);
@@ -258,6 +259,47 @@ describe('openAIService getChatResponse', () => {
     ]);
     expect(body).not.toHaveProperty('attachments');
     expect(body).not.toHaveProperty('tool_resources');
+  });
+
+  it('reuses an existing vector store when provided without uploading a new document', async () => {
+    const uploadSpy = jest.spyOn(openAIService, 'uploadFile').mockResolvedValue('file-should-not-upload');
+    const createVectorStoreSpy = jest.spyOn(openAIService, 'createVectorStore').mockResolvedValue('vs-should-not-create');
+    const attachSpy = jest.spyOn(openAIService, 'attachFileToVectorStore').mockResolvedValue({});
+
+    openAIService.makeRequest.mockResolvedValue({
+      output_text: 'response using existing context',
+      usage: { total_tokens: 9 },
+    });
+
+    const existingVectorStoreId = 'vs-existing';
+
+    const result = await openAIService.getChatResponse(
+      'follow-up question',
+      null,
+      [
+        { role: 'user', content: 'Original question about the policy document.' },
+        { role: 'assistant', content: 'Summary of the uploaded policy.' },
+      ],
+      undefined,
+      existingVectorStoreId
+    );
+
+    expect(result.answer).toBe('response using existing context');
+    expect(result.vectorStoreId).toBe(existingVectorStoreId);
+    expect(uploadSpy).not.toHaveBeenCalled();
+    expect(createVectorStoreSpy).not.toHaveBeenCalled();
+    expect(attachSpy).not.toHaveBeenCalled();
+
+    const [, options] = openAIService.makeRequest.mock.calls[0];
+    const body = JSON.parse(options.body);
+
+    expect(body.tools).toEqual([
+      { type: 'file_search', vector_store_ids: [existingVectorStoreId] },
+    ]);
+
+    uploadSpy.mockRestore();
+    createVectorStoreSpy.mockRestore();
+    attachSpy.mockRestore();
   });
 });
 

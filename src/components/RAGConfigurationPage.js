@@ -698,7 +698,6 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 )}
               </div>
             </div>
-          </div>
         </div>
       </div>
     </div>

@@ -104,6 +104,7 @@ const loadRagService = async ({ documentApiMock, uploadFileId = 'file_mock', vec
     converted: false,
     originalFileName: file?.name || null,
     originalMimeType: file?.type || null,
+    conversion: null,
   }));
   ragServiceInstance.convertDocxToPdfIfNeeded = convertMock;
   let documentApiSpy = null;
@@ -252,6 +253,7 @@ describe('document persistence with Neon metadata store', () => {
       converted: true,
       originalFileName: originalFile.name,
       originalMimeType: originalFile.type,
+      conversion: 'docx-to-pdf',
     });
 
     await ragService.uploadDocument(originalFile, { category: 'quality' }, 'user-456');

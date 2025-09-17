@@ -17,6 +17,7 @@ let mockConvertDocxToPdfIfNeeded = async (file) => ({
   converted: false,
   originalFileName: file?.name || null,
   originalMimeType: file?.type || null,
+  conversion: null,
 });
 
 jest.mock('../utils/fileConversion', () => ({
@@ -34,6 +35,7 @@ describe('openAIService uploadFile', () => {
       converted: false,
       originalFileName: file?.name || null,
       originalMimeType: file?.type || null,
+      conversion: null,
     }));
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -59,7 +61,7 @@ describe('openAIService uploadFile', () => {
 
   it('rejects unsupported file types', async () => {
     const file = { name: 'image.png', type: 'image/png' };
-    await expect(openAIService.uploadFile(file)).rejects.toThrow('Unsupported file type; please upload a PDF, TXT, MD, or DOCX file');
+    await expect(openAIService.uploadFile(file)).rejects.toThrow('Unsupported file type; please upload a PDF, Word (.docx), Markdown (.md), or plain text (.txt) file.');
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -79,6 +81,7 @@ describe('openAIService uploadFile', () => {
       converted: true,
       originalFileName: originalFile.name,
       originalMimeType: originalFile.type,
+      conversion: 'docx-to-pdf',
     });
 
     const id = await openAIService.uploadFile(originalFile);
@@ -241,7 +244,6 @@ describe('openAIService getChatResponse', () => {
     const [, options] = openAIService.makeRequest.mock.calls[0];
     const body = JSON.parse(options.body);
 
-    // After sanitization, attachments should be on the user message, not at root.
     expect(body.input[0]).toEqual({
       role: 'system',
       content: [{ type: 'input_text', text: OPENAI_CONFIG.SYSTEM_PROMPT }],
@@ -249,20 +251,15 @@ describe('openAIService getChatResponse', () => {
     expect(body.input[1]).toEqual({
       role: 'user',
       content: [{ type: 'input_text', text: 'hi' }],
-      attachments: [
-        {
-          vector_store_id: 'vs-456',
-          tools: [{ type: 'file_search' }],
-        },
-      ],
-    });
-
-    body.input[1].content.forEach(part => {
-      expect(part.attachments).toBeUndefined();
     });
 
     expect(body.tools).toEqual([{ type: 'file_search' }]);
-    expect(body).not.toHaveProperty('attachments');
+    expect(body.attachments).toEqual([
+      {
+        vector_store_id: 'vs-456',
+        tools: [{ type: 'file_search' }],
+      },
+    ]);
     expect(body).not.toHaveProperty('tool_resources');
   });
 });
@@ -280,7 +277,7 @@ describe('openAIService makeRequest sanitization', () => {
     jest.restoreAllMocks();
   });
 
-  it('removes tool_resources and keeps attachments at the message level for responses payloads', async () => {
+  it('removes tool_resources and consolidates attachments at the root for responses payloads', async () => {
     const payload = {
       model: 'test-model',
       input: [
@@ -316,23 +313,19 @@ describe('openAIService makeRequest sanitization', () => {
     const [, options] = fetch.mock.calls[0];
     const sanitized = JSON.parse(options.body);
 
-    // root fields removed
+    // tool resources removed, attachments consolidated at root
     expect(sanitized.tool_resources).toBeUndefined();
-    expect(sanitized.attachments).toBeUndefined();
-
-    // user message received consolidated attachments
-    expect(Array.isArray(sanitized.input)).toBe(true);
-    const userMessage = sanitized.input.find(msg => msg.role === 'user');
-    expect(userMessage).toBeDefined();
-    expect(userMessage.attachments).toEqual([
+    expect(sanitized.attachments).toHaveLength(3);
+    expect(sanitized.attachments).toEqual(expect.arrayContaining([
       { vector_store_id: 'message-vs' },
       { vector_store_id: 'content-vs' },
       { vector_store_id: 'root-vs' },
-    ]);
+    ]));
 
-    userMessage.attachments.forEach(attachment => {
-      expect(attachment.tool_resources).toBeUndefined();
-    });
+    expect(Array.isArray(sanitized.input)).toBe(true);
+    const userMessage = sanitized.input.find(msg => msg.role === 'user');
+    expect(userMessage).toBeDefined();
+    expect(userMessage.attachments).toBeUndefined();
 
     userMessage.content.forEach(part => {
       if (part && typeof part === 'object') {

@@ -1,7 +1,39 @@
 // src/components/ChatArea.js - DEPLOYMENT READY (fixes DatabaseOff issue)
 
 import React from 'react';
-import { Send, Loader2, Database, BookOpen, Paperclip } from 'lucide-react';
+import { Send, Loader2, Database, Paperclip, X } from 'lucide-react';
+
+const isPdfAttachment = (file) => {
+  if (!file) return false;
+  const name = typeof file.name === 'string' ? file.name.toLowerCase() : '';
+  const type = typeof file.type === 'string' ? file.type.toLowerCase() : '';
+  return name.endsWith('.pdf') || type === 'application/pdf';
+};
+
+const AttachmentPreview = ({ file, onRemove }) => {
+  const needsConversion = file ? !isPdfAttachment(file) : false;
+
+  return (
+    <div className="mt-2 flex items-center justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+      <div className="min-w-0">
+        <div className="truncate font-medium text-gray-700" title={file?.name}>
+          {file?.name || 'Attached document'}
+        </div>
+        <div className="text-[11px] text-gray-500">
+          {needsConversion ? 'Will convert to PDF before sending' : 'Ready to send to assistant'}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="flex items-center gap-1 rounded-full border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-600 transition hover:border-gray-400 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+      >
+        <X className="h-3 w-3" aria-hidden="true" />
+        <span>Remove</span>
+      </button>
+    </div>
+  );
+};
 
 const ChatArea = ({
   messages,
@@ -162,8 +194,8 @@ const ChatArea = ({
             />
             <label
               htmlFor="chat-file-upload"
-              className="px-3 sm:px-4 py-3 sm:py-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer flex items-center justify-center min-w-[44px]"
-              title="Attach a PDF, DOCX, TXT, or MD document"
+              className="flex min-w-[44px] cursor-pointer items-center justify-center rounded-lg bg-gray-200 px-3 py-3 text-gray-700 transition hover:bg-gray-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:px-4 sm:py-4"
+              title="Attach a PDF, Word (.docx), Markdown (.md), or Text (.txt) document. Non-PDF files will be converted automatically."
             >
               <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
             </label>
@@ -188,9 +220,10 @@ const ChatArea = ({
             />
           </div>
           <button
+            type="button"
             onClick={handleSendMessage}
             disabled={isLoading || cooldown > 0 || (!inputMessage.trim() && !uploadedFile)}
-            className="px-4 sm:px-6 py-3 sm:py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center min-w-[44px]"
+            className="flex min-w-[44px] items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:py-4"
             title={cooldown > 0 ? `Please wait ${cooldown}s` : 'Send message'}
           >
             {isLoading ? (
@@ -202,7 +235,7 @@ const ChatArea = ({
         </div>
 
         {uploadedFile && (
-          <div className="text-xs text-gray-500 mt-2">Attached: {uploadedFile.name}</div>
+          <AttachmentPreview file={uploadedFile} onRemove={() => setUploadedFile(null)} />
         )}
 
         {/* Character/Line Count for longer messages */}

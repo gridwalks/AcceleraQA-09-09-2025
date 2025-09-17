@@ -116,11 +116,16 @@ class OpenAIService {
       delete sanitized.tool_resources;
     }
 
+    let rootAttachments = [];
+
     if (Array.isArray(sanitized.attachments)) {
-      sanitized.attachments = sanitized.attachments
-        .map(item => this.sanitizeResponsesPayload(item))
-        .filter(item => item && typeof item === 'object');
-    } else if ('attachments' in sanitized && !Array.isArray(sanitized.attachments)) {
+      rootAttachments = this.collectSanitizedAttachments(sanitized.attachments);
+      if (rootAttachments.length > 0) {
+        sanitized.attachments = rootAttachments;
+      } else {
+        delete sanitized.attachments;
+      }
+    } else if ('attachments' in sanitized) {
       delete sanitized.attachments;
     }
 
@@ -129,24 +134,21 @@ class OpenAIService {
     }
 
     if (Array.isArray(sanitized.input)) {
-      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message));
+      const collectedAttachments = [];
+      sanitized.input = sanitized.input.map(message => this.normalizeResponseMessage(message, collectedAttachments));
 
-      if (Array.isArray(sanitized.attachments) && sanitized.attachments.length > 0) {
-        const applied = this.applyAttachmentsToLastUserMessage(sanitized.input, sanitized.attachments);
-        if (applied) {
-          delete sanitized.attachments;
-        } else if (sanitized.attachments.length === 0) {
-          delete sanitized.attachments;
-        }
+      const mergedAttachments = this.mergeAttachmentArrays(rootAttachments, collectedAttachments);
+      if (mergedAttachments.length > 0) {
+        sanitized.attachments = mergedAttachments;
+      } else {
+        delete sanitized.attachments;
       }
-    } else if (Array.isArray(sanitized.attachments) && sanitized.attachments.length === 0) {
-      delete sanitized.attachments;
     }
 
     return sanitized;
   }
 
-  normalizeResponseMessage(message) {
+  normalizeResponseMessage(message, attachmentCollector = []) {
     if (!message || typeof message !== 'object') {
       return message;
     }
@@ -157,27 +159,16 @@ class OpenAIService {
       delete normalized.tool_resources;
     }
 
-    const collectedAttachments = Array.isArray(normalized.attachments)
-      ? this.sanitizeResponsesPayload(normalized.attachments)
-      : [];
+    const messageAttachments = this.collectSanitizedAttachments(normalized.attachments);
+    if (messageAttachments.length > 0) {
+      attachmentCollector.push(...messageAttachments);
+    }
 
     if ('attachments' in normalized) {
       delete normalized.attachments;
     }
 
-    const normalizePart = (part) => {
-      const normalizedPart = this.normalizeMessageContentPart(part);
-
-      if (normalizedPart && typeof normalizedPart === 'object' && Array.isArray(normalizedPart.attachments)) {
-        const partAttachments = this.sanitizeResponsesPayload(normalizedPart.attachments);
-        if (Array.isArray(partAttachments)) {
-          collectedAttachments.push(...partAttachments);
-        }
-        delete normalizedPart.attachments;
-      }
-
-      return normalizedPart;
-    };
+    const normalizePart = (part) => this.normalizeMessageContentPart(part, attachmentCollector);
 
     if (Array.isArray(normalized.content)) {
       normalized.content = normalized.content.map(part => normalizePart(part));
@@ -189,14 +180,10 @@ class OpenAIService {
       normalized.content = [];
     }
 
-    if (collectedAttachments.length > 0) {
-      normalized.attachments = collectedAttachments;
-    }
-
     return normalized;
   }
 
-  normalizeMessageContentPart(part) {
+  normalizeMessageContentPart(part, attachmentCollector = []) {
     if (!part || typeof part !== 'object') {
       return part;
     }
@@ -207,9 +194,12 @@ class OpenAIService {
       delete sanitizedPart.tool_resources;
     }
 
-    if (Array.isArray(sanitizedPart.attachments)) {
-      sanitizedPart.attachments = this.sanitizeResponsesPayload(sanitizedPart.attachments);
-    } else if ('attachments' in sanitizedPart) {
+    const partAttachments = this.collectSanitizedAttachments(sanitizedPart.attachments);
+    if (partAttachments.length > 0) {
+      attachmentCollector.push(...partAttachments);
+    }
+
+    if ('attachments' in sanitizedPart) {
       delete sanitizedPart.attachments;
     }
 
@@ -218,57 +208,67 @@ class OpenAIService {
     }
 
     if (Array.isArray(sanitizedPart.input)) {
-      sanitizedPart.input = sanitizedPart.input.map(item => this.normalizeResponseMessage(item));
+      sanitizedPart.input = sanitizedPart.input.map(item => this.normalizeResponseMessage(item, attachmentCollector));
     }
 
     return sanitizedPart;
   }
 
-  applyAttachmentsToLastUserMessage(messages, attachments) {
-    if (!Array.isArray(messages) || !Array.isArray(attachments) || attachments.length === 0) {
-      return false;
+  collectSanitizedAttachments(rawAttachments) {
+    if (!Array.isArray(rawAttachments)) {
+      return [];
     }
 
-    const userIndex = this.findLastUserMessageIndex(messages);
-    if (userIndex === -1) {
-      return false;
-    }
-
-    const targetMessage = messages[userIndex] && typeof messages[userIndex] === 'object'
-      ? messages[userIndex]
-      : { role: 'user', content: [] };
-    const existingMessageAttachments = Array.isArray(targetMessage.attachments)
-      ? targetMessage.attachments
-      : [];
-
-    const sanitizedAttachments = this.sanitizeResponsesPayload(attachments)
+    return rawAttachments
+      .map(item => this.sanitizeAttachmentItem(item))
       .filter(item => item && typeof item === 'object');
-
-    if (sanitizedAttachments.length === 0 && existingMessageAttachments.length === 0) {
-      return false;
-    }
-
-    const combinedMessage = {
-      ...targetMessage,
-      attachments: [...existingMessageAttachments, ...sanitizedAttachments],
-    };
-
-    messages[userIndex] = this.normalizeResponseMessage(combinedMessage);
-    return true;
   }
 
-  findLastUserMessageIndex(messages) {
-    if (!Array.isArray(messages)) {
-      return -1;
+  sanitizeAttachmentItem(item) {
+    if (!item || typeof item !== 'object') {
+      return null;
     }
 
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index] && messages[index].role === 'user') {
-        return index;
+    const sanitized = { ...item };
+
+    if ('tool_resources' in sanitized) {
+      delete sanitized.tool_resources;
+    }
+
+    if ('attachments' in sanitized) {
+      delete sanitized.attachments;
+    }
+
+    if ('content' in sanitized) {
+      delete sanitized.content;
+    }
+
+    if ('input' in sanitized) {
+      delete sanitized.input;
+    }
+
+    return sanitized;
+  }
+
+  mergeAttachmentArrays(existing = [], additional = []) {
+    const merged = [];
+    const seen = new Set();
+
+    [...existing, ...additional].forEach((attachment) => {
+      if (!attachment || typeof attachment !== 'object') {
+        return;
       }
-    }
 
-    return -1;
+      const cloned = { ...attachment };
+      const key = JSON.stringify(cloned);
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(cloned);
+      }
+    });
+
+    return merged;
   }
 
   async handleApiError(response, tokenCount = 0) {
@@ -510,16 +510,22 @@ class OpenAIService {
   }
 
   async uploadFile(file) {
-    const { file: preparedFile } = await convertDocxToPdfIfNeeded(file);
+    const { file: preparedFile, converted } = await convertDocxToPdfIfNeeded(file);
 
-    const allowedExtensions = ['.pdf', '.txt', '.md'];
-    const allowedMimeTypes = ['application/pdf', 'text/plain', 'text/markdown'];
+    if (!preparedFile) {
+      throw new Error('No file provided for upload.');
+    }
+
     const fileName = preparedFile?.name?.toLowerCase() || '';
-       const fileType = preparedFile?.type?.toLowerCase() || '';
-    const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-    const hasValidMime = allowedMimeTypes.includes(fileType);
-    if (!hasValidExtension && !hasValidMime) {
-      throw new Error('Unsupported file type; please upload a PDF, TXT, MD, or DOCX file');
+    const fileType = preparedFile?.type?.toLowerCase() || '';
+    const isPdf = fileName.endsWith('.pdf') || fileType === 'application/pdf';
+    const supportedDescription = 'PDF, Word (.docx), Markdown (.md), or plain text (.txt) file.';
+
+    if (!isPdf) {
+      if (converted) {
+        throw new Error(`Converted file is not a valid PDF. Please upload a ${supportedDescription}`);
+      }
+      throw new Error(`Unsupported file type; please upload a ${supportedDescription}`);
     }
 
     const formData = new FormData();
@@ -640,10 +646,9 @@ class OpenAIService {
             {
               role: 'user',
               content: this.createContentForRole('user', message || ''),
-              attachments: vectorStoreAttachments, // keep attachments on the user message
             },
           ],
-          attachments: vectorStoreAttachments, // and top-level for Assistants v2
+          attachments: vectorStoreAttachments, // keep attachments at the root level for Assistants v2
           tools: [{ type: 'file_search' }],
           tool_resources: {
             file_search: {
@@ -660,12 +665,14 @@ class OpenAIService {
     const payloadForTokens = this.createChatPayload(userPrompt, normalizedHistory, model);
     const tokenCount = this.estimateTokens(payloadForTokens);
 
+    const sanitizedRequestBody = this.sanitizeResponsesPayload(requestBody);
+
     try {
       const data = await this.makeRequest(
         '/responses',
         {
           headers: { 'OpenAI-Beta': 'assistants=v2' },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify(sanitizedRequestBody),
         },
         tokenCount
       );

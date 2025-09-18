@@ -28,7 +28,11 @@ import {
 
 import { FEATURE_FLAGS } from './config/featureFlags';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
-import { mergeCurrentAndStoredMessages, buildChatHistory } from './utils/messageUtils';
+import {
+  mergeCurrentAndStoredMessages,
+  combineMessagesIntoConversations,
+  buildChatHistory,
+} from './utils/messageUtils';
 import {
   detectDocumentExportIntent,
   exportMessagesToExcel,
@@ -666,15 +670,109 @@ function App() {
 
   const clearSelectedMessages = useCallback(() => setSelectedMessages(new Set()), []);
 
-  const generateStudyNotes = useCallback(() => {
-    if (selectedMessages.size === 0) return;
+  const generateStudyNotes = useCallback(async () => {
+    const selectedIds = Array.from(selectedMessages || []);
+    if (selectedIds.length === 0) return;
+
     setIsGeneratingNotes(true);
+
     try {
-      console.log('Generating study notes', Array.from(selectedMessages));
+      const mergedMessages = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
+      const conversations = combineMessagesIntoConversations(mergedMessages);
+      const selectedIdSet = new Set(selectedIds);
+
+      const candidateMessages = [];
+      const seenMessageIds = new Set();
+
+      conversations
+        .filter((conversation) => selectedIdSet.has(conversation.id))
+        .forEach((conversation) => {
+          [conversation.originalUserMessage, conversation.originalAiMessage]
+            .filter(Boolean)
+            .forEach((message) => {
+              if (!message || !message.id || seenMessageIds.has(message.id)) {
+                return;
+              }
+
+              if (message.isResource || message.isStudyNotes) {
+                return;
+              }
+
+              const content = typeof message.content === 'string' ? message.content.trim() : '';
+              if (!content) {
+                return;
+              }
+
+              const baseType = message.type || message.role;
+              let normalizedType = baseType;
+
+              if (baseType === 'assistant') {
+                normalizedType = 'ai';
+              } else if (baseType === 'user') {
+                normalizedType = 'user';
+              } else if (baseType === 'ai') {
+                normalizedType = 'ai';
+              } else if (message.role === 'assistant') {
+                normalizedType = 'ai';
+              } else if (message.role === 'user') {
+                normalizedType = 'user';
+              }
+
+              if (normalizedType !== 'user' && normalizedType !== 'ai') {
+                return;
+              }
+
+              seenMessageIds.add(message.id);
+
+              candidateMessages.push({
+                ...message,
+                type: normalizedType,
+              });
+            });
+        });
+
+      if (candidateMessages.length === 0) {
+        throw new Error('Please select at least one conversation with a valid AI response.');
+      }
+
+      const notesResult = await openaiService.generateStudyNotes(candidateMessages);
+      const notesContent = typeof notesResult?.answer === 'string' ? notesResult.answer.trim() : '';
+
+      if (!notesContent) {
+        throw new Error('The assistant did not return any study notes.');
+      }
+
+      const studyNotesMessage = {
+        id: uuidv4(),
+        role: 'assistant',
+        type: 'ai',
+        content: notesContent,
+        timestamp: Date.now(),
+        resources: Array.isArray(notesResult?.resources) ? notesResult.resources : [],
+        sources: [],
+        isStudyNotes: true,
+      };
+
+      setMessages((prev) => [...prev, studyNotesMessage]);
+      setSelectedMessages(new Set());
+    } catch (error) {
+      console.error('Error generating study notes:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: uuidv4(),
+          role: 'assistant',
+          type: 'ai',
+          content: `I couldn't generate study notes: ${error.message || 'Unknown error occurred.'}`,
+          timestamp: Date.now(),
+          resources: [],
+          sources: [],
+        },
+      ]);
     } finally {
       setIsGeneratingNotes(false);
     }
-  }, [selectedMessages]);
+  }, [messages, thirtyDayMessages, selectedMessages, setMessages, setSelectedMessages]);
 
   // Handle learning suggestions updates
   const handleSuggestionsUpdate = useCallback((suggestions) => {

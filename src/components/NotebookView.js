@@ -12,7 +12,8 @@ const NotebookView = memo(({
   storedMessageCount = 0,
   isServerAvailable = true,
   searchTerm = '',
-  sortOrder = 'desc'
+  sortOrder = 'desc',
+  activeTab = 'conversations'
 }) => {
   // Merge current session and stored messages
   const availableMessages = useMemo(
@@ -73,21 +74,19 @@ const NotebookView = memo(({
 
   // Separate conversations based on storage status
   const currentConversations = conversations.filter(conv => {
-    // Consider a conversation "current" if any of its messages are marked as current
-    return conv.isCurrent || 
-           (conv.originalUserMessage?.isCurrent) || 
+    return conv.isCurrent ||
+           (conv.originalUserMessage?.isCurrent) ||
            (conv.originalAiMessage?.isCurrent);
   });
-  
+
   const storedConversations = conversations.filter(conv => {
-    // Consider stored if it's not current and has stored messages
     return !conv.isCurrent &&
            (conv.originalUserMessage?.isStored || conv.originalAiMessage?.isStored);
   });
 
   const allResources = useMemo(() => {
     const map = new Map();
-    conversations.forEach(conv => {
+    sortedConversations.forEach(conv => {
       (conv.resources || []).forEach(res => {
         if (res.url && res.title) {
           map.set(res.url, { ...res, addedAt: res.addedAt || conv.timestamp });
@@ -95,88 +94,101 @@ const NotebookView = memo(({
       });
     });
     return Array.from(map.values());
-  }, [conversations]);
+  }, [sortedConversations]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6 h-full shadow-sm flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-lg font-bold text-gray-900">Notebook</h3>
-          <p className="text-sm text-gray-500">
-            {availableMessages.length} messages • {conversations.length} conversations
-          </p>
-          
-          {/* Storage Status Summary */}
-          <div className="flex items-center space-x-4 mt-2 text-xs">
-            {isServerAvailable ? (
-              <>
-                <div className="flex items-center space-x-1 text-green-600">
-                  <Cloud className="h-3 w-3" />
-                  <span>{storedConversations.length} saved to cloud</span>
-                </div>
-                <div className="flex items-center space-x-1 text-blue-600">
-                  <Smartphone className="h-3 w-3" />
-                  <span>{currentConversations.length} current session</span>
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center space-x-1 text-orange-600">
-                <Smartphone className="h-3 w-3" />
-                <span>Session only - {conversations.length} conversations</span>
-              </div>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-3">
-          {selectedMessages.size > 0 && (
-            <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded-full">
-              {selectedMessages.size} selected
-            </span>
-          )}
-          
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={selectedMessages.size > 0 ? deselectAll : selectAllConversations}
-              className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800 border border-gray-300 rounded hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
-              disabled={conversations.length === 0}
-            >
-              {selectedMessages.size > 0 ? 'Deselect All' : 'Select All'}
-            </button>
-            
-            <button
-              onClick={handleGenerateStudyNotes}
-              disabled={selectedMessages.size === 0 || isGeneratingNotes}
-              className={`px-4 py-2 text-sm font-medium rounded transition-colors focus:outline-none focus:ring-2 ${
-                selectedMessages.size > 0 && !isGeneratingNotes
-                  ? 'bg-black text-white hover:bg-gray-800 focus:ring-gray-600' 
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed focus:ring-gray-300'
-              }`}
-              aria-label="Generate study notes from selected conversations"
-            >
-              {isGeneratingNotes ? (
-                <span className="flex items-center space-x-2">
-                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
-                  <span>Generating...</span>
-                </span>
+      {activeTab === 'conversations' ? (
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">Notebook</h3>
+            <p className="text-sm text-gray-500">
+              {availableMessages.length} messages • {conversations.length} conversations
+            </p>
+            <div className="flex items-center space-x-4 mt-2 text-xs">
+              {isServerAvailable ? (
+                <>
+                  <div className="flex items-center space-x-1 text-green-600">
+                    <Cloud className="h-3 w-3" />
+                    <span>{storedConversations.length} saved to cloud</span>
+                  </div>
+                  <div className="flex items-center space-x-1 text-blue-600">
+                    <Smartphone className="h-3 w-3" />
+                    <span>{currentConversations.length} current session</span>
+                  </div>
+                </>
               ) : (
-                'Study Notes'
+                <div className="flex items-center space-x-1 text-orange-600">
+                  <Smartphone className="h-3 w-3" />
+                  <span>Session only - {conversations.length} conversations</span>
+                </div>
               )}
-            </button>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            {selectedMessages.size > 0 && (
+              <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded-full">
+                {selectedMessages.size} selected
+              </span>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={selectedMessages.size > 0 ? deselectAll : selectAllConversations}
+                className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800 border border-gray-300 rounded hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
+                disabled={conversations.length === 0}
+              >
+                {selectedMessages.size > 0 ? 'Deselect All' : 'Select All'}
+              </button>
+
+              <button
+                onClick={handleGenerateStudyNotes}
+                disabled={selectedMessages.size === 0 || isGeneratingNotes}
+                className={`px-4 py-2 text-sm font-medium rounded transition-colors focus:outline-none focus:ring-2 ${
+                  selectedMessages.size > 0 && !isGeneratingNotes
+                    ? 'bg-black text-white hover:bg-gray-800 focus:ring-gray-600'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed focus:ring-gray-300'
+                }`}
+                aria-label="Generate study notes from selected conversations"
+              >
+                {isGeneratingNotes ? (
+                  <span className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
+                    <span>Generating...</span>
+                  </span>
+                ) : (
+                  'Study Notes'
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-gray-900">Learning Resources</h3>
+          <p className="text-sm text-gray-500">
+            {allResources.length} {allResources.length === 1 ? 'resource' : 'resources'} collected from your recent conversations
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            Explore saved links and materials recommended during chats.
+          </p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-          {/* Conversations List */}
-          <div className="space-y-3 overflow-y-auto">
+        {activeTab === 'conversations' ? (
+          <div
+            id="notebook-panel-conversations"
+            role="tabpanel"
+            aria-labelledby="notebook-tab-conversations"
+            className="h-full overflow-y-auto pr-1"
+          >
             {conversations.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-gray-400 mb-4">
                   <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-3.582 8-8 8a8.991 8.991 0 01-4.7-1.299L3 21l2.3-5.7A7.991 7.991 0 1121 12z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c04.418-3.582 8-8 8a8.991 8.991 0 01-4.7-1.299L3 21l2.3-5.7A7.991 7.991 0 1121 12z" />
                   </svg>
                 </div>
                 {searchTerm.trim() ? (
@@ -197,8 +209,7 @@ const NotebookView = memo(({
                 )}
               </div>
             ) : (
-              <div className="space-y-6">
-                {/* Current Session Conversations */}
+              <div className="space-y-6 pb-4">
                 {currentConversations.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
@@ -228,7 +239,6 @@ const NotebookView = memo(({
                   </div>
                 )}
 
-                {/* Stored Conversations */}
                 {storedConversations.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
@@ -258,58 +268,67 @@ const NotebookView = memo(({
               </div>
             )}
           </div>
-
-          {/* Learning Resources */}
-          <div className="space-y-3 overflow-y-auto">
-            <h4 className="text-md font-semibold text-gray-900">Learning Resources</h4>
+        ) : (
+          <div
+            id="notebook-panel-resources"
+            role="tabpanel"
+            aria-labelledby="notebook-tab-resources"
+            className="h-full overflow-y-auto pr-1"
+          >
             {allResources.length === 0 ? (
-              <p className="text-sm text-gray-500">No resources available.</p>
+              <div className="h-full flex items-center justify-center text-center text-sm text-gray-500 px-6">
+                No resources available yet. Add learning materials from your conversations to see them here.
+              </div>
             ) : (
-              allResources.map((resource, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors space-y-1">
-                  {resource.url ? (
-                    <a
-                      href={resource.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium text-blue-600 hover:text-blue-800 block truncate">
-                      {resource.title}
-                    </a>
-                  ) : (
-                    <span className="text-sm font-medium text-gray-900 block truncate">{resource.title}</span>
-                  )}
-                  <span className="text-xs text-gray-500 flex items-center justify-between">
-                    <span>
-                      {resource.type || 'Resource'}
-                      {resource.location ? ` • ${resource.location}` : ''}
-                      {resource.addedAt && (
-                        <> • {new Date(resource.addedAt).toLocaleString()}</>
-                      )}
+              <div className="space-y-3 pb-4">
+                {allResources.map((resource, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors space-y-1"
+                  >
+                    {resource.url ? (
+                      <a
+                        href={resource.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-blue-600 hover:text-blue-800 block truncate"
+                      >
+                        {resource.title}
+                      </a>
+                    ) : (
+                      <span className="text-sm font-medium text-gray-900 block truncate">{resource.title}</span>
+                    )}
+                    <span className="text-xs text-gray-500 flex items-center justify-between">
+                      <span>
+                        {resource.type || 'Resource'}
+                        {resource.location ? ` • ${resource.location}` : ''}
+                        {resource.addedAt && (
+                          <> • {new Date(resource.addedAt).toLocaleString()}</>
+                        )}
+                      </span>
                     </span>
-                  </span>
-                  {resource.description && (
-                    <p className="text-xs text-gray-500 line-clamp-2">{resource.description}</p>
-                  )}
-                </div>
-              ))
+                    {resource.description && (
+                      <p className="text-xs text-gray-500 line-clamp-2">{resource.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 });
 
 // Individual conversation card component
-const ConversationCard = memo(({ 
-  conversation, 
-  isSelected, 
-  onToggleSelection, 
-  isCurrentSession, 
-  debugIndex, 
-  storageStatus = 'unknown' 
+const ConversationCard = memo(({
+  conversation,
+  isSelected,
+  onToggleSelection,
+  isCurrentSession,
+  debugIndex,
+  storageStatus = 'unknown'
 }) => {
   const handleToggle = () => {
     onToggleSelection(conversation.id);
@@ -333,8 +352,8 @@ const ConversationCard = memo(({
 
   return (
     <div className={`p-4 rounded-lg border transition-all cursor-pointer ${
-      isSelected 
-        ? 'bg-blue-50 border-blue-300 shadow-sm' 
+      isSelected
+        ? 'bg-blue-50 border-blue-300 shadow-sm'
         : getStorageStatusColor() + ' hover:border-gray-300 hover:shadow-sm'
     }`}>
       <div className="flex items-start space-x-3">
@@ -345,12 +364,12 @@ const ConversationCard = memo(({
           className="mt-1 rounded border-gray-300 text-black focus:ring-black focus:ring-2"
           aria-label={`Select conversation from ${new Date(conversation.timestamp).toLocaleDateString()}`}
         />
-        
+
         <div className="flex-1 min-w-0" onClick={handleToggle}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-2">
               <span className={`text-xs font-semibold uppercase tracking-wide ${
-                storageStatus === 'current' ? 'text-blue-600' : 
+                storageStatus === 'current' ? 'text-blue-600' :
                 storageStatus === 'stored' ? 'text-green-600' : 'text-purple-600'
               }`}>
                 Conversation #{debugIndex + 1}
@@ -360,14 +379,14 @@ const ConversationCard = memo(({
                 {conversation.isCurrent ? 'C' : ''}{conversation.isStored ? 'S' : ''}
               </span>
             </div>
-            <time 
+            <time
               className="text-xs text-gray-500"
               dateTime={conversation.timestamp}
             >
               {new Date(conversation.timestamp).toLocaleString()}
             </time>
           </div>
-          
+
           {conversation.userContent && (
             <div className="mb-3">
               <div className="text-xs font-medium text-blue-600 mb-1">QUESTION:</div>
@@ -376,7 +395,7 @@ const ConversationCard = memo(({
               </p>
             </div>
           )}
-          
+
           {conversation.aiContent && (
             <div className="mb-3">
               <div className="text-xs font-medium text-green-600 mb-1">RESPONSE:</div>
@@ -385,7 +404,7 @@ const ConversationCard = memo(({
               </p>
             </div>
           )}
-          
+
           {conversation.isStudyNotes && (
             <div className="mt-3 pt-2 border-t border-gray-200">
               <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">

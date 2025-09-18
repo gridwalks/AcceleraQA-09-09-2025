@@ -287,4 +287,39 @@ describe('document persistence with Neon metadata store', () => {
     expect(docs).toHaveLength(1);
     expect(docs[0].metadata.version).toBe('Rev 2');
   });
+
+  test('generateRAGResponse merges user upload vector stores into search', async () => {
+    const uploadOptions = { documentApiMock, uploadFileId: 'file_rag_1', vectorStoreId: 'vs_default_user' };
+    const { ragService, mocks } = await loadRagService(uploadOptions);
+
+    const capturedBodies = [];
+    mocks.openai.makeRequest.mockImplementation(async (endpoint, options = {}) => {
+      if (endpoint === '/responses') {
+        const parsedBody = options?.body ? JSON.parse(options.body) : {};
+        capturedBodies.push(parsedBody);
+        return {
+          output: [],
+          output_text: 'Search answer',
+          usage: {},
+        };
+      }
+
+      if (endpoint === '/files') {
+        return { data: [] };
+      }
+
+      return { success: true };
+    });
+
+    const additionalVectorStore = 'vs_active_upload';
+    const response = await ragService.generateRAGResponse('Explain CAPA expectations', 'user-search-1', {
+      vectorStoreIds: [additionalVectorStore, '  ', null, additionalVectorStore],
+    });
+
+    expect(response.answer).toBe('Search answer');
+    expect(capturedBodies).toHaveLength(1);
+    const tools = capturedBodies[0]?.tools || [];
+    expect(tools).toHaveLength(1);
+    expect(tools[0].vector_store_ids).toEqual(['vs_default_user', additionalVectorStore]);
+  });
 });

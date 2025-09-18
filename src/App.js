@@ -681,55 +681,76 @@ function App() {
       const conversations = combineMessagesIntoConversations(mergedMessages);
       const selectedIdSet = new Set(selectedIds);
 
+      const selectedConversations = conversations.filter((conversation) =>
+        selectedIdSet.has(conversation.id)
+      );
+
       const candidateMessages = [];
       const seenMessageIds = new Set();
+      const sourceMessageMetadata = [];
+      const seenSourceIds = new Set();
 
-      conversations
-        .filter((conversation) => selectedIdSet.has(conversation.id))
-        .forEach((conversation) => {
-          [conversation.originalUserMessage, conversation.originalAiMessage]
-            .filter(Boolean)
-            .forEach((message) => {
-              if (!message || !message.id || seenMessageIds.has(message.id)) {
-                return;
-              }
+      selectedConversations.forEach((conversation) => {
+        const participantMessages = [
+          conversation.originalUserMessage,
+          conversation.originalAiMessage,
+        ].filter(Boolean);
 
-              if (message.isResource || message.isStudyNotes) {
-                return;
-              }
+        participantMessages.forEach((message) => {
+          if (!message || !message.id) {
+            return;
+          }
 
-              const content = typeof message.content === 'string' ? message.content.trim() : '';
-              if (!content) {
-                return;
-              }
-
-              const baseType = message.type || message.role;
-              let normalizedType = baseType;
-
-              if (baseType === 'assistant') {
-                normalizedType = 'ai';
-              } else if (baseType === 'user') {
-                normalizedType = 'user';
-              } else if (baseType === 'ai') {
-                normalizedType = 'ai';
-              } else if (message.role === 'assistant') {
-                normalizedType = 'ai';
-              } else if (message.role === 'user') {
-                normalizedType = 'user';
-              }
-
-              if (normalizedType !== 'user' && normalizedType !== 'ai') {
-                return;
-              }
-
-              seenMessageIds.add(message.id);
-
-              candidateMessages.push({
-                ...message,
-                type: normalizedType,
-              });
+          if (!seenSourceIds.has(message.id)) {
+            sourceMessageMetadata.push({
+              conversationCardId: conversation.id,
+              messageId: message.id,
+              role: message.role || message.type || null,
+              timestamp: message.timestamp || conversation.timestamp || null,
             });
+            seenSourceIds.add(message.id);
+          }
+
+          if (seenMessageIds.has(message.id)) {
+            return;
+          }
+
+          if (message.isResource || message.isStudyNotes) {
+            return;
+          }
+
+          const content = typeof message.content === 'string' ? message.content.trim() : '';
+          if (!content) {
+            return;
+          }
+
+          const baseType = message.type || message.role;
+          let normalizedType = baseType;
+
+          if (baseType === 'assistant') {
+            normalizedType = 'ai';
+          } else if (baseType === 'user') {
+            normalizedType = 'user';
+          } else if (baseType === 'ai') {
+            normalizedType = 'ai';
+          } else if (message.role === 'assistant') {
+            normalizedType = 'ai';
+          } else if (message.role === 'user') {
+            normalizedType = 'user';
+          }
+
+          if (normalizedType !== 'user' && normalizedType !== 'ai') {
+            return;
+          }
+
+          seenMessageIds.add(message.id);
+
+          candidateMessages.push({
+            ...message,
+            type: normalizedType,
+          });
         });
+      });
 
       if (candidateMessages.length === 0) {
         throw new Error('Please select at least one conversation with a valid AI response.');
@@ -742,15 +763,55 @@ function App() {
         throw new Error('The assistant did not return any study notes.');
       }
 
+
+      const resources = Array.isArray(notesResult?.resources) ? notesResult.resources : [];
+
+      const topicSeeds = selectedConversations
+        .map((conversation) => {
+          const userPreview =
+            typeof conversation.userContent === 'string' ? conversation.userContent.trim() : '';
+          const aiPreview =
+            typeof conversation.aiContent === 'string' ? conversation.aiContent.trim() : '';
+
+          const seed = userPreview || aiPreview || '';
+          return seed.replace(/\s+/g, ' ').trim();
+        })
+        .filter(Boolean);
+
+      const topTopics = topicSeeds.slice(0, 5).map((topic, index) => {
+        const truncated = topic.length > 160 ? `${topic.slice(0, 157)}…` : topic;
+        return `${index + 1}. ${truncated}`;
+      });
+
+      const generatedAt = new Date();
+
       const studyNotesMessage = {
         id: uuidv4(),
         role: 'assistant',
         type: 'ai',
         content: notesContent,
-        timestamp: Date.now(),
-        resources: Array.isArray(notesResult?.resources) ? notesResult.resources : [],
+        timestamp: generatedAt.getTime(),
+        resources,
         sources: [],
         isStudyNotes: true,
+        sourceMessages: sourceMessageMetadata,
+        studyNotesData: {
+          generatedAt: generatedAt.toISOString(),
+          generatedDate: generatedAt.toLocaleString(),
+          selectedConversationCount: selectedConversations.length,
+          selectedConversationIds: selectedConversations.map((conversation) => conversation.id),
+          selectedTopics: topTopics.length
+            ? topTopics.join('\n')
+            : 'Study notes generated from your selected conversations.',
+          selectedTopicsList: topTopics,
+          content: notesContent,
+          resourceCount: resources.length,
+        },
+        metadata: {
+          type: 'studyNotes',
+          generatedAt: generatedAt.toISOString(),
+          conversationCount: selectedConversations.length,
+        },
       };
 
       setMessages((prev) => [...prev, studyNotesMessage]);

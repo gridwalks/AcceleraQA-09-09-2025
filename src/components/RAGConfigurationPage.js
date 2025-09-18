@@ -17,6 +17,7 @@ import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
 import { getRagBackendLabel } from '../config/ragConfig';
 import { hasAdminRole } from '../utils/auth';
+
 const describeConversionSource = (conversion) => {
   if (!conversion) {
     return null;
@@ -55,6 +56,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const isAdmin = hasAdminRole(user);
   const hasReachedDocumentLimit = !isAdmin && documents.length >= USER_DOCUMENT_LIMIT;
   const documentLimitMessage = `You have reached the maximum of ${USER_DOCUMENT_LIMIT} documents (${documents.length}/${USER_DOCUMENT_LIMIT}). Delete an existing document before uploading a new one.`;
+  const documentCountLabel = isAdmin
+    ? `${documents.length} document${documents.length === 1 ? '' : 's'} uploaded`
+    : `${documents.length} of ${USER_DOCUMENT_LIMIT} document uploads`;
 
   const ragBackendLabel = getRagBackendLabel();
 
@@ -496,9 +500,6 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         disabled={hasReachedDocumentLimit}
                         className="block w-full text-sm text-gray-500 disabled:cursor-not-allowed disabled:opacity-60 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
-                    <p className="text-xs text-gray-500 mt-1">
-                      DOCX, CSV, and XLSX files are automatically converted to PDF before upload. Persistent storage with the {ragBackendLabel} backend.
-                    </p>
                   </div>
 
                   <div className="space-y-4">
@@ -594,7 +595,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
               {/* Documents List */}
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">Uploaded Documents</h3>
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900">Uploaded Documents</h3>
+                    <p className="text-sm text-gray-500">{documentCountLabel}</p>
+                  </div>
                   <button
                     onClick={loadDocuments}
                     disabled={isLoading}

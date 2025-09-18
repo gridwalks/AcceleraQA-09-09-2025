@@ -11,6 +11,8 @@ const headers = {
 let sqlClient = null;
 let schemaPromise = null;
 
+const getOpenAIApiKey = () => process.env.OPENAI_API_KEY || process.env.REACT_APP_OPENAI_API_KEY || null;
+
 const getSqlClient = () => {
   if (!sqlClient) {
     const connectionString = process.env.NEON_DATABASE_URL;
@@ -235,6 +237,76 @@ const handleSaveDocument = async (sql, userId, payload) => {
   });
 };
 
+const handleDownloadDocument = async (sql, userId, payload) => {
+  const documentId = payload?.documentId;
+  const fileId = payload?.fileId;
+
+  if (!documentId && !fileId) {
+    return createResponse(400, { error: 'documentId or fileId is required' });
+  }
+
+  const rows = await sql`
+    SELECT document_id, file_id, filename, content_type, size, metadata
+    FROM rag_user_documents
+    WHERE user_id = ${userId}
+      AND (document_id = ${documentId} OR file_id = ${fileId})
+    LIMIT 1
+  `;
+
+  const record = rows[0];
+  if (!record) {
+    return createResponse(404, { error: 'Document not found for this user' });
+  }
+
+  const apiKey = getOpenAIApiKey();
+  if (!apiKey) {
+    return createResponse(500, { error: 'OpenAI API key is not configured' });
+  }
+
+  const resolvedFileId = record.file_id || fileId || documentId;
+  let downloadResponse;
+  try {
+    downloadResponse = await fetch(`https://api.openai.com/v1/files/${resolvedFileId}/content`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'OpenAI-Beta': 'assistants=v2',
+      },
+    });
+  } catch (error) {
+    console.error('Failed to fetch document content from OpenAI:', error);
+    return createResponse(502, { error: 'Failed to retrieve document content' });
+  }
+
+  if (!downloadResponse.ok) {
+    let errorMessage = `Failed to retrieve document content (status ${downloadResponse.status})`;
+    try {
+      const errorBody = await downloadResponse.json();
+      errorMessage = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorMessage;
+    } catch (parseError) {
+      console.warn('Unable to parse OpenAI error response for document download:', parseError);
+    }
+    return createResponse(downloadResponse.status, { error: errorMessage });
+  }
+
+  const arrayBuffer = await downloadResponse.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const base64Content = buffer.toString('base64');
+
+  const responseContentType = downloadResponse.headers.get('content-type');
+
+  return createResponse(200, {
+    documentId: record.document_id,
+    fileId: record.file_id,
+    filename: record.filename,
+    contentType: record.content_type || responseContentType || 'application/octet-stream',
+    size: record.size == null ? buffer.length : Number(record.size),
+    encoding: 'base64',
+    content: base64Content,
+    metadata: record.metadata || {},
+  });
+};
+
 const handleDeleteDocument = async (sql, userId, payload) => {
   const { documentId } = payload || {};
 
@@ -301,6 +373,8 @@ export const handler = async (event, context) => {
         return await handleSaveDocument(sql, userId, data);
       case 'delete_document':
         return await handleDeleteDocument(sql, userId, data);
+      case 'download_document':
+        return await handleDownloadDocument(sql, userId, data);
       default:
         return createResponse(400, { error: `Unsupported action: ${action}` });
     }

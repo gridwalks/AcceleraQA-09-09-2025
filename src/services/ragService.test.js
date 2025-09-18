@@ -323,3 +323,37 @@ describe('document persistence with Neon metadata store', () => {
     expect(tools[0].vector_store_ids).toEqual(['vs_default_user', additionalVectorStore]);
   });
 });
+
+describe('downloadDocument', () => {
+  test('requests document content through metadata service', async () => {
+    const downloadResponse = {
+      filename: 'Quality_Event_SOP.pdf',
+      contentType: 'application/pdf',
+      content: Buffer.from('pdf-content').toString('base64'),
+      encoding: 'base64',
+    };
+
+    const documentApiMock = jest.fn(async (action, userId, payload) => {
+      if (action === 'download_document') {
+        expect(userId).toBe('user-download');
+        expect(payload).toEqual({ documentId: 'doc-download-1' });
+        return downloadResponse;
+      }
+      return { documents: [] };
+    });
+
+    const { ragService } = await loadRagService({ documentApiMock });
+    const result = await ragService.downloadDocument('doc-download-1', 'user-download');
+
+    expect(documentApiMock).toHaveBeenCalledWith('download_document', 'user-download', { documentId: 'doc-download-1' });
+    expect(result).toEqual(downloadResponse);
+  });
+
+  test('throws when no identifier provided', async () => {
+    const { ragService } = await loadRagService({ documentApiMock: jest.fn() });
+    await expect(ragService.downloadDocument({}, 'user-download')).rejects.toThrow(
+      'documentId or fileId is required to download a document'
+    );
+  });
+
+});

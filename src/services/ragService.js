@@ -525,6 +525,29 @@ class RAGService {
     return { success: true };
   }
 
+  async downloadDocument(documentReference, userId) {
+    if (this.isNeonBackend()) {
+      throw new Error('Document downloads are not supported when using the Neon backend');
+    }
+
+    const reference =
+      typeof documentReference === 'string'
+        ? { documentId: documentReference }
+        : { ...(documentReference || {}) };
+
+    const documentId = typeof reference.documentId === 'string' ? reference.documentId.trim() : '';
+    const fileId = typeof reference.fileId === 'string' ? reference.fileId.trim() : '';
+
+    if (!documentId && !fileId) {
+      throw new Error('documentId or fileId is required to download a document');
+    }
+
+    return await this.makeDocumentMetadataRequest('download_document', userId, {
+      ...(documentId ? { documentId } : {}),
+      ...(fileId ? { fileId } : {}),
+    });
+  }
+
   async extractTextFromFile(file) {
     if (file.type === 'text/plain') {
       return new Promise((resolve, reject) => {
@@ -1217,6 +1240,7 @@ export const search = (query, userId, options = {}) => ragService.search(query, 
 export const searchDocuments = (query, options = {}, userId) => ragService.searchDocuments(query, options, userId);
 export const getDocuments = (userId) => ragService.getDocuments(userId);
 export const deleteDocument = (documentId, userId) => ragService.deleteDocument(documentId, userId);
+export const downloadDocument = (documentReference, userId) => ragService.downloadDocument(documentReference, userId);
 export const generateRAGResponse = (query, userId, options = {}) => ragService.generateRAGResponse(query, userId, options);
 export const testConnection = (userId) => ragService.testConnection(userId);
 export const getStats = (userId) => ragService.getStats(userId);

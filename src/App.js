@@ -763,6 +763,7 @@ function App() {
         throw new Error('The assistant did not return any study notes.');
       }
 
+
       const resources = Array.isArray(notesResult?.resources) ? notesResult.resources : [];
 
       const topicSeeds = selectedConversations

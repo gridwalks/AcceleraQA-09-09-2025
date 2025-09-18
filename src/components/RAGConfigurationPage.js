@@ -1,4 +1,4 @@
-// src/components/RAGConfigurationPage.js - Fixed authentication for OpenAI File Search
+// src/components/RAGConfigurationPage.js - Document management screen for the knowledge base
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Upload,
@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
-import { getRagBackendLabel, isNeonBackend } from '../config/ragConfig';
+import { hasAdminRole } from '../utils/auth';
 
 const describeConversionSource = (conversion) => {
   if (!conversion) {
@@ -33,6 +33,22 @@ const describeConversionSource = (conversion) => {
   return conversionLabels[conversion] || null;
 };
 
+const getDocumentTitle = (doc) => {
+  const rawTitle = doc?.metadata?.title;
+
+  if (typeof rawTitle === 'string') {
+    const trimmedTitle = rawTitle.trim();
+
+    if (trimmedTitle) {
+      return trimmedTitle;
+    }
+  }
+
+  return doc?.filename || '';
+};
+
+const USER_DOCUMENT_LIMIT = 20;
+
 const RAGConfigurationPage = ({ user, onClose }) => {
   const [documents, setDocuments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,6 +58,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const [debugInfo, setDebugInfo] = useState(null);
   const [authDebug, setAuthDebug] = useState(null);
   const [uploadMetadata, setUploadMetadata] = useState({
+    fileName: '',
     title: '',
     description: '',
     tags: '',
@@ -49,8 +66,12 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     version: ''
   });
 
-  const ragBackendLabel = getRagBackendLabel();
-  const neonBackendEnabled = isNeonBackend();
+  const isAdmin = hasAdminRole(user);
+  const hasReachedDocumentLimit = !isAdmin && documents.length >= USER_DOCUMENT_LIMIT;
+  const documentLimitMessage = `You have reached the maximum of ${USER_DOCUMENT_LIMIT} documents (${documents.length}/${USER_DOCUMENT_LIMIT}). Delete an existing document before uploading a new one.`;
+  const documentCountLabel = isAdmin
+    ? `${documents.length} document${documents.length === 1 ? '' : 's'} uploaded`
+    : `${documents.length} of ${USER_DOCUMENT_LIMIT} document uploads`
 
 
   // Enhanced authentication debugging
@@ -200,17 +221,27 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
 
   const handleFileSelect = (event) => {
+    if (hasReachedDocumentLimit) {
+      event.target.value = '';
+      return;
+    }
+
     const file = event.target.files[0];
     if (file) {
       setSelectedFile(file);
       setUploadMetadata(prev => ({
         ...prev,
-        title: file.name.replace(/\.[^/.]+$/, '')
+        fileName: file.name,
+        title: ''
       }));
     }
   };
 
   const handleUpload = async () => {
+    if (hasReachedDocumentLimit) {
+      return;
+    }
+
     if (!selectedFile) {
       setError('Please select a file to upload');
       return;
@@ -230,6 +261,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     try {
       const metadata = {
         ...uploadMetadata,
+        fileName: uploadMetadata.fileName || selectedFile.name,
         tags: uploadMetadata.tags
           .split(',')
           .map(tag => tag.trim())
@@ -272,9 +304,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         type: 'success',
         message: successMessage
       });
-      
+
       setSelectedFile(null);
       setUploadMetadata({
+        fileName: '',
         title: '',
         description: '',
         tags: '',
@@ -323,14 +356,6 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     }
   };
 
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
   const getFileTypeIcon = (type) => {
     const lowerType = type?.toLowerCase() || '';
     if (lowerType.includes('pdf')) return '📄';
@@ -348,7 +373,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
             <Database className="h-6 w-6 text-blue-600" />
             <div>
               <h2 className="text-xl font-semibold text-gray-900">My Documents</h2>
-              <p className="text-sm text-gray-500">Upload documents and configure search with OpenAI File Search</p>
+              <p className="text-sm text-gray-500">Upload documents to power your workspace knowledge base</p>
             </div>
           </div>
           <button
@@ -460,9 +485,19 @@ const RAGConfigurationPage = ({ user, onClose }) => {
             <div className="bg-gray-50 p-6 rounded-lg">
                 <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
                   <Upload className="h-5 w-5" />
-                  <span>Upload Document ({ragBackendLabel} Storage)</span>
+                  <span>Upload Document to Knowledge Base</span>
                 </h3>
-                
+
+                {hasReachedDocumentLimit && (
+                  <div className="mb-4 flex items-start space-x-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+                    <AlertCircle className="mt-0.5 h-5 w-5 text-amber-500" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">Document limit reached</p>
+                      <p className="text-sm text-amber-700">{documentLimitMessage}</p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -473,14 +508,25 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         type="file"
                         accept=".pdf,.txt,.md,.docx,.csv,.xlsx"
                         onChange={handleFileSelect}
-                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        disabled={hasReachedDocumentLimit}
+                        className="block w-full text-sm text-gray-500 disabled:cursor-not-allowed disabled:opacity-60 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
-                    <p className="text-xs text-gray-500 mt-1">
-                      DOCX, CSV, and XLSX files are automatically converted to PDF before upload. Persistent storage with the {ragBackendLabel} backend.
-                    </p>
                   </div>
 
                   <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
+                        File Name
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadMetadata.fileName}
+                        readOnly
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-900 placeholder-gray-500"
+                        placeholder="Select a file to populate the file name"
+                      />
+                    </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-1">
                         Title
@@ -489,7 +535,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         type="text"
                         value={uploadMetadata.title}
                         onChange={(e) => setUploadMetadata(prev => ({ ...prev, title: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        disabled={hasReachedDocumentLimit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="Document title"
                       />
                     </div>
@@ -501,7 +548,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                       <select
                         value={uploadMetadata.category}
                         onChange={(e) => setUploadMetadata(prev => ({ ...prev, category: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                        disabled={hasReachedDocumentLimit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                       >
                         <option value="general">General</option>
                         <option value="gmp">GMP</option>
@@ -522,7 +570,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         type="text"
                         value={uploadMetadata.version}
                         onChange={(e) => setUploadMetadata(prev => ({ ...prev, version: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        disabled={hasReachedDocumentLimit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="e.g. v1.2, Rev B"
                       />
                       <p className="text-xs text-gray-500 mt-1">
@@ -536,7 +585,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 <div className="mt-6 flex justify-end">
                   <button
                     onClick={handleUpload}
-                    disabled={!selectedFile || isLoading || !debugInfo?.success}
+                    disabled={!selectedFile || isLoading || !debugInfo?.success || hasReachedDocumentLimit}
                     className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
                   >
                     {isLoading ? (
@@ -557,7 +606,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
               {/* Documents List */}
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">Uploaded Documents</h3>
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900">Uploaded Documents</h3>
+                    <p className="text-sm text-gray-500">{documentCountLabel}</p>
+                  </div>
                   <button
                     onClick={loadDocuments}
                     disabled={isLoading}
@@ -571,7 +623,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 {isLoading ? (
                   <div className="text-center py-12">
                     <Loader className="h-8 w-8 text-blue-600 mx-auto animate-spin mb-4" />
-                    <p className="text-gray-600">Loading documents from OpenAI backend...</p>
+                    <p className="text-gray-600">Loading your uploaded documents...</p>
                   </div>
                 ) : documents.length === 0 ? (
                   <div className="text-center py-12 bg-gray-50 rounded-lg">
@@ -600,19 +652,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                               Version
                             </th>
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Size
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Chunks
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                               Uploaded
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Storage
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Search
                             </th>
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                               Tags
@@ -623,74 +663,77 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                          {documents.map((doc) => (
-                            <tr key={doc.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3">
-                                <div className="flex items-center space-x-3">
-                                  <span className="text-2xl">{getFileTypeIcon(doc.type)}</span>
-                                  <div className="min-w-0">
-                                    <p
-                                      className="text-sm font-medium text-gray-900 truncate max-w-[240px]"
-                                      title={doc.filename}
-                                    >
-                                      {doc.filename}
-                                    </p>
-                                    {doc.metadata?.conversion && doc.metadata?.originalFilename && (
-                                      <p className="text-xs text-gray-500 mt-1">
-                                        <span className="font-medium text-gray-600">Original:</span> {doc.metadata.originalFilename} (converted from {describeConversionSource(doc.metadata.conversion) || 'the uploaded format'})
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {(doc.metadata?.category || 'General')}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {doc.metadata?.version || '—'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {formatFileSize(doc.size)}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {doc.chunks}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                                {new Date(doc.createdAt).toLocaleDateString()}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                                {ragBackendLabel}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {neonBackendEnabled ? 'PostgreSQL full-text search' : 'OpenAI vector search'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {doc.metadata?.tags && doc.metadata.tags.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {doc.metadata.tags.map((tag, index) => (
-                                      <span
-                                        key={index}
-                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                          {documents.map((doc) => {
+                            const rawTitle = typeof doc?.metadata?.title === 'string' ? doc.metadata.title.trim() : '';
+                            const displayTitle = getDocumentTitle(doc);
+                            const storedFilename = doc?.filename || '';
+                            const showStoredFilename = Boolean(rawTitle) && storedFilename && displayTitle !== storedFilename;
+
+                            return (
+                              <tr key={doc.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="text-2xl">{getFileTypeIcon(doc.type)}</span>
+                                    <div className="min-w-0">
+                                      <p
+                                        className="text-sm font-semibold text-gray-900 truncate max-w-[240px]"
+                                        title={displayTitle}
                                       >
-                                        {tag}
-                                      </span>
-                                    ))}
+                                        {displayTitle}
+                                      </p>
+                                      {showStoredFilename && (
+                                        <p
+                                          className="text-xs text-gray-500 truncate max-w-[240px]"
+                                          title={storedFilename}
+                                        >
+                                          {storedFilename}
+                                        </p>
+                                      )}
+                                      {doc.metadata?.conversion && doc.metadata?.originalFilename && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          <span className="font-medium text-gray-600">Original:</span> {doc.metadata.originalFilename} (converted from {describeConversionSource(doc.metadata.conversion) || 'the uploaded format'})
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
-                                ) : (
-                                  '—'
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                <button
-                                  onClick={() => handleDelete(doc.id, doc.filename)}
-                                  className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                                  aria-label={`Delete ${doc.filename}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700">
+                                  {(doc.metadata?.category || 'General')}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700">
+                                  {doc.metadata?.version || '—'}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                                  {new Date(doc.createdAt).toLocaleDateString()}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700">
+                                  {doc.metadata?.tags && doc.metadata.tags.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {doc.metadata.tags.map((tag, index) => (
+                                        <span
+                                          key={index}
+                                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                        >
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    '—'
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    onClick={() => handleDelete(doc.id, displayTitle || doc.filename)}
+                                    className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                    aria-label={`Delete ${displayTitle || doc.filename}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

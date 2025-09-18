@@ -44,6 +44,90 @@ import {
 
 const COOLDOWN_SECONDS = 10;
 
+const normalizeValue = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const conversationIdMatchesMessage = (conversationId, messageId) => {
+  if (!conversationId || !messageId) {
+    return false;
+  }
+
+  if (conversationId === messageId) {
+    return true;
+  }
+
+  return (
+    conversationId.startsWith(`${messageId}-`) ||
+    conversationId.endsWith(`-${messageId}`) ||
+    conversationId.includes(`-${messageId}-`)
+  );
+};
+
+const isMatchingResource = (resource, target) => {
+  if (!resource || !target) {
+    return false;
+  }
+
+  const resourceUrl = normalizeValue(resource.url);
+  const targetUrl = normalizeValue(target.url);
+
+  if (resourceUrl && targetUrl) {
+    return resourceUrl === targetUrl;
+  }
+
+  const resourceTitle = normalizeValue(resource.title);
+  const targetTitle = normalizeValue(target.title);
+
+  return Boolean(resourceTitle && targetTitle && resourceTitle === targetTitle);
+};
+
+const removeResourceFromMessages = (messages, target) => {
+  if (!Array.isArray(messages) || messages.length === 0 || !target) {
+    return messages;
+  }
+
+  const messageIds = new Set(
+    (target.sourceMessages || [])
+      .map((source) => source?.messageId)
+      .filter(Boolean)
+  );
+
+  let changed = false;
+
+  const updated = messages.reduce((acc, message) => {
+    const shouldInspect =
+      messageIds.size === 0 || messageIds.has(message?.id);
+
+    if (!shouldInspect || !Array.isArray(message?.resources) || message.resources.length === 0) {
+      acc.push(message);
+      return acc;
+    }
+
+    const filteredResources = message.resources.filter(
+      (resource) => !isMatchingResource(resource, target)
+    );
+
+    if (filteredResources.length === message.resources.length) {
+      acc.push(message);
+      return acc;
+    }
+
+    changed = true;
+
+    if (filteredResources.length === 0 && message.isResource) {
+      return acc;
+    }
+
+    acc.push({
+      ...message,
+      resources: filteredResources,
+    });
+
+    return acc;
+  }, []);
+
+  return changed ? updated : messages;
+};
+
 function App() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -614,6 +698,95 @@ function App() {
     setMessages(prev => [...prev, newMessage]);
   }, [setMessages]);
 
+  const handleDeleteConversation = useCallback((conversation) => {
+    if (!conversation) {
+      return;
+    }
+
+    const messageIdsToRemove = [
+      conversation.originalUserMessage?.id,
+      conversation.originalAiMessage?.id,
+    ].filter(Boolean);
+
+    if (messageIdsToRemove.length === 0) {
+      return;
+    }
+
+    setMessages((prev) => {
+      const next = prev.filter((message) => !messageIdsToRemove.includes(message.id));
+      return next.length === prev.length ? prev : next;
+    });
+
+    setThirtyDayMessages((prev) => {
+      const next = prev.filter((message) => !messageIdsToRemove.includes(message.id));
+      return next.length === prev.length ? prev : next;
+    });
+
+    setSelectedMessages((prev) => {
+      if (!prev.size) {
+        return prev;
+      }
+
+      let changed = false;
+      const next = new Set(prev);
+
+      if (conversation.id && next.delete(conversation.id)) {
+        changed = true;
+      }
+
+      if (next.size && messageIdsToRemove.length) {
+        const selectedEntries = Array.from(next);
+
+        selectedEntries.forEach((selectedId) => {
+          if (
+            messageIdsToRemove.some((messageId) =>
+              conversationIdMatchesMessage(selectedId, messageId)
+            )
+          ) {
+            next.delete(selectedId);
+            changed = true;
+          }
+        });
+      }
+
+      return changed ? next : prev;
+    });
+  }, []);
+
+  const handleDeleteResource = useCallback((resourceInfo) => {
+    if (!resourceInfo) {
+      return;
+    }
+
+    const target = {
+      url: resourceInfo.url,
+      title: resourceInfo.title,
+      sourceMessages: resourceInfo.sourceMessages || [],
+    };
+
+    setMessages((prev) => removeResourceFromMessages(prev, target));
+    setThirtyDayMessages((prev) => removeResourceFromMessages(prev, target));
+
+    if (resourceInfo.sourceMessages?.length) {
+      setSelectedMessages((prev) => {
+        if (!prev.size) {
+          return prev;
+        }
+
+        let changed = false;
+        const next = new Set(prev);
+
+        resourceInfo.sourceMessages.forEach((source) => {
+          if (source?.conversationCardId && next.delete(source.conversationCardId)) {
+            changed = true;
+          }
+        });
+
+        return changed ? next : prev;
+      });
+    }
+  }, []);
+
   const handleShowRAGConfig = useCallback(() => setShowRAGConfig(true), []);
   const handleCloseRAGConfig = useCallback(() => setShowRAGConfig(false), []);
   const handleShowAdmin = useCallback(() => setShowAdmin(true), []);
@@ -739,6 +912,8 @@ function App() {
               isGeneratingNotes={isGeneratingNotes}
               storedMessageCount={messages.length}
               isServerAvailable={isServerAvailable}
+              onDeleteConversation={handleDeleteConversation}
+              onDeleteResource={handleDeleteResource}
               onClose={() => setShowNotebook(false)}
             />
           )}

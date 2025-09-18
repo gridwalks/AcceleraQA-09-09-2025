@@ -16,6 +16,8 @@ const NotebookOverlay = ({
   isGeneratingNotes,
   storedMessageCount,
   isServerAvailable,
+  onDeleteConversation,
+  onDeleteResource,
   onClose
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -104,6 +106,8 @@ const NotebookOverlay = ({
             searchTerm={searchTerm}
             sortOrder={sortOrder}
             activeTab={activeTab}
+            onDeleteConversation={onDeleteConversation}
+            onDeleteResource={onDeleteResource}
           />
         </div>
       </div>

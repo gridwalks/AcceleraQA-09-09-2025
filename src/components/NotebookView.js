@@ -1,6 +1,20 @@
 import React, { memo, useMemo } from 'react';
 import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
-import { Cloud, Smartphone } from 'lucide-react';
+import { Cloud, Smartphone, Trash2 } from 'lucide-react';
+
+const normalizeResourceValue = (value) =>
+  typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+const createResourceKey = (resource, conversationId, index) => {
+  const normalizedUrl = normalizeResourceValue(resource?.url);
+  const normalizedTitle = normalizeResourceValue(resource?.title);
+
+  if (normalizedUrl || normalizedTitle) {
+    return `${normalizedUrl}|${normalizedTitle}`;
+  }
+
+  return `${conversationId || 'resource'}-${index}`;
+};
 
 const NotebookView = memo(({
   messages, // Current session messages
@@ -13,7 +27,9 @@ const NotebookView = memo(({
   isServerAvailable = true,
   searchTerm = '',
   sortOrder = 'desc',
-  activeTab = 'conversations'
+  activeTab = 'conversations',
+  onDeleteConversation,
+  onDeleteResource
 }) => {
   // Merge current session and stored messages
   const availableMessages = useMemo(
@@ -85,15 +101,66 @@ const NotebookView = memo(({
   });
 
   const allResources = useMemo(() => {
-    const map = new Map();
-    sortedConversations.forEach(conv => {
-      (conv.resources || []).forEach(res => {
-        if (res.url && res.title) {
-          map.set(res.url, { ...res, addedAt: res.addedAt || conv.timestamp });
+    const resourceMap = new Map();
+
+    sortedConversations.forEach((conversation) => {
+      const resources = conversation?.resources || [];
+      if (!resources.length) {
+        return;
+      }
+
+      const sourceMeta = {
+        messageId: conversation.originalAiMessage?.id || conversation.originalUserMessage?.id || conversation.id,
+        conversationId:
+          conversation.originalAiMessage?.conversationId ||
+          conversation.originalUserMessage?.conversationId ||
+          null,
+        conversationCardId: conversation.id,
+        storageStatus: conversation.isCurrent ? 'current' : conversation.isStored ? 'stored' : 'unknown',
+        isCurrent: Boolean(conversation.isCurrent),
+        isStored: Boolean(conversation.isStored),
+      };
+
+      resources.forEach((resource, index) => {
+        if (!resource) {
+          return;
+        }
+
+        const resourceKey = createResourceKey(resource, conversation.id, index);
+        const existing = resourceMap.get(resourceKey);
+
+        if (existing) {
+          const mergedSources = existing.sourceMessages ? [...existing.sourceMessages] : [];
+          const alreadyLinked = mergedSources.some(
+            (source) =>
+              source.messageId === sourceMeta.messageId &&
+              source.conversationCardId === sourceMeta.conversationCardId
+          );
+
+          if (!alreadyLinked) {
+            mergedSources.push(sourceMeta);
+          }
+
+          resourceMap.set(resourceKey, {
+            ...existing,
+            addedAt: existing.addedAt || resource.addedAt || conversation.timestamp,
+            description: existing.description || resource.description,
+            type: existing.type || resource.type,
+            sourceMessages: mergedSources,
+          });
+        } else {
+          resourceMap.set(resourceKey, {
+            ...resource,
+            key: resourceKey,
+            title: resource.title || resource.url || 'Untitled resource',
+            addedAt: resource.addedAt || conversation.timestamp,
+            sourceMessages: [sourceMeta],
+          });
         }
       });
     });
-    return Array.from(map.values());
+
+    return Array.from(resourceMap.values());
   }, [sortedConversations]);
 
   return (
@@ -233,6 +300,7 @@ const NotebookView = memo(({
                           isCurrentSession={true}
                           debugIndex={index}
                           storageStatus="current"
+                          onDeleteConversation={onDeleteConversation}
                         />
                       ))}
                     </div>
@@ -260,6 +328,7 @@ const NotebookView = memo(({
                           isCurrentSession={false}
                           debugIndex={index + currentConversations.length}
                           storageStatus="stored"
+                          onDeleteConversation={onDeleteConversation}
                         />
                       ))}
                     </div>
@@ -281,36 +350,13 @@ const NotebookView = memo(({
               </div>
             ) : (
               <div className="space-y-3 pb-4">
-                {allResources.map((resource, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors space-y-1"
-                  >
-                    {resource.url ? (
-                      <a
-                        href={resource.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-blue-600 hover:text-blue-800 block truncate"
-                      >
-                        {resource.title}
-                      </a>
-                    ) : (
-                      <span className="text-sm font-medium text-gray-900 block truncate">{resource.title}</span>
-                    )}
-                    <span className="text-xs text-gray-500 flex items-center justify-between">
-                      <span>
-                        {resource.type || 'Resource'}
-                        {resource.location ? ` • ${resource.location}` : ''}
-                        {resource.addedAt && (
-                          <> • {new Date(resource.addedAt).toLocaleString()}</>
-                        )}
-                      </span>
-                    </span>
-                    {resource.description && (
-                      <p className="text-xs text-gray-500 line-clamp-2">{resource.description}</p>
-                    )}
-                  </div>
+                {allResources.map((resource) => (
+                  <ResourceCard
+                    key={resource.key || resource.url || `${resource.title}-${resource.addedAt}`}
+                    resource={resource}
+                    onDeleteResource={onDeleteResource}
+                  />
+
                 ))}
               </div>
             )}
@@ -328,10 +374,33 @@ const ConversationCard = memo(({
   onToggleSelection,
   isCurrentSession,
   debugIndex,
-  storageStatus = 'unknown'
+  storageStatus = 'unknown',
+  onDeleteConversation
 }) => {
   const handleToggle = () => {
     onToggleSelection(conversation.id);
+  };
+
+  const handleDelete = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (typeof onDeleteConversation !== 'function') {
+      return;
+    }
+
+    const timestampLabel = conversation.timestamp
+      ? new Date(conversation.timestamp).toLocaleString()
+      : 'this conversation';
+
+    const shouldDelete =
+      typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm(`Delete the conversation saved on ${timestampLabel}?`)
+        : true;
+
+    if (shouldDelete) {
+      onDeleteConversation(conversation);
+    }
   };
 
   const getStorageStatusColor = () => {
@@ -379,12 +448,25 @@ const ConversationCard = memo(({
                 {conversation.isCurrent ? 'C' : ''}{conversation.isStored ? 'S' : ''}
               </span>
             </div>
-            <time
-              className="text-xs text-gray-500"
-              dateTime={conversation.timestamp}
-            >
-              {new Date(conversation.timestamp).toLocaleString()}
-            </time>
+
+            <div className="flex items-center space-x-2">
+              <time
+                className="text-xs text-gray-500"
+                dateTime={conversation.timestamp}
+              >
+                {new Date(conversation.timestamp).toLocaleString()}
+              </time>
+              {typeof onDeleteConversation === 'function' && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                  aria-label="Delete conversation"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           {conversation.userContent && (
@@ -420,5 +502,92 @@ const ConversationCard = memo(({
 
 ConversationCard.displayName = 'ConversationCard';
 NotebookView.displayName = 'NotebookView';
+
+const ResourceCard = memo(({ resource, onDeleteResource }) => {
+  if (!resource) {
+    return null;
+  }
+
+  const handleDelete = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (typeof onDeleteResource !== 'function') {
+      return;
+    }
+
+    const occurrences = resource.sourceMessages?.length || 1;
+    const confirmationMessage =
+      occurrences > 1
+        ? `Remove this resource from ${occurrences} saved conversations?`
+        : 'Remove this resource from your notebook?';
+
+    const shouldDelete =
+      typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm(confirmationMessage)
+        : true;
+
+    if (shouldDelete) {
+      onDeleteResource(resource);
+    }
+  };
+
+  const addedAtLabel = resource.addedAt
+    ? new Date(resource.addedAt).toLocaleString()
+    : null;
+  const occurrencesLabel = resource.sourceMessages?.length
+    ? `${resource.sourceMessages.length} ${
+        resource.sourceMessages.length === 1 ? 'conversation' : 'conversations'
+      }`
+    : null;
+
+  return (
+    <div className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        {resource.url ? (
+          <a
+            href={resource.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 block truncate"
+          >
+            {resource.title}
+          </a>
+        ) : (
+          <span className="text-sm font-medium text-gray-900 block truncate">
+            {resource.title}
+          </span>
+        )}
+        {typeof onDeleteResource === 'function' && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+            aria-label="Delete resource"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      <div className="text-xs text-gray-500 flex flex-wrap items-center gap-2">
+        <span>
+          {resource.type || 'Resource'}
+          {resource.location ? ` • ${resource.location}` : ''}
+        </span>
+        {addedAtLabel && <span>• {addedAtLabel}</span>}
+        {occurrencesLabel && (
+          <span className="uppercase tracking-wide bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+            {occurrencesLabel}
+          </span>
+        )}
+      </div>
+      {resource.description && (
+        <p className="text-xs text-gray-500 line-clamp-2">{resource.description}</p>
+      )}
+    </div>
+  );
+});
+
+ResourceCard.displayName = 'ResourceCard';
 
 export default NotebookView;

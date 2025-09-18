@@ -49,7 +49,7 @@ class RAGService {
       }
     }
 
-    ['title', 'description', 'category', 'version'].forEach(field => {
+    ['fileName', 'title', 'description', 'category', 'version'].forEach(field => {
       if (typeof sanitized[field] === 'string') {
         sanitized[field] = sanitized[field].trim();
         if (!sanitized[field]) {

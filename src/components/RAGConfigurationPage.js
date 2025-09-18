@@ -34,6 +34,20 @@ const describeConversionSource = (conversion) => {
   return conversionLabels[conversion] || null;
 };
 
+const getDocumentTitle = (doc) => {
+  const rawTitle = doc?.metadata?.title;
+
+  if (typeof rawTitle === 'string') {
+    const trimmedTitle = rawTitle.trim();
+
+    if (trimmedTitle) {
+      return trimmedTitle;
+    }
+  }
+
+  return doc?.filename || '';
+};
+
 const USER_DOCUMENT_LIMIT = 20;
 
 const RAGConfigurationPage = ({ user, onClose }) => {
@@ -652,62 +666,77 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                          {documents.map((doc) => (
-                            <tr key={doc.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3">
-                                <div className="flex items-center space-x-3">
-                                  <span className="text-2xl">{getFileTypeIcon(doc.type)}</span>
-                                  <div className="min-w-0">
-                                    <p
-                                      className="text-sm font-medium text-gray-900 truncate max-w-[240px]"
-                                      title={doc.filename}
-                                    >
-                                      {doc.filename}
-                                    </p>
-                                    {doc.metadata?.conversion && doc.metadata?.originalFilename && (
-                                      <p className="text-xs text-gray-500 mt-1">
-                                        <span className="font-medium text-gray-600">Original:</span> {doc.metadata.originalFilename} (converted from {describeConversionSource(doc.metadata.conversion) || 'the uploaded format'})
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {(doc.metadata?.category || 'General')}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {doc.metadata?.version || '—'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                                {new Date(doc.createdAt).toLocaleDateString()}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {doc.metadata?.tags && doc.metadata.tags.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {doc.metadata.tags.map((tag, index) => (
-                                      <span
-                                        key={index}
-                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                          {documents.map((doc) => {
+                            const rawTitle = typeof doc?.metadata?.title === 'string' ? doc.metadata.title.trim() : '';
+                            const displayTitle = getDocumentTitle(doc);
+                            const storedFilename = doc?.filename || '';
+                            const showStoredFilename = Boolean(rawTitle) && storedFilename && displayTitle !== storedFilename;
+
+                            return (
+                              <tr key={doc.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="text-2xl">{getFileTypeIcon(doc.type)}</span>
+                                    <div className="min-w-0">
+                                      <p
+                                        className="text-sm font-semibold text-gray-900 truncate max-w-[240px]"
+                                        title={displayTitle}
                                       >
-                                        {tag}
-                                      </span>
-                                    ))}
+                                        {displayTitle}
+                                      </p>
+                                      {showStoredFilename && (
+                                        <p
+                                          className="text-xs text-gray-500 truncate max-w-[240px]"
+                                          title={storedFilename}
+                                        >
+                                          {storedFilename}
+                                        </p>
+                                      )}
+                                      {doc.metadata?.conversion && doc.metadata?.originalFilename && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          <span className="font-medium text-gray-600">Original:</span> {doc.metadata.originalFilename} (converted from {describeConversionSource(doc.metadata.conversion) || 'the uploaded format'})
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
-                                ) : (
-                                  '—'
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                <button
-                                  onClick={() => handleDelete(doc.id, doc.filename)}
-                                  className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                                  aria-label={`Delete ${doc.filename}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700">
+                                  {(doc.metadata?.category || 'General')}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700">
+                                  {doc.metadata?.version || '—'}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                                  {new Date(doc.createdAt).toLocaleDateString()}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700">
+                                  {doc.metadata?.tags && doc.metadata.tags.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {doc.metadata.tags.map((tag, index) => (
+                                        <span
+                                          key={index}
+                                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                        >
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    '—'
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    onClick={() => handleDelete(doc.id, displayTitle || doc.filename)}
+                                    className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                    aria-label={`Delete ${displayTitle || doc.filename}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

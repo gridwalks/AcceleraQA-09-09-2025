@@ -1,7 +1,8 @@
 // src/components/ChatArea.js - DEPLOYMENT READY (fixes DatabaseOff issue)
 
-import React from 'react';
-import { Send, Loader2, Database, Paperclip, X, ExternalLink } from 'lucide-react';
+import React, { useCallback } from 'react';
+import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown } from 'lucide-react';
+import { exportToWord } from '../utils/exportUtils';
 
 const isPdfAttachment = (file) => {
   if (!file) return false;
@@ -111,6 +112,18 @@ const ChatArea = ({
   setUploadedFile,
   cooldown, // rate-limit cooldown (seconds)
 }) => {
+  const handleExportStudyNotes = useCallback((studyNotesMessage) => {
+    if (!studyNotesMessage) {
+      return;
+    }
+
+    try {
+      exportToWord(studyNotesMessage);
+    } catch (error) {
+      console.error('Failed to export study notes to Word:', error);
+    }
+  }, []);
+
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden bg-white rounded-lg shadow-sm border border-gray-200">
       {/* Chat Header with RAG Toggle */}
@@ -185,6 +198,9 @@ const ChatArea = ({
                 const messageText = typeof message.content === 'string' ? message.content : '';
                 const hasMessageText = messageText.trim().length > 0;
                 const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+                const canExportStudyNotes = Boolean(
+                  message.isStudyNotes && (message.studyNotesData?.content || message.content)
+                );
 
                 return (
                   <div key={index} className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}>
@@ -310,6 +326,39 @@ const ChatArea = ({
                               </div>
                             )}
                           </div>
+                        </div>
+                      )}
+
+                      {message.isStudyNotes && (
+                        <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
+                              <BookOpen className="h-4 w-4" />
+                              <span>Study notes ready</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleExportStudyNotes(message)}
+                              disabled={!canExportStudyNotes}
+                              className={`inline-flex items-center gap-2 rounded-md px-3 py-1 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                                canExportStudyNotes
+                                  ? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
+                                  : 'bg-blue-100 text-blue-300 cursor-not-allowed focus:ring-blue-200'
+                              }`}
+                              aria-label="Export study notes to Word"
+                              title={
+                                canExportStudyNotes
+                                  ? 'Download a Word copy of these study notes.'
+                                  : 'Study notes are not ready to export yet.'
+                              }
+                            >
+                              <FileDown className="h-4 w-4" />
+                              <span>Export to Word</span>
+                            </button>
+                          </div>
+                          <p className="mt-2 text-xs text-blue-600">
+                            Save these notes in your Notebook or export a Word copy for offline review.
+                          </p>
                         </div>
                       )}
                     </div>

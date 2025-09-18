@@ -42,6 +42,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const [debugInfo, setDebugInfo] = useState(null);
   const [authDebug, setAuthDebug] = useState(null);
   const [uploadMetadata, setUploadMetadata] = useState({
+    fileName: '',
     title: '',
     description: '',
     tags: '',
@@ -205,7 +206,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
       setSelectedFile(file);
       setUploadMetadata(prev => ({
         ...prev,
-        title: file.name.replace(/\.[^/.]+$/, '')
+        fileName: file.name,
+        title: ''
       }));
     }
   };
@@ -230,6 +232,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     try {
       const metadata = {
         ...uploadMetadata,
+        fileName: uploadMetadata.fileName || selectedFile.name,
         tags: uploadMetadata.tags
           .split(',')
           .map(tag => tag.trim())
@@ -272,9 +275,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         type: 'success',
         message: successMessage
       });
-      
+
       setSelectedFile(null);
       setUploadMetadata({
+        fileName: '',
         title: '',
         description: '',
         tags: '',
@@ -481,6 +485,19 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                   </div>
 
                   <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
+                        File Name
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadMetadata.fileName}
+                        readOnly
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-900 placeholder-gray-500"
+                        placeholder="Select a file to populate the file name"
+                      />
+                    </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-1">
                         Title

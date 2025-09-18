@@ -1,4 +1,4 @@
-// src/components/RAGConfigurationPage.js - Fixed authentication for OpenAI File Search
+// src/components/RAGConfigurationPage.js - Document management screen for the knowledge base
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Upload,
@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
-import { getRagBackendLabel } from '../config/ragConfig';
 import { hasAdminRole } from '../utils/auth';
 
 const describeConversionSource = (conversion) => {
@@ -72,9 +71,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const documentLimitMessage = `You have reached the maximum of ${USER_DOCUMENT_LIMIT} documents (${documents.length}/${USER_DOCUMENT_LIMIT}). Delete an existing document before uploading a new one.`;
   const documentCountLabel = isAdmin
     ? `${documents.length} document${documents.length === 1 ? '' : 's'} uploaded`
-    : `${documents.length} of ${USER_DOCUMENT_LIMIT} document uploads`;
-
-  const ragBackendLabel = getRagBackendLabel();
+    : `${documents.length} of ${USER_DOCUMENT_LIMIT} document uploads`
 
 
   // Enhanced authentication debugging
@@ -376,7 +373,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
             <Database className="h-6 w-6 text-blue-600" />
             <div>
               <h2 className="text-xl font-semibold text-gray-900">My Documents</h2>
-              <p className="text-sm text-gray-500">Upload documents and configure search with OpenAI File Search</p>
+              <p className="text-sm text-gray-500">Upload documents to power your workspace knowledge base</p>
             </div>
           </div>
           <button
@@ -488,7 +485,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
             <div className="bg-gray-50 p-6 rounded-lg">
                 <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
                   <Upload className="h-5 w-5" />
-                  <span>Upload Document ({ragBackendLabel} Storage)</span>
+                  <span>Upload Document to Knowledge Base</span>
                 </h3>
 
                 {hasReachedDocumentLimit && (
@@ -626,7 +623,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 {isLoading ? (
                   <div className="text-center py-12">
                     <Loader className="h-8 w-8 text-blue-600 mx-auto animate-spin mb-4" />
-                    <p className="text-gray-600">Loading documents from OpenAI backend...</p>
+                    <p className="text-gray-600">Loading your uploaded documents...</p>
                   </div>
                 ) : documents.length === 0 ? (
                   <div className="text-center py-12 bg-gray-50 rounded-lg">

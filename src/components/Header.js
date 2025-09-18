@@ -153,7 +153,7 @@ const Header = memo(({
                 </button>
 
                 <a
-                  href="/privacy-policy.html"
+                  href="https://acceleraqa-main.netlify.app/privacy"
                   onClick={() => setMenuOpen(false)}
                   className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   aria-label="View terms and policies"

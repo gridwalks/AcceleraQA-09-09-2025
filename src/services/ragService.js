@@ -11,6 +11,18 @@ const DEFAULT_NEON_ENDPOINTS = Array.from(new Set([
   '/.netlify/functions/neon-rag',
 ]));
 
+const getFirstNonEmptyString = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return '';
+};
+
 class RAGService {
   constructor() {
     this.apiUrl = openaiService.baseUrl;
@@ -21,6 +33,7 @@ class RAGService {
     this.activeNeonEndpointIndex = 0;
     this.docsEndpoint = RAG_DOCS_FUNCTION;
     this.convertDocxToPdfIfNeeded = convertDocxToPdfIfNeeded;
+    this.documentMetadataCache = new Map();
   }
 
   sanitizeMetadata(metadata) {
@@ -59,6 +72,77 @@ class RAGService {
     });
 
     return sanitized;
+  }
+
+  clearDocumentMetadataCache(userId) {
+    if (!userId) {
+      return;
+    }
+    this.documentMetadataCache.delete(userId);
+  }
+
+  buildDocumentMetadataLookup(documents = []) {
+    const lookup = new Map();
+
+    documents.forEach(doc => {
+      if (!doc) {
+        return;
+      }
+
+      const metadata = doc.metadata && typeof doc.metadata === 'object' ? doc.metadata : {};
+      const rawTitle = typeof metadata.title === 'string' ? metadata.title.trim() : '';
+      const filename = typeof doc.filename === 'string' ? doc.filename.trim() : '';
+      const entry = {
+        document: doc,
+        title: rawTitle,
+        filename,
+        displayTitle: rawTitle || filename,
+      };
+
+      const keys = [doc.id, doc.documentId, doc.fileId, doc.file_id]
+        .map(value => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean);
+
+      if (keys.length === 0 && filename) {
+        keys.push(filename);
+      }
+
+      keys.forEach(key => {
+        if (!lookup.has(key)) {
+          lookup.set(key, entry);
+        }
+      });
+    });
+
+    return lookup;
+  }
+
+  async getDocumentMetadataLookup(userId, { forceRefresh = false } = {}) {
+    if (!userId || this.isNeonBackend()) {
+      return new Map();
+    }
+
+    const cached = this.documentMetadataCache.get(userId);
+    if (cached && !forceRefresh) {
+      return cached.lookup;
+    }
+
+    try {
+      const documents = await this.getDocuments(userId);
+      const lookup = this.buildDocumentMetadataLookup(documents);
+      this.documentMetadataCache.set(userId, {
+        lookup,
+        documents,
+        timestamp: Date.now(),
+      });
+      return lookup;
+    } catch (error) {
+      console.warn('Failed to refresh document metadata cache:', error);
+      if (cached?.lookup) {
+        return cached.lookup;
+      }
+      return new Map();
+    }
   }
 
   isNeonBackend() {
@@ -284,6 +368,10 @@ class RAGService {
         document: documentPayload,
       });
 
+      if (userId) {
+        this.clearDocumentMetadataCache(userId);
+      }
+
       return {
         ...response,
         metadata: documentPayload.metadata,
@@ -344,6 +432,10 @@ class RAGService {
       throw error;
     }
 
+    if (userId) {
+      this.clearDocumentMetadataCache(userId);
+    }
+
     return {
       fileId,
       vectorStoreId,
@@ -375,13 +467,14 @@ class RAGService {
       throw new Error(`Failed to load documents: ${error.message}`);
     }
 
+    let syncedDocuments = documents;
     try {
       const data = await openaiService.makeRequest('/files', {
         method: 'GET',
         headers: { 'OpenAI-Beta': 'assistants=v2' },
       });
       const ids = new Set((data.data || []).map(f => f.id));
-      const syncedDocuments = documents.filter(doc => ids.has(doc.id));
+      syncedDocuments = documents.filter(doc => ids.has(doc.id));
 
       if (syncedDocuments.length !== documents.length) {
         const missingDocuments = documents.filter(doc => !ids.has(doc.id));
@@ -393,12 +486,19 @@ class RAGService {
           )
         );
       }
-
-      return syncedDocuments;
     } catch (error) {
       console.warn('Failed to synchronize document metadata with OpenAI:', error);
-      return documents;
+      syncedDocuments = documents;
     }
+
+    const normalizedDocuments = Array.isArray(syncedDocuments) ? syncedDocuments : [];
+    this.documentMetadataCache.set(resolvedUserId, {
+      lookup: this.buildDocumentMetadataLookup(normalizedDocuments),
+      documents: normalizedDocuments,
+      timestamp: Date.now(),
+    });
+
+    return normalizedDocuments;
   }
 
   async deleteDocument(documentId, userId) {
@@ -421,7 +521,31 @@ class RAGService {
     } catch (error) {
       console.warn('Failed to remove document metadata after deletion:', error);
     }
+    this.clearDocumentMetadataCache(resolvedUserId);
     return { success: true };
+  }
+
+  async downloadDocument(documentReference, userId) {
+    if (this.isNeonBackend()) {
+      throw new Error('Document downloads are not supported when using the Neon backend');
+    }
+
+    const reference =
+      typeof documentReference === 'string'
+        ? { documentId: documentReference }
+        : { ...(documentReference || {}) };
+
+    const documentId = typeof reference.documentId === 'string' ? reference.documentId.trim() : '';
+    const fileId = typeof reference.fileId === 'string' ? reference.fileId.trim() : '';
+
+    if (!documentId && !fileId) {
+      throw new Error('documentId or fileId is required to download a document');
+    }
+
+    return await this.makeDocumentMetadataRequest('download_document', userId, {
+      ...(documentId ? { documentId } : {}),
+      ...(fileId ? { fileId } : {}),
+    });
   }
 
   async extractTextFromFile(file) {
@@ -501,16 +625,45 @@ class RAGService {
     }
 
 
-    const vectorStoreId = await this.getVectorStoreId(userId);
-
     const trimmedQuery = typeof query === 'string' ? query.trim() : '';
     if (!trimmedQuery) {
       throw new Error('Query is required to generate a response');
     }
 
+    const includeDefaultVectorStore = options?.includeDefaultVectorStore !== false;
+    let defaultVectorStoreId = null;
+    if (includeDefaultVectorStore) {
+      defaultVectorStoreId = await this.getVectorStoreId(userId);
+    }
+
+    const providedVectorStoreIds = [];
+    const optionVectorStores = options?.vectorStoreIds;
+    if (Array.isArray(optionVectorStores)) {
+      providedVectorStoreIds.push(...optionVectorStores);
+    } else if (typeof optionVectorStores === 'string') {
+      providedVectorStoreIds.push(optionVectorStores);
+    }
+
+    if (typeof options?.vectorStoreId === 'string') {
+      providedVectorStoreIds.push(options.vectorStoreId);
+    }
+
+    const normalizedProvidedIds = providedVectorStoreIds
+      .map(id => (typeof id === 'string' ? id.trim() : ''))
+      .filter(Boolean);
+
+    const combinedVectorStoreIds = Array.from(new Set([
+      ...(includeDefaultVectorStore && defaultVectorStoreId ? [defaultVectorStoreId] : []),
+      ...normalizedProvidedIds,
+    ])).filter(Boolean);
+
+    if (combinedVectorStoreIds.length === 0) {
+      throw new Error('No vector store available for search');
+    }
+
     const fileSearchTool = {
       type: 'file_search',
-      vector_store_ids: [vectorStoreId],
+      vector_store_ids: combinedVectorStoreIds,
     };
 
     const body = {
@@ -564,6 +717,31 @@ class RAGService {
       if (Array.isArray(item?.annotations)) annotations.push(...item.annotations);
     });
 
+    const uniqueDocumentKeys = new Set();
+    annotations.forEach(annotation => {
+      const docKeys = [
+        annotation?.metadata?.documentId,
+        annotation?.file_citation?.file_id,
+        annotation?.document?.id,
+        annotation?.document?.file_id,
+        annotation?.file_id,
+        annotation?.document_id,
+      ]
+        .map(value => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean);
+
+      docKeys.forEach(key => uniqueDocumentKeys.add(key));
+    });
+
+    let documentLookup = null;
+    if (!this.isNeonBackend() && userId && uniqueDocumentKeys.size > 0) {
+      try {
+        documentLookup = await this.getDocumentMetadataLookup(userId);
+      } catch (metadataError) {
+        console.warn('Failed to load document metadata for resource enrichment:', metadataError);
+      }
+    }
+
     const sources = annotations
       .filter(Boolean)
       .map((annotation, index) => {
@@ -575,27 +753,151 @@ class RAGService {
               ? annotation.quote
               : '';
 
-        const filename =
-          annotation.filename ||
-          annotation.file_name ||
-          annotation?.document?.filename ||
-          annotation?.document?.title ||
-          annotation?.file_citation?.filename ||
-          annotation?.file_citation?.file_name ||
-          annotation?.file_citation?.file_id ||
-          `Document ${index + 1}`;
+        const docKeyCandidates = [
+          annotation?.metadata?.documentId,
+          annotation?.file_citation?.file_id,
+          annotation?.document?.id,
+          annotation?.document?.file_id,
+          annotation?.file_id,
+          annotation?.document_id,
+        ]
+          .map(value => (typeof value === 'string' ? value.trim() : ''))
+          .filter(Boolean);
+
+        let metadataEntry = null;
+        if (documentLookup) {
+          for (const key of docKeyCandidates) {
+            const entry = documentLookup.get(key);
+            if (entry) {
+              metadataEntry = entry;
+              break;
+            }
+          }
+
+          if (!metadataEntry) {
+            const fallbackKeys = [
+              annotation.filename,
+              annotation.file_name,
+              annotation?.document?.filename,
+              annotation?.document?.file_name,
+            ]
+              .map(value => (typeof value === 'string' ? value.trim() : ''))
+              .filter(Boolean);
+
+            for (const key of fallbackKeys) {
+              const entry = documentLookup.get(key);
+              if (entry) {
+                metadataEntry = entry;
+                break;
+              }
+            }
+          }
+        }
+
+        const metadataFilename = metadataEntry?.filename || '';
+        const fallbackFilename =
+          getFirstNonEmptyString(
+            annotation.filename,
+            annotation.file_name,
+            annotation?.document?.filename,
+            annotation?.document?.file_name,
+            annotation?.file_citation?.filename,
+            annotation?.file_citation?.file_name,
+            metadataFilename,
+            annotation?.file_citation?.file_id
+          ) || `Document ${index + 1}`;
+
+        const metadataTitleCandidate = getFirstNonEmptyString(
+          metadataEntry?.title,
+          metadataEntry?.displayTitle,
+          metadataEntry?.document?.metadata?.title
+        );
+
+        const displayTitle =
+          getFirstNonEmptyString(
+            annotation.title,
+            annotation?.document?.title,
+            annotation?.file_citation?.title,
+            annotation?.document?.metadata?.title,
+            annotation.documentTitle,
+            metadataTitleCandidate,
+            fallbackFilename
+          ) || fallbackFilename;
+
+        const documentTitle =
+          getFirstNonEmptyString(
+            annotation.documentTitle,
+            annotation?.document?.title,
+            annotation?.document?.metadata?.title,
+            metadataTitleCandidate,
+            displayTitle
+          ) || displayTitle;
 
         const sourceId =
-          annotation.id ||
-          annotation?.file_citation?.file_id ||
-          annotation?.file_path ||
-          `source-${index}`;
+          getFirstNonEmptyString(
+            annotation.id,
+            annotation?.file_citation?.file_id,
+            annotation?.file_path,
+            docKeyCandidates[0]
+          ) || `source-${index}`;
+
+        const chunkIndex =
+          typeof annotation.chunkIndex === 'number'
+            ? annotation.chunkIndex
+            : typeof annotation.chunk_index === 'number'
+              ? annotation.chunk_index
+              : typeof annotation?.file_citation?.chunkIndex === 'number'
+                ? annotation.file_citation.chunkIndex
+                : typeof annotation?.file_citation?.chunk_index === 'number'
+                  ? annotation.file_citation.chunk_index
+                  : null;
+
+        const baseMetadata =
+          annotation.metadata && typeof annotation.metadata === 'object'
+            ? { ...annotation.metadata }
+            : {};
+
+        const metadata = { ...baseMetadata };
+        const metadataDocumentId =
+          metadataEntry?.document?.id || docKeyCandidates[0] || metadata.documentId || null;
+
+        if (metadataDocumentId) {
+          metadata.documentId = metadataDocumentId;
+        }
+
+        if (typeof chunkIndex === 'number') {
+          metadata.chunkIndex = chunkIndex;
+        }
+
+        const filenameForMetadata = metadataFilename || fallbackFilename;
+        if (filenameForMetadata) {
+          metadata.filename = filenameForMetadata;
+        }
+
+        if (!metadata.documentTitle && documentTitle) {
+          metadata.documentTitle = documentTitle;
+        }
+
+        if (!metadata.fileId && metadataEntry?.document?.fileId) {
+          metadata.fileId = metadataEntry.document.fileId;
+        }
+
+        if (!metadata.vectorStoreId && metadataEntry?.document?.vectorStoreId) {
+          metadata.vectorStoreId = metadataEntry.document.vectorStoreId;
+        }
+
+        if (!metadata.documentMetadata && metadataEntry?.document?.metadata && typeof metadataEntry.document.metadata === 'object') {
+          metadata.documentMetadata = { ...metadataEntry.document.metadata };
+        }
 
         return {
           ...annotation,
           id: sourceId,
-          filename,
+          filename: fallbackFilename,
+          title: displayTitle,
+          documentTitle,
           text: textSnippet,
+          metadata,
         };
       });
 
@@ -938,6 +1240,7 @@ export const search = (query, userId, options = {}) => ragService.search(query, 
 export const searchDocuments = (query, options = {}, userId) => ragService.searchDocuments(query, options, userId);
 export const getDocuments = (userId) => ragService.getDocuments(userId);
 export const deleteDocument = (documentId, userId) => ragService.deleteDocument(documentId, userId);
+export const downloadDocument = (documentReference, userId) => ragService.downloadDocument(documentReference, userId);
 export const generateRAGResponse = (query, userId, options = {}) => ragService.generateRAGResponse(query, userId, options);
 export const testConnection = (userId) => ragService.testConnection(userId);
 export const getStats = (userId) => ragService.getStats(userId);

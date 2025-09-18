@@ -287,4 +287,72 @@ describe('document persistence with Neon metadata store', () => {
     expect(docs).toHaveLength(1);
     expect(docs[0].metadata.version).toBe('Rev 2');
   });
+
+  test('generateRAGResponse merges user upload vector stores into search', async () => {
+    const uploadOptions = { documentApiMock, uploadFileId: 'file_rag_1', vectorStoreId: 'vs_default_user' };
+    const { ragService, mocks } = await loadRagService(uploadOptions);
+
+    const capturedBodies = [];
+    mocks.openai.makeRequest.mockImplementation(async (endpoint, options = {}) => {
+      if (endpoint === '/responses') {
+        const parsedBody = options?.body ? JSON.parse(options.body) : {};
+        capturedBodies.push(parsedBody);
+        return {
+          output: [],
+          output_text: 'Search answer',
+          usage: {},
+        };
+      }
+
+      if (endpoint === '/files') {
+        return { data: [] };
+      }
+
+      return { success: true };
+    });
+
+    const additionalVectorStore = 'vs_active_upload';
+    const response = await ragService.generateRAGResponse('Explain CAPA expectations', 'user-search-1', {
+      vectorStoreIds: [additionalVectorStore, '  ', null, additionalVectorStore],
+    });
+
+    expect(response.answer).toBe('Search answer');
+    expect(capturedBodies).toHaveLength(1);
+    const tools = capturedBodies[0]?.tools || [];
+    expect(tools).toHaveLength(1);
+    expect(tools[0].vector_store_ids).toEqual(['vs_default_user', additionalVectorStore]);
+  });
+});
+
+describe('downloadDocument', () => {
+  test('requests document content through metadata service', async () => {
+    const downloadResponse = {
+      filename: 'Quality_Event_SOP.pdf',
+      contentType: 'application/pdf',
+      content: Buffer.from('pdf-content').toString('base64'),
+      encoding: 'base64',
+    };
+
+    const documentApiMock = jest.fn(async (action, userId, payload) => {
+      if (action === 'download_document') {
+        expect(userId).toBe('user-download');
+        expect(payload).toEqual({ documentId: 'doc-download-1' });
+        return downloadResponse;
+      }
+      return { documents: [] };
+    });
+
+    const { ragService } = await loadRagService({ documentApiMock });
+    const result = await ragService.downloadDocument('doc-download-1', 'user-download');
+
+    expect(documentApiMock).toHaveBeenCalledWith('download_document', 'user-download', { documentId: 'doc-download-1' });
+    expect(result).toEqual(downloadResponse);
+  });
+
+  test('throws when no identifier provided', async () => {
+    const { ragService } = await loadRagService({ documentApiMock: jest.fn() });
+    await expect(ragService.downloadDocument({}, 'user-download')).rejects.toThrow(
+      'documentId or fileId is required to download a document'
+    );
+  });
 });

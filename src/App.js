@@ -484,8 +484,12 @@ function App() {
     const vectorStoreIdToUse = preparedFile ? null : activeDocument?.vectorStoreId || null;
 
     try {
+      const ragSearchOptions = activeDocument?.vectorStoreId
+        ? { vectorStoreIds: [activeDocument.vectorStoreId] }
+        : undefined;
+
       const response = ragEnabled && !preparedFile
-        ? await ragSearch(rawInput, user?.sub)
+        ? await ragSearch(rawInput, user?.sub, ragSearchOptions)
         : await openaiService.getChatResponse(
             rawInput,
             preparedFile,

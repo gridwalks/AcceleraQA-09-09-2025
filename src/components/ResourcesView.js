@@ -1,10 +1,11 @@
 // Enhanced with Learning Suggestions
-import React, { memo, useState, useEffect, useRef, useMemo } from 'react';
-import { Search, ChevronRight, ExternalLink, BookOpen, Brain, Sparkles, Target, Award, BookmarkPlus, Check, MessageSquare, FileText } from 'lucide-react';
+import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Search, ChevronRight, ExternalLink, BookOpen, Brain, Sparkles, Target, Award, BookmarkPlus, Check, MessageSquare, FileText, Loader2 } from 'lucide-react';
 import learningSuggestionsService from '../services/learningSuggestionsService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import ConversationList from './ConversationList';
 import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
+import ragService from '../services/ragService';
 
 
 const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [], thirtyDayMessages = [], onConversationSelect }) => {
@@ -22,6 +23,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [addedResources, setAddedResources] = useState(new Set());
   const [showToast, setShowToast] = useState(false);
+  const [downloadingResourceId, setDownloadingResourceId] = useState(null);
   const toastTimeoutRef = useRef(null);
 
   const conversations = useMemo(() => {
@@ -40,6 +42,76 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       (conv.aiContent && typeof conv.aiContent === 'string' && conv.aiContent.toLowerCase().includes(term))
     );
   }, [conversations, conversationSearchTerm]);
+
+  const getResourceKey = useCallback((resource, index = 0) => {
+    if (!resource) {
+      return `resource-${index}`;
+    }
+
+    return (
+      resource.id ||
+      resource?.metadata?.documentId ||
+      resource?.metadata?.fileId ||
+      resource.url ||
+      resource.title ||
+      `resource-${index}`
+    );
+  }, []);
+
+  const decodeBase64ToBlob = useCallback((base64, contentType = 'application/octet-stream') => {
+    if (!base64) {
+      return null;
+    }
+
+    const atobFn =
+      (typeof window !== 'undefined' && typeof window.atob === 'function')
+        ? window.atob
+        : (typeof globalThis !== 'undefined' && typeof globalThis.atob === 'function')
+          ? globalThis.atob
+          : null;
+
+    if (!atobFn) {
+      console.error('Base64 decoding is not supported in this environment.');
+      return null;
+    }
+
+    try {
+      const byteCharacters = atobFn(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i += 1) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      return new Blob([byteArray], { type: contentType || 'application/octet-stream' });
+    } catch (error) {
+      console.error('Failed to decode base64 document content:', error);
+      return null;
+    }
+  }, []);
+
+  const openBlobInNewTab = useCallback((blob, filename) => {
+    if (!blob) {
+      return;
+    }
+
+    const blobUrl = URL.createObjectURL(blob);
+    const newWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+
+    if (!newWindow) {
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      if (filename) {
+        link.download = filename;
+      }
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60 * 1000);
+  }, []);
 
   // Load learning suggestions on component mount and user change
   useEffect(() => {
@@ -100,12 +172,61 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const handleResourceClick = (resource) => {
-    // Analytics could be tracked here
-    if (resource.url) {
-      window.open(resource.url, '_blank', 'noopener,noreferrer');
+  const handleResourceClick = useCallback(async (resource, index = 0) => {
+    if (!resource) {
+      return;
     }
-  };
+
+    const directUrl = typeof resource.url === 'string' ? resource.url.trim() : '';
+    if (directUrl) {
+      window.open(directUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const metadata = resource.metadata || {};
+    const metadataUrl = typeof metadata.downloadUrl === 'string' ? metadata.downloadUrl.trim() : '';
+    if (metadataUrl) {
+      window.open(metadataUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const documentId = typeof metadata.documentId === 'string' ? metadata.documentId.trim() : '';
+    const fileId = typeof metadata.fileId === 'string' ? metadata.fileId.trim() : '';
+
+    if (!documentId && !fileId) {
+      console.warn('Resource does not include a downloadable reference.');
+      return;
+    }
+
+    const resourceKey = getResourceKey(resource, index);
+    setDownloadingResourceId(resourceKey);
+
+    try {
+      const response = await ragService.downloadDocument({ documentId, fileId });
+      if (!response) {
+        throw new Error('No response received from download request');
+      }
+
+      const responseUrl = typeof response.downloadUrl === 'string' ? response.downloadUrl.trim() : '';
+      if (responseUrl) {
+        window.open(responseUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      const blob = decodeBase64ToBlob(response.content, response.contentType);
+      if (!blob) {
+        throw new Error('Unable to decode document content');
+      }
+
+      const fallbackFilename = metadata.filename || metadata.documentTitle || resource.title || 'document';
+      const filename = response.filename || fallbackFilename;
+      openBlobInNewTab(blob, filename);
+    } catch (error) {
+      console.error('Failed to open resource document:', error);
+    } finally {
+      setDownloadingResourceId(current => (current === resourceKey ? null : current));
+    }
+  }, [decodeBase64ToBlob, getResourceKey, openBlobInNewTab]);
 
   const handleSuggestionClick = (suggestion) => {
     // For AI-generated suggestions, we might need to search for actual resources
@@ -300,16 +421,21 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
               {currentResources.length > 0 ? (
                 filteredResources.length > 0 ? (
-                  filteredResources.map((resource, index) => (
-                    <ResourceCard
-                      key={`${resource.id || resource.url || resource.title || 'resource'}-${index}`}
-                      resource={resource}
-                      onClick={() => handleResourceClick(resource)}
-                      colorClass={resourceTypeColors[resource.type] || resourceTypeColors.default}
-                      onAdd={() => handleAdd(resource)}
-                      isAdded={addedResources.has(resource.url || resource.id || resource.title)}
-                    />
-                  ))
+                  filteredResources.map((resource, index) => {
+                    const key = getResourceKey(resource, index);
+                    const addedKey = resource?.url || resource?.id || resource?.title;
+                    return (
+                      <ResourceCard
+                        key={`${key}-${index}`}
+                        resource={resource}
+                        onClick={() => handleResourceClick(resource, index)}
+                        colorClass={resourceTypeColors[resource.type] || resourceTypeColors.default}
+                        onAdd={() => handleAdd(resource)}
+                        isAdded={addedResources.has(addedKey)}
+                        isDownloading={downloadingResourceId === key}
+                      />
+                    );
+                  })
                 ) : (
                   <div className="text-center py-8">
                     <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
@@ -542,34 +668,62 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
 });
 
 // Individual resource card component (existing)
-const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded }) => {
+const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDownloading = false }) => {
   const [isHovered, setIsHovered] = useState(false);
   const badgeClass = colorClass || 'bg-gray-100 text-gray-800 border-gray-200';
-  const hasUrl = Boolean(resource?.url);
+  const metadata = resource?.metadata || {};
+  const directUrl = typeof resource?.url === 'string' ? resource.url.trim() : '';
+  const metadataUrl = typeof metadata.downloadUrl === 'string' ? metadata.downloadUrl.trim() : '';
+  const hasDownloadReference = Boolean(
+    metadataUrl ||
+    (typeof metadata.documentId === 'string' && metadata.documentId.trim()) ||
+    (typeof metadata.fileId === 'string' && metadata.fileId.trim())
+  );
+  const hasUrl = Boolean(directUrl) || hasDownloadReference;
+  const isDownloadingActive = Boolean(isDownloading);
 
   let hostname = '';
-  if (hasUrl) {
+  if (directUrl) {
     try {
-      hostname = new URL(resource.url).hostname;
+      hostname = new URL(directUrl).hostname;
     } catch (error) {
-      hostname = resource.url;
+      hostname = directUrl;
     }
+  } else if (hasDownloadReference) {
+    hostname = metadata.filename || metadata.documentTitle || resource?.title || 'Open document';
   }
 
   return (
     <div
-      className={`group border rounded-lg transition-all duration-300 cursor-pointer ${isAdded ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-gray-400 hover:shadow-sm'}`}
+      className={`group border rounded-lg transition-all duration-300 ${
+        isAdded ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-gray-400 hover:shadow-sm'
+      } ${isDownloadingActive ? 'cursor-wait opacity-80' : 'cursor-pointer'}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
+      onClick={(event) => {
+        if (isDownloadingActive) {
+          event.preventDefault();
+          return;
+        }
+        if (typeof onClick === 'function') {
           onClick();
         }
       }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (isDownloadingActive) {
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (typeof onClick === 'function') {
+            onClick();
+          }
+        }
+      }}
+      aria-disabled={isDownloadingActive}
     >
       <div className="p-4">
         <div className="flex items-start justify-between">
@@ -594,8 +748,14 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded }) =>
               <div className="flex items-center space-x-2">
                 {hasUrl ? (
                   <>
-                    <ExternalLink className="h-3 w-3" />
-                    <span className="truncate">{hostname}</span>
+                    {isDownloadingActive ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <ExternalLink className="h-3 w-3" />
+                    )}
+                    <span className="truncate">
+                      {hostname || (hasDownloadReference ? 'Open document' : '')}
+                    </span>
                   </>
                 ) : (
                   <>

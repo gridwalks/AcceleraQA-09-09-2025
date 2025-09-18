@@ -16,7 +16,7 @@ import {
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
 import { getRagBackendLabel } from '../config/ragConfig';
-
+import { hasAdminRole } from '../utils/auth';
 const describeConversionSource = (conversion) => {
   if (!conversion) {
     return null;
@@ -32,6 +32,8 @@ const describeConversionSource = (conversion) => {
 
   return conversionLabels[conversion] || null;
 };
+
+const USER_DOCUMENT_LIMIT = 20;
 
 const RAGConfigurationPage = ({ user, onClose }) => {
   const [documents, setDocuments] = useState([]);
@@ -49,6 +51,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     category: 'general',
     version: ''
   });
+
+  const isAdmin = hasAdminRole(user);
+  const hasReachedDocumentLimit = !isAdmin && documents.length >= USER_DOCUMENT_LIMIT;
+  const documentLimitMessage = `You have reached the maximum of ${USER_DOCUMENT_LIMIT} documents (${documents.length}/${USER_DOCUMENT_LIMIT}). Delete an existing document before uploading a new one.`;
 
   const ragBackendLabel = getRagBackendLabel();
 
@@ -200,6 +206,11 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
 
   const handleFileSelect = (event) => {
+    if (hasReachedDocumentLimit) {
+      event.target.value = '';
+      return;
+    }
+
     const file = event.target.files[0];
     if (file) {
       setSelectedFile(file);
@@ -212,6 +223,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   };
 
   const handleUpload = async () => {
+    if (hasReachedDocumentLimit) {
+      return;
+    }
+
     if (!selectedFile) {
       setError('Please select a file to upload');
       return;
@@ -457,7 +472,17 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                   <Upload className="h-5 w-5" />
                   <span>Upload Document ({ragBackendLabel} Storage)</span>
                 </h3>
-                
+
+                {hasReachedDocumentLimit && (
+                  <div className="mb-4 flex items-start space-x-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+                    <AlertCircle className="mt-0.5 h-5 w-5 text-amber-500" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">Document limit reached</p>
+                      <p className="text-sm text-amber-700">{documentLimitMessage}</p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -468,7 +493,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         type="file"
                         accept=".pdf,.txt,.md,.docx,.csv,.xlsx"
                         onChange={handleFileSelect}
-                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        disabled={hasReachedDocumentLimit}
+                        className="block w-full text-sm text-gray-500 disabled:cursor-not-allowed disabled:opacity-60 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
                     <p className="text-xs text-gray-500 mt-1">
                       DOCX, CSV, and XLSX files are automatically converted to PDF before upload. Persistent storage with the {ragBackendLabel} backend.
@@ -497,7 +523,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         type="text"
                         value={uploadMetadata.title}
                         onChange={(e) => setUploadMetadata(prev => ({ ...prev, title: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        disabled={hasReachedDocumentLimit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="Document title"
                       />
                     </div>
@@ -509,7 +536,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                       <select
                         value={uploadMetadata.category}
                         onChange={(e) => setUploadMetadata(prev => ({ ...prev, category: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                        disabled={hasReachedDocumentLimit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                       >
                         <option value="general">General</option>
                         <option value="gmp">GMP</option>
@@ -530,7 +558,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                         type="text"
                         value={uploadMetadata.version}
                         onChange={(e) => setUploadMetadata(prev => ({ ...prev, version: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        disabled={hasReachedDocumentLimit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="e.g. v1.2, Rev B"
                       />
                       <p className="text-xs text-gray-500 mt-1">
@@ -544,7 +573,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 <div className="mt-6 flex justify-end">
                   <button
                     onClick={handleUpload}
-                    disabled={!selectedFile || isLoading || !debugInfo?.success}
+                    disabled={!selectedFile || isLoading || !debugInfo?.success || hasReachedDocumentLimit}
                     className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
                   >
                     {isLoading ? (

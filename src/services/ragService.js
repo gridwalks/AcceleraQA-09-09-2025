@@ -501,16 +501,45 @@ class RAGService {
     }
 
 
-    const vectorStoreId = await this.getVectorStoreId(userId);
-
     const trimmedQuery = typeof query === 'string' ? query.trim() : '';
     if (!trimmedQuery) {
       throw new Error('Query is required to generate a response');
     }
 
+    const includeDefaultVectorStore = options?.includeDefaultVectorStore !== false;
+    let defaultVectorStoreId = null;
+    if (includeDefaultVectorStore) {
+      defaultVectorStoreId = await this.getVectorStoreId(userId);
+    }
+
+    const providedVectorStoreIds = [];
+    const optionVectorStores = options?.vectorStoreIds;
+    if (Array.isArray(optionVectorStores)) {
+      providedVectorStoreIds.push(...optionVectorStores);
+    } else if (typeof optionVectorStores === 'string') {
+      providedVectorStoreIds.push(optionVectorStores);
+    }
+
+    if (typeof options?.vectorStoreId === 'string') {
+      providedVectorStoreIds.push(options.vectorStoreId);
+    }
+
+    const normalizedProvidedIds = providedVectorStoreIds
+      .map(id => (typeof id === 'string' ? id.trim() : ''))
+      .filter(Boolean);
+
+    const combinedVectorStoreIds = Array.from(new Set([
+      ...(includeDefaultVectorStore && defaultVectorStoreId ? [defaultVectorStoreId] : []),
+      ...normalizedProvidedIds,
+    ])).filter(Boolean);
+
+    if (combinedVectorStoreIds.length === 0) {
+      throw new Error('No vector store available for search');
+    }
+
     const fileSearchTool = {
       type: 'file_search',
-      vector_store_ids: [vectorStoreId],
+      vector_store_ids: combinedVectorStoreIds,
     };
 
     const body = {

@@ -3,6 +3,18 @@ import { UI_CONFIG } from '../config/constants';
 const DEFAULT_LIMIT = UI_CONFIG?.MAX_RESOURCES_PER_RESPONSE || 5;
 const MIN_TOKEN_LENGTH = 3;
 
+function getFirstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return '';
+}
+
 function tokenizeText(text) {
   if (!text) {
     return [];
@@ -42,7 +54,20 @@ export function createAttachmentResources(attachments = []) {
         return null;
       }
 
-      const title = attachment.finalFileName || attachment.originalFileName || `Uploaded document ${index + 1}`;
+      const fallbackTitle =
+        getFirstNonEmptyString(attachment.finalFileName, attachment.originalFileName) ||
+        `Uploaded document ${index + 1}`;
+
+      const preferredTitle = getFirstNonEmptyString(
+        attachment.title,
+        attachment.displayName,
+        attachment.documentTitle,
+        attachment.fileTitle,
+        attachment?.metadata?.title,
+        attachment?.metadata?.documentTitle
+      );
+
+      const title = preferredTitle || fallbackTitle;
       const descriptionParts = [];
 
       if (attachment.converted) {
@@ -63,6 +88,17 @@ export function createAttachmentResources(attachments = []) {
 
       const idKey = `${attachment.finalFileName || attachment.originalFileName || 'upload'}-${index}`;
 
+      const metadata = {
+        originalFileName: attachment.originalFileName || null,
+        finalFileName: attachment.finalFileName || null,
+        converted: Boolean(attachment.converted),
+        conversionType: attachment.conversionType || null,
+      };
+
+      if (preferredTitle) {
+        metadata.documentTitle = preferredTitle;
+      }
+
       return {
         id: buildResourceId('user-upload', idKey, index),
         title,
@@ -71,12 +107,7 @@ export function createAttachmentResources(attachments = []) {
         description,
         origin: 'User Upload',
         location: 'Shared in this conversation',
-        metadata: {
-          originalFileName: attachment.originalFileName || null,
-          finalFileName: attachment.finalFileName || null,
-          converted: Boolean(attachment.converted),
-          conversionType: attachment.conversionType || null,
-        },
+        metadata,
       };
     })
     .filter(Boolean);
@@ -94,8 +125,64 @@ export function createKnowledgeBaseResources(sources = []) {
       return;
     }
 
-    const key = source.documentId || source.file_id || source.filename || `source-${index}`;
+    const key =
+      getFirstNonEmptyString(
+        source.documentId,
+        source.file_id,
+        source.fileId,
+        source.file_citation?.file_id,
+        source.document?.id
+      ) ||
+      source.filename ||
+      `source-${index}`;
     const snippet = truncateText(source.text || '', 180);
+
+    const fallbackFilename = getFirstNonEmptyString(
+      source.filename,
+      source.file_name,
+      source.document?.filename,
+      source.document?.file_name
+    );
+
+    const fallbackTitle = fallbackFilename || `Referenced document ${index + 1}`;
+
+    const preferredTitle = getFirstNonEmptyString(
+      source.title,
+      source.documentTitle,
+      source.metadata?.title,
+      source.metadata?.documentTitle,
+      source.document?.title,
+      source.document?.metadata?.title,
+      source.file_title,
+      source.display_name,
+      fallbackFilename
+    );
+
+    const resolvedTitle = preferredTitle || fallbackTitle;
+
+    const metadataDocumentId =
+      getFirstNonEmptyString(
+        source.documentId,
+        source.file_id,
+        source.fileId,
+        source.document?.id,
+        source.file_citation?.file_id
+      ) || null;
+
+    const chunkIndex =
+      typeof source.chunkIndex === 'number'
+        ? source.chunkIndex
+        : typeof source.chunk_index === 'number'
+          ? source.chunk_index
+          : typeof source.metadata?.chunkIndex === 'number'
+            ? source.metadata.chunkIndex
+            : typeof source.metadata?.chunk_index === 'number'
+              ? source.metadata.chunk_index
+              : typeof source.file_citation?.chunkIndex === 'number'
+                ? source.file_citation.chunkIndex
+                : typeof source.file_citation?.chunk_index === 'number'
+                  ? source.file_citation.chunk_index
+                  : null;
     const existing = deduped.get(key);
 
     if (existing) {
@@ -103,22 +190,41 @@ export function createKnowledgeBaseResources(sources = []) {
         const merged = `${existing.description} ${snippet}`.trim();
         existing.description = truncateText(merged, 220);
       }
+      if (resolvedTitle && existing.title !== resolvedTitle) {
+        existing.title = resolvedTitle;
+      }
+      if (!existing.metadata?.documentTitle && resolvedTitle) {
+        existing.metadata = {
+          ...(existing.metadata || {}),
+          documentTitle: resolvedTitle,
+        };
+      }
       deduped.set(key, existing);
       return;
     }
 
+    const metadata = {
+      documentId: metadataDocumentId,
+      chunkIndex,
+    };
+
+    const filenameForMetadata = fallbackFilename || null;
+    if (filenameForMetadata) {
+      metadata.filename = filenameForMetadata;
+    }
+    if (resolvedTitle) {
+      metadata.documentTitle = resolvedTitle;
+    }
+
     deduped.set(key, {
       id: buildResourceId('knowledge', key, index),
-      title: source.filename || `Referenced document ${index + 1}`,
+      title: resolvedTitle,
       type: 'Knowledge Base',
       url: source.url || null,
       description: snippet || 'Referenced from your uploaded knowledge base.',
       origin: 'Knowledge Base',
       location: 'Derived from retrieved document context',
-      metadata: {
-        documentId: source.documentId || null,
-        chunkIndex: typeof source.chunkIndex === 'number' ? source.chunkIndex : null,
-      },
+      metadata,
     });
   });
 

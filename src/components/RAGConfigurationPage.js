@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
-import { getRagBackendLabel, isNeonBackend } from '../config/ragConfig';
+import { getRagBackendLabel } from '../config/ragConfig';
 
 const describeConversionSource = (conversion) => {
   if (!conversion) {
@@ -51,7 +51,6 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   });
 
   const ragBackendLabel = getRagBackendLabel();
-  const neonBackendEnabled = isNeonBackend();
 
 
   // Enhanced authentication debugging
@@ -325,14 +324,6 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         await checkAuthentication();
       }
     }
-  };
-
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const getFileTypeIcon = (type) => {
@@ -617,19 +608,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                               Version
                             </th>
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Size
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Chunks
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                               Uploaded
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Storage
-                            </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Search
                             </th>
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                               Tags
@@ -666,20 +645,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                               <td className="px-4 py-3 text-sm text-gray-700">
                                 {doc.metadata?.version || '—'}
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {formatFileSize(doc.size)}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {doc.chunks}
-                              </td>
                               <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
                                 {new Date(doc.createdAt).toLocaleDateString()}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                                {ragBackendLabel}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700">
-                                {neonBackendEnabled ? 'PostgreSQL full-text search' : 'OpenAI vector search'}
                               </td>
                               <td className="px-4 py-3 text-sm text-gray-700">
                                 {doc.metadata?.tags && doc.metadata.tags.length > 0 ? (

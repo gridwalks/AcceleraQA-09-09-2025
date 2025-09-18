@@ -356,6 +356,7 @@ const NotebookView = memo(({
                     resource={resource}
                     onDeleteResource={onDeleteResource}
                   />
+
                 ))}
               </div>
             )}
@@ -447,6 +448,7 @@ const ConversationCard = memo(({
                 {conversation.isCurrent ? 'C' : ''}{conversation.isStored ? 'S' : ''}
               </span>
             </div>
+
             <div className="flex items-center space-x-2">
               <time
                 className="text-xs text-gray-500"

@@ -17,7 +17,6 @@ import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
 import { getRagBackendLabel } from '../config/ragConfig';
 import { hasAdminRole } from '../utils/auth';
-
 const describeConversionSource = (conversion) => {
   if (!conversion) {
     return null;

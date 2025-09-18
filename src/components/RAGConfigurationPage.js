@@ -71,7 +71,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const documentLimitMessage = `You have reached the maximum of ${USER_DOCUMENT_LIMIT} documents (${documents.length}/${USER_DOCUMENT_LIMIT}). Delete an existing document before uploading a new one.`;
   const documentCountLabel = isAdmin
     ? `${documents.length} document${documents.length === 1 ? '' : 's'} uploaded`
-    : `${documents.length} of ${USER_DOCUMENT_LIMIT} document uploads`;
+    : `${documents.length} of ${USER_DOCUMENT_LIMIT} document uploads`
 
 
   // Enhanced authentication debugging

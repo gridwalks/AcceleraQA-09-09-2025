@@ -355,4 +355,5 @@ describe('downloadDocument', () => {
       'documentId or fileId is required to download a document'
     );
   });
+
 });

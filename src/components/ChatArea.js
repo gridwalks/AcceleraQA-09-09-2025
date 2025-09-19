@@ -290,6 +290,16 @@ const ChatArea = ({
                                     ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
                                   }
                                 : {};
+                              const primarySourceTitle = [
+                                source?.documentTitle,
+                                source?.title,
+                                source?.filename,
+                              ].find(
+                                (value) => typeof value === 'string' && value.trim().length > 0
+                              );
+                              const resolvedSourceTitle = primarySourceTitle
+                                ? primarySourceTitle.trim()
+                                : `Document ${idx + 1}`;
 
                               const baseClasses = 'text-xs bg-white bg-opacity-50 p-2 rounded border transition-colors';
                               const interactiveClasses = sourceUrl
@@ -304,9 +314,9 @@ const ChatArea = ({
                                 >
                                   <div
                                     className={`font-medium truncate ${sourceUrl ? 'text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700' : ''}`.trim()}
-                                    title={source.filename}
+                                    title={resolvedSourceTitle}
                                   >
-                                    {source.filename || `Document ${idx + 1}`}
+                                    {resolvedSourceTitle}
                                   </div>
                                   <div className="text-gray-600 line-clamp-2">
                                     {(source.text || '').substring(0, 150)}...

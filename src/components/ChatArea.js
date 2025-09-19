@@ -239,7 +239,6 @@ const scoreSnippetCandidate = (text, weight) => {
   return score;
 };
 
-const getSourceSnippet = (source, options = {}) => {
   if (!source || typeof source !== 'object') {
     return null;
   }
@@ -547,6 +546,7 @@ const ChatArea = ({
                                 ? primarySourceTitle.trim()
                                 : `Document ${idx + 1}`;
 
+
                               const snippetExclusions = [
                                 resolvedSourceTitle,
                                 source?.filename,
@@ -558,6 +558,7 @@ const ChatArea = ({
                               const fullSnippet = getSourceSnippet(source, {
                                 excludeValues: snippetExclusions,
                               });
+                              
                               const displaySnippet =
                                 fullSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
                                 fullSnippet.length > SOURCE_SNIPPET_MAX_LENGTH

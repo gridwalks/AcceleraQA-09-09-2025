@@ -72,6 +72,38 @@ const getSourceUrl = (source) => {
   return resolved ? resolved.trim() : null;
 };
 
+const getFirstNonEmptyString = (...values) => {
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return '';
+};
+
+const resolveSourceTitle = (source, fallbackLabel) =>
+  getFirstNonEmptyString(
+    source?.documentTitle,
+    source?.title,
+    source?.metadata?.documentTitle,
+    source?.metadata?.title,
+    source?.document?.title,
+    source?.document?.metadata?.title,
+    source?.display_name,
+    source?.label,
+    source?.name,
+    source?.filename,
+    source?.file_name,
+    source?.document?.filename,
+    source?.document?.file_name
+  ) || fallbackLabel;
+
 const SOURCE_SNIPPET_MAX_LENGTH = 180;
 
 const SNIPPET_FIELD_KEYS = [
@@ -120,6 +152,27 @@ const BASE_EXCLUDED_KEYS = new Set([
 
 const normalizeSnippetText = (value) =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+const getFallbackSnippet = (source) =>
+  normalizeSnippetText(
+    getFirstNonEmptyString(
+      source?.text,
+      source?.snippet,
+      source?.quote,
+      source?.preview,
+      source?.excerpt,
+      source?.content,
+      source?.value,
+      source?.summary,
+      source?.chunkText,
+      source?.chunk_text,
+      source?.context,
+      source?.metadata?.text,
+      source?.metadata?.snippet,
+      source?.metadata?.excerpt,
+      source?.file_citation?.quote
+    )
+  );
 
 const buildExclusionSet = (values = []) => {
   const set = new Set();
@@ -203,7 +256,6 @@ const isDisallowedSnippet = (text) => {
 };
 
 function scoreSnippetCandidate(text, weight) {
-
   const length = text.length;
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
@@ -241,7 +293,6 @@ function scoreSnippetCandidate(text, weight) {
 }
 
 function getSourceSnippet(source, options = {}) {
-
   if (!source || typeof source !== 'object') {
     return null;
   }
@@ -280,7 +331,6 @@ function getSourceSnippet(source, options = {}) {
   }
 
   function traverse(value, weight = 2) {
-
     if (value == null) {
       return;
     }
@@ -314,14 +364,12 @@ function getSourceSnippet(source, options = {}) {
       const nextWeight = Math.max(weight, keyWeight);
       traverse(nested, nextWeight);
     });
-
   }
 
   traverse(source, 7);
 
   return bestCandidate ? bestCandidate.text : null;
 }
-
 
 const AttachmentPreview = ({ file, onRemove }) => {
   const needsConversion = file ? !isPdfAttachment(file) : false;
@@ -541,16 +589,10 @@ const ChatArea = ({
                                     ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
                                   }
                                 : {};
-                              const primarySourceTitle = [
-                                source?.documentTitle,
-                                source?.title,
-                                source?.filename,
-                              ].find(
-                                (value) => typeof value === 'string' && value.trim().length > 0
+                              const resolvedSourceTitle = resolveSourceTitle(
+                                source,
+                                `Document ${idx + 1}`
                               );
-                              const resolvedSourceTitle = primarySourceTitle
-                                ? primarySourceTitle.trim()
-                                : `Document ${idx + 1}`;
 
                               const snippetExclusions = [
                                 resolvedSourceTitle,
@@ -563,14 +605,15 @@ const ChatArea = ({
                               const fullSnippet = getSourceSnippet(source, {
                                 excludeValues: snippetExclusions,
                               });
-
+                              const fallbackSnippet = getFallbackSnippet(source);
+                              const resolvedSnippet = fullSnippet || fallbackSnippet || null;
                               const displaySnippet =
-                                fullSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
-                                fullSnippet.length > SOURCE_SNIPPET_MAX_LENGTH
-                                  ? `${fullSnippet
+                                resolvedSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
+                                resolvedSnippet.length > SOURCE_SNIPPET_MAX_LENGTH
+                                  ? `${resolvedSnippet
                                       .slice(0, SOURCE_SNIPPET_MAX_LENGTH)
                                       .trimEnd()}…`
-                                  : fullSnippet;
+                                  : resolvedSnippet;
 
                               const baseClasses = 'text-xs bg-white bg-opacity-50 p-2 rounded border transition-colors';
                               const interactiveClasses = sourceUrl
@@ -591,7 +634,7 @@ const ChatArea = ({
                                   </div>
                                   <div
                                     className="text-gray-600 line-clamp-2"
-                                    title={fullSnippet || undefined}
+                                    title={resolvedSnippet || undefined}
                                   >
                                     {displaySnippet || 'No excerpt available.'}
                                   </div>

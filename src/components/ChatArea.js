@@ -72,6 +72,305 @@ const getSourceUrl = (source) => {
   return resolved ? resolved.trim() : null;
 };
 
+const getFirstNonEmptyString = (...values) => {
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return '';
+};
+
+const resolveSourceTitle = (source, fallbackLabel) =>
+  getFirstNonEmptyString(
+    source?.documentTitle,
+    source?.title,
+    source?.metadata?.documentTitle,
+    source?.metadata?.title,
+    source?.document?.title,
+    source?.document?.metadata?.title,
+    source?.display_name,
+    source?.label,
+    source?.name,
+    source?.filename,
+    source?.file_name,
+    source?.document?.filename,
+    source?.document?.file_name
+  ) || fallbackLabel;
+
+const SOURCE_SNIPPET_MAX_LENGTH = 180;
+
+const SNIPPET_FIELD_KEYS = [
+  'text',
+  'snippet',
+  'quote',
+  'preview',
+  'excerpt',
+  'content',
+  'value',
+  'summary',
+  'chunkText',
+  'chunk_text',
+  'context',
+  'documentText',
+  'document_text',
+  'documentSnippet',
+  'document_snippet',
+  'textSnippet',
+  'text_snippet',
+  'highlight',
+  'passage',
+  'passage_text',
+  'passageText',
+  'segment',
+  'span',
+];
+
+const SNIPPET_FIELD_KEY_SET = new Set(SNIPPET_FIELD_KEYS.map(key => key.toLowerCase()));
+
+const SNIPPET_DISALLOWED_PATTERNS = [
+  /^(https?:\/\/|mailto:|ftp:|file:)/i,
+  /^[\w\s-]+\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|mp3|mp4|mov|avi|png|jpg|jpeg)$/i,
+];
+
+const BASE_EXCLUDED_KEYS = new Set([
+  'title',
+  'documenttitle',
+  'filename',
+  'file_name',
+  'name',
+  'label',
+  'displayname',
+  'documentname',
+]);
+
+const normalizeSnippetText = (value) =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+const getFallbackSnippet = (source) =>
+  normalizeSnippetText(
+    getFirstNonEmptyString(
+      source?.text,
+      source?.snippet,
+      source?.quote,
+      source?.preview,
+      source?.excerpt,
+      source?.content,
+      source?.value,
+      source?.summary,
+      source?.chunkText,
+      source?.chunk_text,
+      source?.context,
+      source?.metadata?.text,
+      source?.metadata?.snippet,
+      source?.metadata?.excerpt,
+      source?.file_citation?.quote
+    )
+  );
+
+const buildExclusionSet = (values = []) => {
+  const set = new Set();
+  values.forEach(value => {
+    if (typeof value === 'string') {
+      const normalized = normalizeSnippetText(value);
+      if (normalized) {
+        set.add(normalized.toLowerCase());
+      }
+    }
+  });
+  return set;
+};
+
+const getKeyWeight = (rawKey = '') => {
+  const key = String(rawKey).toLowerCase();
+
+  if (SNIPPET_FIELD_KEY_SET.has(key)) {
+    return 9;
+  }
+
+  if (BASE_EXCLUDED_KEYS.has(key)) {
+    return 0;
+  }
+
+  if (key.includes('snippet') || key.includes('excerpt') || key.includes('quote')) {
+    return 8;
+  }
+
+  if (
+    key.includes('highlight') ||
+    key.includes('passage') ||
+    key.includes('span') ||
+    key.includes('segment')
+  ) {
+    return 7;
+  }
+
+  if (
+    key.includes('text') ||
+    key.includes('content') ||
+    key.includes('context') ||
+    key.includes('paragraph') ||
+    key.includes('section') ||
+    key.includes('body') ||
+    key.includes('description') ||
+    key.includes('summary')
+  ) {
+    return 6;
+  }
+
+  if (key.includes('metadata') || key.includes('document') || key.includes('chunk')) {
+    return 4;
+  }
+
+  return 2;
+};
+
+const isDisallowedSnippet = (text) => {
+  if (!text) {
+    return true;
+  }
+
+  if (SNIPPET_DISALLOWED_PATTERNS.some(pattern => pattern.test(text))) {
+    return true;
+  }
+
+  if (/^document\s+\d+$/i.test(text)) {
+    return true;
+  }
+
+  if (/^[\d\-]+$/.test(text)) {
+    return true;
+  }
+
+  if (text.length <= 8 && !text.includes(' ')) {
+    return true;
+  }
+
+  return false;
+};
+
+function scoreSnippetCandidate(text, weight) {
+  const length = text.length;
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+  let score = weight;
+
+  if (length >= 200) score += 4;
+  else if (length >= 120) score += 3;
+  else if (length >= 80) score += 2.5;
+  else if (length >= 40) score += 2;
+  else if (length >= 24) score += 1.2;
+  else if (length >= 16) score += 0.6;
+
+  if (wordCount >= 25) score += 3;
+  else if (wordCount >= 12) score += 2;
+  else if (wordCount >= 7) score += 1.4;
+  else if (wordCount >= 4) score += 0.8;
+
+  if (wordCount <= 2 && length < 20) {
+    score -= 2;
+  }
+
+  if (/[.!?]/.test(text.slice(-1))) {
+    score += 0.5;
+  }
+
+  if (/[,;:]/.test(text)) {
+    score += 0.3;
+  }
+
+  if (text === text.toUpperCase() && wordCount >= 3) {
+    score -= 1.5;
+  }
+
+  return score;
+}
+
+function getSourceSnippet(source, options = {}) {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  const excludedValues = buildExclusionSet(options.excludeValues);
+
+  const visited = new WeakSet();
+  let bestCandidate = null;
+
+  function considerText(value, weight) {
+    const normalized = normalizeSnippetText(value);
+    if (!normalized) {
+      return;
+    }
+
+    if (excludedValues.has(normalized.toLowerCase())) {
+      return;
+    }
+
+    if (!/[a-z]/i.test(normalized)) {
+      return;
+    }
+
+    if (isDisallowedSnippet(normalized)) {
+      return;
+    }
+
+    const score = scoreSnippetCandidate(normalized, weight);
+    if (score <= 0) {
+      return;
+    }
+
+    if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && normalized.length > bestCandidate.text.length)) {
+      bestCandidate = { text: normalized, score };
+    }
+  }
+
+  function traverse(value, weight = 2) {
+    if (value == null) {
+      return;
+    }
+
+    if (typeof value === 'string') {
+      considerText(value, weight);
+      return;
+    }
+
+    if (typeof value !== 'object') {
+      return;
+    }
+
+    if (visited.has(value)) {
+      return;
+    }
+
+    visited.add(value);
+
+    if (Array.isArray(value)) {
+      value.forEach(entry => traverse(entry, weight));
+      return;
+    }
+
+    Object.entries(value).forEach(([key, nested]) => {
+      if (nested == null) {
+        return;
+      }
+
+      const keyWeight = getKeyWeight(key);
+      const nextWeight = Math.max(weight, keyWeight);
+      traverse(nested, nextWeight);
+    });
+  }
+
+  traverse(source, 7);
+
+  return bestCandidate ? bestCandidate.text : null;
+}
+
 const AttachmentPreview = ({ file, onRemove }) => {
   const needsConversion = file ? !isPdfAttachment(file) : false;
 
@@ -290,6 +589,31 @@ const ChatArea = ({
                                     ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
                                   }
                                 : {};
+                              const resolvedSourceTitle = resolveSourceTitle(
+                                source,
+                                `Document ${idx + 1}`
+                              );
+
+                              const snippetExclusions = [
+                                resolvedSourceTitle,
+                                source?.filename,
+                                source?.title,
+                                source?.documentTitle,
+                                source?.metadata?.documentTitle,
+                              ];
+
+                              const fullSnippet = getSourceSnippet(source, {
+                                excludeValues: snippetExclusions,
+                              });
+                              const fallbackSnippet = getFallbackSnippet(source);
+                              const resolvedSnippet = fullSnippet || fallbackSnippet || null;
+                              const displaySnippet =
+                                resolvedSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
+                                resolvedSnippet.length > SOURCE_SNIPPET_MAX_LENGTH
+                                  ? `${resolvedSnippet
+                                      .slice(0, SOURCE_SNIPPET_MAX_LENGTH)
+                                      .trimEnd()}…`
+                                  : resolvedSnippet;
 
                               const baseClasses = 'text-xs bg-white bg-opacity-50 p-2 rounded border transition-colors';
                               const interactiveClasses = sourceUrl
@@ -304,12 +628,15 @@ const ChatArea = ({
                                 >
                                   <div
                                     className={`font-medium truncate ${sourceUrl ? 'text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700' : ''}`.trim()}
-                                    title={source.filename}
+                                    title={resolvedSourceTitle}
                                   >
-                                    {source.filename || `Document ${idx + 1}`}
+                                    {resolvedSourceTitle}
                                   </div>
-                                  <div className="text-gray-600 line-clamp-2">
-                                    {(source.text || '').substring(0, 150)}...
+                                  <div
+                                    className="text-gray-600 line-clamp-2"
+                                    title={resolvedSnippet || undefined}
+                                  >
+                                    {displaySnippet || 'No excerpt available.'}
                                   </div>
                                   {sourceUrl && (
                                     <div className="mt-1 flex items-center gap-1 text-[11px] text-blue-600">

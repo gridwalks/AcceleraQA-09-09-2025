@@ -72,6 +72,157 @@ const getSourceUrl = (source) => {
   return resolved ? resolved.trim() : null;
 };
 
+const SOURCE_SNIPPET_MAX_LENGTH = 180;
+
+const SNIPPET_FIELD_KEYS = [
+  'text',
+  'snippet',
+  'quote',
+  'preview',
+  'excerpt',
+  'content',
+  'value',
+  'summary',
+  'chunkText',
+  'chunk_text',
+  'context',
+  'documentText',
+  'document_text',
+  'documentSnippet',
+  'document_snippet',
+  'textSnippet',
+  'text_snippet',
+  'highlight',
+  'passage',
+  'passage_text',
+  'passageText',
+  'segment',
+  'span',
+];
+
+const extractTextValue = (value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : '';
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const resolved = extractTextValue(entry);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    return '';
+  }
+
+  if (value && typeof value === 'object') {
+    const directKeys = [
+      'value',
+      'text',
+      'snippet',
+      'quote',
+      'preview',
+      'excerpt',
+      'content',
+      'summary',
+      'highlight',
+      'passage',
+      'passage_text',
+      'passageText',
+    ];
+
+    for (const key of directKeys) {
+      const nestedValue = value[key];
+      if (typeof nestedValue === 'string') {
+        const trimmed = nestedValue.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+    }
+
+    for (const key of directKeys) {
+      const nestedValue = value[key];
+      if (nestedValue && typeof nestedValue === 'object') {
+        const resolved = extractTextValue(nestedValue);
+        if (resolved) {
+          return resolved;
+        }
+      }
+    }
+  }
+
+  return '';
+};
+
+const getSourceSnippet = (source) => {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  const visited = new WeakSet();
+  const candidateValues = [];
+
+  const enqueueObject = (obj) => {
+    if (!obj || typeof obj !== 'object') {
+      return;
+    }
+
+    if (visited.has(obj)) {
+      return;
+    }
+
+    visited.add(obj);
+
+    SNIPPET_FIELD_KEYS.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        candidateValues.push(obj[key]);
+      }
+    });
+
+    if (Array.isArray(obj.highlights)) {
+      obj.highlights.forEach(highlight => {
+        candidateValues.push(highlight);
+      });
+    }
+
+    if (obj.metadata && typeof obj.metadata === 'object') {
+      enqueueObject(obj.metadata);
+    }
+
+    if (obj.document && typeof obj.document === 'object') {
+      enqueueObject(obj.document);
+    }
+
+    if (obj.file_citation && typeof obj.file_citation === 'object') {
+      enqueueObject(obj.file_citation);
+    }
+
+    if (Array.isArray(obj.annotations)) {
+      obj.annotations.forEach(annotation => enqueueObject(annotation));
+    }
+  };
+
+  enqueueObject(source);
+  enqueueObject(source.metadata);
+  enqueueObject(source.document);
+  enqueueObject(source.file_citation);
+
+  if (Array.isArray(source.annotations)) {
+    source.annotations.forEach(annotation => enqueueObject(annotation));
+  }
+
+  for (const value of candidateValues) {
+    const resolved = extractTextValue(value);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return null;
+};
+
 const AttachmentPreview = ({ file, onRemove }) => {
   const needsConversion = file ? !isPdfAttachment(file) : false;
 
@@ -290,6 +441,25 @@ const ChatArea = ({
                                     ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
                                   }
                                 : {};
+                              const primarySourceTitle = [
+                                source?.documentTitle,
+                                source?.title,
+                                source?.filename,
+                              ].find(
+                                (value) => typeof value === 'string' && value.trim().length > 0
+                              );
+                              const resolvedSourceTitle = primarySourceTitle
+                                ? primarySourceTitle.trim()
+                                : `Document ${idx + 1}`;
+
+                              const fullSnippet = getSourceSnippet(source);
+                              const displaySnippet =
+                                fullSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
+                                fullSnippet.length > SOURCE_SNIPPET_MAX_LENGTH
+                                  ? `${fullSnippet
+                                      .slice(0, SOURCE_SNIPPET_MAX_LENGTH)
+                                      .trimEnd()}…`
+                                  : fullSnippet;
 
                               const baseClasses = 'text-xs bg-white bg-opacity-50 p-2 rounded border transition-colors';
                               const interactiveClasses = sourceUrl
@@ -304,12 +474,15 @@ const ChatArea = ({
                                 >
                                   <div
                                     className={`font-medium truncate ${sourceUrl ? 'text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700' : ''}`.trim()}
-                                    title={source.filename}
+                                    title={resolvedSourceTitle}
                                   >
-                                    {source.filename || `Document ${idx + 1}`}
+                                    {resolvedSourceTitle}
                                   </div>
-                                  <div className="text-gray-600 line-clamp-2">
-                                    {(source.text || '').substring(0, 150)}...
+                                  <div
+                                    className="text-gray-600 line-clamp-2"
+                                    title={fullSnippet || undefined}
+                                  >
+                                    {displaySnippet || 'No excerpt available.'}
                                   </div>
                                   {sourceUrl && (
                                     <div className="mt-1 flex items-center gap-1 text-[11px] text-blue-600">

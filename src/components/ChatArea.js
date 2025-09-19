@@ -100,127 +100,221 @@ const SNIPPET_FIELD_KEYS = [
   'span',
 ];
 
-const extractTextValue = (value) => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : '';
-  }
+const SNIPPET_FIELD_KEY_SET = new Set(SNIPPET_FIELD_KEYS.map(key => key.toLowerCase()));
 
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      const resolved = extractTextValue(entry);
-      if (resolved) {
-        return resolved;
+const SNIPPET_DISALLOWED_PATTERNS = [
+  /^(https?:\/\/|mailto:|ftp:|file:)/i,
+  /^[\w\s-]+\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|mp3|mp4|mov|avi|png|jpg|jpeg)$/i,
+];
+
+const BASE_EXCLUDED_KEYS = new Set([
+  'title',
+  'documenttitle',
+  'filename',
+  'file_name',
+  'name',
+  'label',
+  'displayname',
+  'documentname',
+]);
+
+const normalizeSnippetText = (value) =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+const buildExclusionSet = (values = []) => {
+  const set = new Set();
+  values.forEach(value => {
+    if (typeof value === 'string') {
+      const normalized = normalizeSnippetText(value);
+      if (normalized) {
+        set.add(normalized.toLowerCase());
       }
     }
-    return '';
-  }
-
-  if (value && typeof value === 'object') {
-    const directKeys = [
-      'value',
-      'text',
-      'snippet',
-      'quote',
-      'preview',
-      'excerpt',
-      'content',
-      'summary',
-      'highlight',
-      'passage',
-      'passage_text',
-      'passageText',
-    ];
-
-    for (const key of directKeys) {
-      const nestedValue = value[key];
-      if (typeof nestedValue === 'string') {
-        const trimmed = nestedValue.trim();
-        if (trimmed.length > 0) {
-          return trimmed;
-        }
-      }
-    }
-
-    for (const key of directKeys) {
-      const nestedValue = value[key];
-      if (nestedValue && typeof nestedValue === 'object') {
-        const resolved = extractTextValue(nestedValue);
-        if (resolved) {
-          return resolved;
-        }
-      }
-    }
-  }
-
-  return '';
+  });
+  return set;
 };
 
-const getSourceSnippet = (source) => {
+const getKeyWeight = (rawKey = '') => {
+  const key = String(rawKey).toLowerCase();
+
+  if (SNIPPET_FIELD_KEY_SET.has(key)) {
+    return 9;
+  }
+
+  if (BASE_EXCLUDED_KEYS.has(key)) {
+    return 0;
+  }
+
+  if (key.includes('snippet') || key.includes('excerpt') || key.includes('quote')) {
+    return 8;
+  }
+
+  if (
+    key.includes('highlight') ||
+    key.includes('passage') ||
+    key.includes('span') ||
+    key.includes('segment')
+  ) {
+    return 7;
+  }
+
+  if (
+    key.includes('text') ||
+    key.includes('content') ||
+    key.includes('context') ||
+    key.includes('paragraph') ||
+    key.includes('section') ||
+    key.includes('body') ||
+    key.includes('description') ||
+    key.includes('summary')
+  ) {
+    return 6;
+  }
+
+  if (key.includes('metadata') || key.includes('document') || key.includes('chunk')) {
+    return 4;
+  }
+
+  return 2;
+};
+
+const isDisallowedSnippet = (text) => {
+  if (!text) {
+    return true;
+  }
+
+  if (SNIPPET_DISALLOWED_PATTERNS.some(pattern => pattern.test(text))) {
+    return true;
+  }
+
+  if (/^document\s+\d+$/i.test(text)) {
+    return true;
+  }
+
+  if (/^[\d\-]+$/.test(text)) {
+    return true;
+  }
+
+  if (text.length <= 8 && !text.includes(' ')) {
+    return true;
+  }
+
+  return false;
+};
+
+const scoreSnippetCandidate = (text, weight) => {
+  const length = text.length;
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+  let score = weight;
+
+  if (length >= 200) score += 4;
+  else if (length >= 120) score += 3;
+  else if (length >= 80) score += 2.5;
+  else if (length >= 40) score += 2;
+  else if (length >= 24) score += 1.2;
+  else if (length >= 16) score += 0.6;
+
+  if (wordCount >= 25) score += 3;
+  else if (wordCount >= 12) score += 2;
+  else if (wordCount >= 7) score += 1.4;
+  else if (wordCount >= 4) score += 0.8;
+
+  if (wordCount <= 2 && length < 20) {
+    score -= 2;
+  }
+
+  if (/[.!?]/.test(text.slice(-1))) {
+    score += 0.5;
+  }
+
+  if (/[,;:]/.test(text)) {
+    score += 0.3;
+  }
+
+  if (text === text.toUpperCase() && wordCount >= 3) {
+    score -= 1.5;
+  }
+
+  return score;
+};
+
   if (!source || typeof source !== 'object') {
     return null;
   }
 
+  const excludedValues = buildExclusionSet(options.excludeValues);
+
   const visited = new WeakSet();
-  const candidateValues = [];
+  let bestCandidate = null;
 
-  const enqueueObject = (obj) => {
-    if (!obj || typeof obj !== 'object') {
+  const considerText = (value, weight) => {
+    const normalized = normalizeSnippetText(value);
+    if (!normalized) {
       return;
     }
 
-    if (visited.has(obj)) {
+    if (excludedValues.has(normalized.toLowerCase())) {
       return;
     }
 
-    visited.add(obj);
-
-    SNIPPET_FIELD_KEYS.forEach(key => {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        candidateValues.push(obj[key]);
-      }
-    });
-
-    if (Array.isArray(obj.highlights)) {
-      obj.highlights.forEach(highlight => {
-        candidateValues.push(highlight);
-      });
+    if (!/[a-z]/i.test(normalized)) {
+      return;
     }
 
-    if (obj.metadata && typeof obj.metadata === 'object') {
-      enqueueObject(obj.metadata);
+    if (isDisallowedSnippet(normalized)) {
+      return;
     }
 
-    if (obj.document && typeof obj.document === 'object') {
-      enqueueObject(obj.document);
+    const score = scoreSnippetCandidate(normalized, weight);
+    if (score <= 0) {
+      return;
     }
 
-    if (obj.file_citation && typeof obj.file_citation === 'object') {
-      enqueueObject(obj.file_citation);
-    }
-
-    if (Array.isArray(obj.annotations)) {
-      obj.annotations.forEach(annotation => enqueueObject(annotation));
+    if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && normalized.length > bestCandidate.text.length)) {
+      bestCandidate = { text: normalized, score };
     }
   };
 
-  enqueueObject(source);
-  enqueueObject(source.metadata);
-  enqueueObject(source.document);
-  enqueueObject(source.file_citation);
-
-  if (Array.isArray(source.annotations)) {
-    source.annotations.forEach(annotation => enqueueObject(annotation));
-  }
-
-  for (const value of candidateValues) {
-    const resolved = extractTextValue(value);
-    if (resolved) {
-      return resolved;
+  const traverse = (value, weight = 2) => {
+    if (value == null) {
+      return;
     }
-  }
 
-  return null;
+    if (typeof value === 'string') {
+      considerText(value, weight);
+      return;
+    }
+
+    if (typeof value !== 'object') {
+      return;
+    }
+
+    if (visited.has(value)) {
+      return;
+    }
+
+    visited.add(value);
+
+    if (Array.isArray(value)) {
+      value.forEach(entry => traverse(entry, weight));
+      return;
+    }
+
+    Object.entries(value).forEach(([key, nested]) => {
+      if (nested == null) {
+        return;
+      }
+
+      const keyWeight = getKeyWeight(key);
+      const nextWeight = Math.max(weight, keyWeight);
+      traverse(nested, nextWeight);
+    });
+  };
+
+  traverse(source, 7);
+
+  return bestCandidate ? bestCandidate.text : null;
 };
 
 const AttachmentPreview = ({ file, onRemove }) => {
@@ -452,7 +546,19 @@ const ChatArea = ({
                                 ? primarySourceTitle.trim()
                                 : `Document ${idx + 1}`;
 
-                              const fullSnippet = getSourceSnippet(source);
+
+                              const snippetExclusions = [
+                                resolvedSourceTitle,
+                                source?.filename,
+                                source?.title,
+                                source?.documentTitle,
+                                source?.metadata?.documentTitle,
+                              ];
+
+                              const fullSnippet = getSourceSnippet(source, {
+                                excludeValues: snippetExclusions,
+                              });
+                              
                               const displaySnippet =
                                 fullSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
                                 fullSnippet.length > SOURCE_SNIPPET_MAX_LENGTH

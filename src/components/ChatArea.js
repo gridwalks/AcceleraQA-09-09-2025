@@ -202,7 +202,8 @@ const isDisallowedSnippet = (text) => {
   return false;
 };
 
-const scoreSnippetCandidate = (text, weight) => {
+function scoreSnippetCandidate(text, weight) {
+
   const length = text.length;
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
@@ -237,7 +238,9 @@ const scoreSnippetCandidate = (text, weight) => {
   }
 
   return score;
-};
+}
+
+function getSourceSnippet(source, options = {}) {
 
   if (!source || typeof source !== 'object') {
     return null;
@@ -248,7 +251,7 @@ const scoreSnippetCandidate = (text, weight) => {
   const visited = new WeakSet();
   let bestCandidate = null;
 
-  const considerText = (value, weight) => {
+  function considerText(value, weight) {
     const normalized = normalizeSnippetText(value);
     if (!normalized) {
       return;
@@ -274,9 +277,10 @@ const scoreSnippetCandidate = (text, weight) => {
     if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && normalized.length > bestCandidate.text.length)) {
       bestCandidate = { text: normalized, score };
     }
-  };
+  }
 
-  const traverse = (value, weight = 2) => {
+  function traverse(value, weight = 2) {
+
     if (value == null) {
       return;
     }
@@ -310,12 +314,14 @@ const scoreSnippetCandidate = (text, weight) => {
       const nextWeight = Math.max(weight, keyWeight);
       traverse(nested, nextWeight);
     });
-  };
+
+  }
 
   traverse(source, 7);
 
   return bestCandidate ? bestCandidate.text : null;
-};
+}
+
 
 const AttachmentPreview = ({ file, onRemove }) => {
   const needsConversion = file ? !isPdfAttachment(file) : false;
@@ -546,7 +552,6 @@ const ChatArea = ({
                                 ? primarySourceTitle.trim()
                                 : `Document ${idx + 1}`;
 
-
                               const snippetExclusions = [
                                 resolvedSourceTitle,
                                 source?.filename,
@@ -558,7 +563,7 @@ const ChatArea = ({
                               const fullSnippet = getSourceSnippet(source, {
                                 excludeValues: snippetExclusions,
                               });
-                              
+
                               const displaySnippet =
                                 fullSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
                                 fullSnippet.length > SOURCE_SNIPPET_MAX_LENGTH

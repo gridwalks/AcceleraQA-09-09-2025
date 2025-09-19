@@ -203,6 +203,7 @@ const isDisallowedSnippet = (text) => {
 };
 
 function scoreSnippetCandidate(text, weight) {
+
   const length = text.length;
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
@@ -240,6 +241,7 @@ function scoreSnippetCandidate(text, weight) {
 }
 
 function getSourceSnippet(source, options = {}) {
+
   if (!source || typeof source !== 'object') {
     return null;
   }
@@ -278,6 +280,7 @@ function getSourceSnippet(source, options = {}) {
   }
 
   function traverse(value, weight = 2) {
+
     if (value == null) {
       return;
     }
@@ -311,12 +314,14 @@ function getSourceSnippet(source, options = {}) {
       const nextWeight = Math.max(weight, keyWeight);
       traverse(nested, nextWeight);
     });
+
   }
 
   traverse(source, 7);
 
   return bestCandidate ? bestCandidate.text : null;
 }
+
 
 const AttachmentPreview = ({ file, onRemove }) => {
   const needsConversion = file ? !isPdfAttachment(file) : false;
@@ -558,6 +563,7 @@ const ChatArea = ({
                               const fullSnippet = getSourceSnippet(source, {
                                 excludeValues: snippetExclusions,
                               });
+
                               const displaySnippet =
                                 fullSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
                                 fullSnippet.length > SOURCE_SNIPPET_MAX_LENGTH

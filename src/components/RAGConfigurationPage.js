@@ -191,10 +191,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         setTrainingResources(Array.isArray(resources) ? resources : []);
       }
     } catch (resourceError) {
-      console.error('Failed to load training resources:', resourceError);
+      console.error('Failed to load external resources:', resourceError);
       if (isMountedRef.current) {
         setTrainingResources([]);
-        setTrainingError('Failed to load training resources. Please try again.');
+        setTrainingError('Failed to load external resources. Please try again.');
       }
     } finally {
       if (isMountedRef.current) {
@@ -472,7 +472,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-220px)]">
           <div className="mb-6 border-b border-gray-200">
-            <nav className="flex space-x-4" aria-label="Document and training resource tabs">
+            <nav className="flex space-x-4" aria-label="Document and external resource tabs">
               <button
                 type="button"
                 onClick={() => setActiveTab('documents')}
@@ -496,7 +496,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <span>Training Resources</span>
+                <span>External Resources</span>
+
                 {trainingResources.length > 0 && (
                   <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs rounded-full bg-purple-50 text-purple-600">
                     {trainingResources.length}
@@ -844,10 +845,10 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
                       <BookOpen className="h-5 w-5 text-purple-600" />
-                      <span>Training Resources</span>
+                      <span>External Resources</span>
                     </h3>
                     <p className="text-sm text-gray-500">
-                      Access curated learning materials provided by your administrators.
+                      Access curated external references provided by your administrators.
                     </p>
                   </div>
                   <button
@@ -870,14 +871,14 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 {isLoadingTraining ? (
                   <div className="py-12 text-center text-gray-600">
                     <Loader className="h-6 w-6 animate-spin mx-auto mb-3 text-purple-500" />
-                    <p>Loading training resources...</p>
+                    <p>Loading external resources...</p>
                   </div>
                 ) : trainingResources.length === 0 ? (
                   <div className="py-12 text-center text-gray-600">
                     <BookOpen className="h-8 w-8 mx-auto mb-3 text-purple-500" />
-                    <h4 className="text-lg font-medium text-gray-900 mb-2">No training resources yet</h4>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">No external resources yet</h4>
                     <p className="text-sm">
-                      Training materials added by your administrators will appear here.
+                      External resources added by your administrators will appear here.
                     </p>
                   </div>
                 ) : (

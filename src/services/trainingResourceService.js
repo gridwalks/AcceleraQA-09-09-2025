@@ -6,7 +6,7 @@ class TrainingResourceService {
   }
 
   /**
-   * Load training resources from localStorage
+   * Load external resources from localStorage
    * @returns {Promise<Array>} array of resources
    */
   async getTrainingResources() {
@@ -14,13 +14,13 @@ class TrainingResourceService {
       const raw = localStorage.getItem(this.storageKey);
       return raw ? JSON.parse(raw) : [];
     } catch (error) {
-      console.error('Failed to load training resources from storage:', error);
+      console.error('Failed to load external resources from storage:', error);
       return [];
     }
   }
 
   /**
-   * Synchronously load training resources from localStorage
+   * Synchronously load external resources from localStorage
    * @returns {Array} array of resources
    */
   getTrainingResourcesSync() {
@@ -28,13 +28,13 @@ class TrainingResourceService {
       const raw = localStorage.getItem(this.storageKey);
       return raw ? JSON.parse(raw) : [];
     } catch (error) {
-      console.error('Failed to load training resources from storage:', error);
+      console.error('Failed to load external resources from storage:', error);
       return [];
     }
   }
 
   /**
-   * Add a training resource to localStorage
+   * Add an external resource to localStorage
    * @param {Object} resource resource data
    * @returns {Promise<Object>} newly stored resource with id
    */
@@ -46,7 +46,7 @@ class TrainingResourceService {
       localStorage.setItem(this.storageKey, JSON.stringify(resources));
       return newResource;
     } catch (error) {
-      console.error('Failed to save training resource:', error);
+      console.error('Failed to save external resource:', error);
       throw error;
     }
   }

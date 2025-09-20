@@ -17,7 +17,7 @@ const TrainingResourcesAdmin = () => {
       const data = await trainingResourceService.getTrainingResources();
       setResources(data);
     } catch (err) {
-      console.error('Failed to load training resources:', err);
+      console.error('Failed to load external resources:', err);
       setResources([]);
     }
   };
@@ -40,7 +40,7 @@ const TrainingResourcesAdmin = () => {
       setResources(prev => [newResource, ...prev]);
       setForm({ name: '', description: '', url: '', tag: '' });
     } catch (err) {
-      console.error('Failed to add training resource:', err);
+      console.error('Failed to add external resource:', err);
       setError(err.message || 'Failed to add resource');
     } finally {
       setIsLoading(false);
@@ -58,7 +58,7 @@ const TrainingResourcesAdmin = () => {
             value={form.name}
             onChange={handleChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            placeholder="Training title"
+            placeholder="External resource title"
           />
         </div>
         <div>
@@ -80,7 +80,7 @@ const TrainingResourcesAdmin = () => {
             value={form.url}
             onChange={handleChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            placeholder="https://example.com/training"
+            placeholder="https://example.com/resource"
           />
         </div>
         <div>
@@ -110,7 +110,7 @@ const TrainingResourcesAdmin = () => {
       <div>
         <h3 className="text-lg font-medium text-gray-900 mb-2">Existing Resources</h3>
         {resources.length === 0 ? (
-          <p className="text-sm text-gray-500">No training resources found.</p>
+          <p className="text-sm text-gray-500">No external resources found.</p>
         ) : (
           <ul className="space-y-3">
             {resources.map(res => (

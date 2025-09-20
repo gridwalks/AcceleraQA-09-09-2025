@@ -707,7 +707,7 @@ async function handleAnalyzeConversationsForLearning(sql, userId, data) {
 }
 
 
-// Training resources handlers
+// External resources handlers
 async function ensureTrainingResourcesTable(sql) {
   await sql`
     CREATE TABLE IF NOT EXISTS training_resources (
@@ -748,7 +748,7 @@ export async function handleAddTrainingResource(sql, userId, data) {
       body: JSON.stringify({ resource }),
     };
   } catch (error) {
-    console.error('❌ Error adding training resource:', error);
+    console.error('❌ Error adding external resource:', error);
     if (error.code === '42P01') {
       return {
         statusCode: 500,
@@ -773,7 +773,7 @@ export async function handleAddTrainingResource(sql, userId, data) {
       statusCode: 500,
       headers,
       body: JSON.stringify({
-        error: 'Failed to add training resource',
+        error: 'Failed to add external resource',
         message: error.message,
       }),
     };
@@ -796,7 +796,7 @@ export async function handleGetTrainingResources(sql, userId) {
       body: JSON.stringify({ resources }),
     };
   } catch (error) {
-    console.error('❌ Error loading training resources:', error);
+    console.error('❌ Error loading external resources:', error);
     if (error.code === '42P01') {
       return {
         statusCode: 500,
@@ -821,7 +821,7 @@ export async function handleGetTrainingResources(sql, userId) {
       statusCode: 500,
       headers,
       body: JSON.stringify({
-        error: 'Failed to load training resources',
+        error: 'Failed to load external resources',
         message: error.message,
       }),
     };

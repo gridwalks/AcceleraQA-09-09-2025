@@ -497,6 +497,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 }`}
               >
                 <span>External Resources</span>
+
                 {trainingResources.length > 0 && (
                   <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs rounded-full bg-purple-50 text-purple-600">
                     {trainingResources.length}

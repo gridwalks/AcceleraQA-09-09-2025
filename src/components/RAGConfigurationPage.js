@@ -429,14 +429,14 @@ const RAGConfigurationPage = ({ user, onClose }) => {
           <div className="flex items-center space-x-3">
             <Database className="h-6 w-6 text-blue-600" />
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">My Documents</h2>
+              <h2 className="text-xl font-semibold text-gray-900">My Resources</h2>
               <p className="text-sm text-gray-500">Upload documents to power your workspace knowledge base</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            aria-label="Close My Documents"
+            aria-label="Close My Resources"
           >
             <X className="h-5 w-5 text-gray-500" />
           </button>
@@ -482,7 +482,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <span>My Documents</span>
+                <span>My Resources</span>
                 <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-600">
                   {documents.length}
                 </span>

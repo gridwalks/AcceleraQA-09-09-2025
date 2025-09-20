@@ -146,10 +146,10 @@ const Header = memo(({
                     setMenuOpen(false);
                   }}
                   className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  aria-label="Manage personal documents"
+                  aria-label="Manage personal resources"
                 >
                   <FileText className="h-4 w-4 mr-2" />
-                  My Documents
+                  My Resources
                 </button>
 
                 <a

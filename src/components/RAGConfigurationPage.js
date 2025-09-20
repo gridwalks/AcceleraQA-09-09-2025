@@ -1,5 +1,5 @@
 // src/components/RAGConfigurationPage.js - Document management screen for the knowledge base
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Upload,
   FileText,
@@ -11,11 +11,15 @@ import {
   Loader,
   X,
   User,
-  Key
+  Key,
+  BookOpen,
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
+import trainingResourceService from '../services/trainingResourceService';
 
 const describeConversionSource = (conversion) => {
   if (!conversion) {
@@ -50,6 +54,7 @@ const getDocumentTitle = (doc) => {
 const USER_DOCUMENT_LIMIT = 20;
 
 const RAGConfigurationPage = ({ user, onClose }) => {
+  const [activeTab, setActiveTab] = useState('documents');
   const [documents, setDocuments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null);
@@ -65,6 +70,17 @@ const RAGConfigurationPage = ({ user, onClose }) => {
     category: 'general',
     version: ''
   });
+  const [trainingResources, setTrainingResources] = useState([]);
+  const [isLoadingTraining, setIsLoadingTraining] = useState(false);
+  const [trainingError, setTrainingError] = useState(null);
+  const isMountedRef = useRef(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const isAdmin = hasAdminRole(user);
   const hasReachedDocumentLimit = !isAdmin && documents.length >= USER_DOCUMENT_LIMIT;
@@ -155,6 +171,47 @@ const RAGConfigurationPage = ({ user, onClose }) => {
       setIsLoading(false);
     }
   }, [user, checkAuthentication]);
+
+  const loadTrainingResources = useCallback(async () => {
+    if (typeof localStorage === 'undefined') {
+      if (isMountedRef.current) {
+        setTrainingResources([]);
+      }
+      return;
+    }
+
+    if (isMountedRef.current) {
+      setIsLoadingTraining(true);
+      setTrainingError(null);
+    }
+
+    try {
+      const resources = await trainingResourceService.getTrainingResources();
+      if (isMountedRef.current) {
+        setTrainingResources(Array.isArray(resources) ? resources : []);
+      }
+    } catch (resourceError) {
+      console.error('Failed to load external resources:', resourceError);
+      if (isMountedRef.current) {
+        setTrainingResources([]);
+        setTrainingError('Failed to load external resources. Please try again.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingTraining(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTrainingResources();
+  }, [loadTrainingResources]);
+
+  useEffect(() => {
+    if (activeTab === 'training') {
+      loadTrainingResources();
+    }
+  }, [activeTab, loadTrainingResources]);
 
 
   const testConnection = async () => {
@@ -372,14 +429,14 @@ const RAGConfigurationPage = ({ user, onClose }) => {
           <div className="flex items-center space-x-3">
             <Database className="h-6 w-6 text-blue-600" />
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">My Documents</h2>
+              <h2 className="text-xl font-semibold text-gray-900">My Resources</h2>
               <p className="text-sm text-gray-500">Upload documents to power your workspace knowledge base</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            aria-label="Close My Documents"
+            aria-label="Close My Resources"
           >
             <X className="h-5 w-5 text-gray-500" />
           </button>
@@ -414,6 +471,43 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-220px)]">
+          <div className="mb-6 border-b border-gray-200">
+            <nav className="flex space-x-4" aria-label="Document and external resource tabs">
+              <button
+                type="button"
+                onClick={() => setActiveTab('documents')}
+                className={`flex items-center space-x-2 py-2 px-1 border-b-2 text-sm font-medium ${
+                  activeTab === 'documents'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <span>My Resources</span>
+                <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-600">
+                  {documents.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('training')}
+                className={`flex items-center space-x-2 py-2 px-1 border-b-2 text-sm font-medium ${
+                  activeTab === 'training'
+                    ? 'border-purple-600 text-purple-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <span>External Resources</span>
+
+                {trainingResources.length > 0 && (
+                  <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs rounded-full bg-purple-50 text-purple-600">
+                    {trainingResources.length}
+                  </span>
+                )}
+              </button>
+            </nav>
+          </div>
+          {activeTab === 'documents' && (
+            <>
           {/* Error Display */}
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-3">
@@ -741,6 +835,115 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 )}
               </div>
             </div>
+            </>
+          )}
+
+          {activeTab === 'training' && (
+            <div className="space-y-6">
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                      <BookOpen className="h-5 w-5 text-purple-600" />
+                      <span>External Resources</span>
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Access curated external references provided by your administrators.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadTrainingResources}
+                    disabled={isLoadingTraining}
+                    className="inline-flex items-center px-3 py-2 text-sm font-medium border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingTraining ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                </div>
+
+                {trainingError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+                    {trainingError}
+                  </div>
+                )}
+
+                {isLoadingTraining ? (
+                  <div className="py-12 text-center text-gray-600">
+                    <Loader className="h-6 w-6 animate-spin mx-auto mb-3 text-purple-500" />
+                    <p>Loading external resources...</p>
+                  </div>
+                ) : trainingResources.length === 0 ? (
+                  <div className="py-12 text-center text-gray-600">
+                    <BookOpen className="h-8 w-8 mx-auto mb-3 text-purple-500" />
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">No external resources yet</h4>
+                    <p className="text-sm">
+                      External resources added by your administrators will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {trainingResources.map((resource, index) => {
+                      const name = typeof resource?.name === 'string' && resource.name.trim()
+                        ? resource.name.trim()
+                        : typeof resource?.title === 'string' && resource.title.trim()
+                          ? resource.title.trim()
+                          : 'Untitled resource';
+                      const description = typeof resource?.description === 'string' ? resource.description.trim() : '';
+                      const url = typeof resource?.url === 'string' ? resource.url.trim() : '';
+                      const tag = typeof resource?.tag === 'string' ? resource.tag.trim() : '';
+                      let hostname = '';
+
+                      if (url) {
+                        try {
+                          hostname = new URL(url).hostname;
+                        } catch (urlError) {
+                          hostname = url;
+                        }
+                      }
+
+                      return (
+                        <div
+                          key={resource?.id || index}
+                          className="p-4 border border-gray-200 rounded-lg hover:border-purple-300 hover:shadow-sm transition-all"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <h4 className="text-base font-semibold text-gray-900">{name}</h4>
+                              {tag && (
+                                <span className="inline-flex items-center mt-2 px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-700">
+                                  #{tag}
+                                </span>
+                              )}
+                            </div>
+                            {url && (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center text-sm text-purple-600 hover:text-purple-800"
+                                title={url}
+                              >
+                                <span>{hostname ? `Open ${hostname}` : 'Open resource'}</span>
+                                <ExternalLink className="h-4 w-4 ml-1" />
+                              </a>
+                            )}
+                          </div>
+                          {description && (
+                            <p className="mt-3 text-sm text-gray-600">{description}</p>
+                          )}
+                          {!url && (
+                            <p className="mt-3 text-xs text-gray-500">No direct link provided for this resource.</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

@@ -241,6 +241,7 @@ const selectPreferredSourceTitle = (candidates, fallbackLabel) => {
   return preferred || fallbackCandidate || fallbackLabel;
 };
 
+
 const SOURCE_SNIPPET_MAX_LENGTH = 180;
 
 const SNIPPET_FIELD_KEYS = [
@@ -726,6 +727,7 @@ const ChatArea = ({
                                     ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
                                   }
                                 : {};
+
                               const titleCandidates = getSourceTitleCandidates(source);
                               const resolvedSourceTitle = selectPreferredSourceTitle(
                                 titleCandidates,

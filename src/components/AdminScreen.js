@@ -438,10 +438,10 @@ const AdminScreen = ({ user, onBack }) => {
               { id: 'users', label: 'Users & Auth', icon: Users },
               { id: 'backend', label: 'Backend', icon: Database },
               { id: 'rag', label: 'RAG System', icon: FileText },
-              { id: 'ragConfig', label: 'My Documents', icon: Search },
+              { id: 'ragConfig', label: 'My Resources', icon: Search },
               { id: 'system', label: 'System Health', icon: Activity },
               { id: 'usage', label: 'Token Usage', icon: BarChart3 },
-              { id: 'training', label: 'Training Resources', icon: BookOpen },
+              { id: 'training', label: 'External Resources', icon: BookOpen },
               { id: 'tools', label: 'Admin Tools', icon: Settings }
             ].map(tab => {
               const Icon = tab.icon;
@@ -724,7 +724,7 @@ const AdminScreen = ({ user, onBack }) => {
             </div>
           )}
 
-          {/* My Documents Tab */}
+          {/* My Resources Tab */}
           {activeTab === 'ragConfig' && (
             <div className="space-y-6">
               <RAGConfigurationPage user={user} onClose={() => setActiveTab('overview')} />
@@ -824,11 +824,11 @@ const AdminScreen = ({ user, onBack }) => {
             </div>
           )}
 
-          {/* Training Resources Tab */}
+          {/* External Resources Tab */}
           {activeTab === 'training' && (
             <div className="space-y-6">
               <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Training Resources</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">External Resources</h3>
                 <TrainingResourcesAdmin />
               </div>
             </div>

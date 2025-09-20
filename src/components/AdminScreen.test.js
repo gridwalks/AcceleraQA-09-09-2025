@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 import AdminScreen, { checkStorageHealth } from './AdminScreen';
 
-jest.mock('./RAGConfigurationPage', () => () => <h2>My Documents</h2>);
+jest.mock('./RAGConfigurationPage', () => () => <h2>My Resources</h2>);
 
 jest.mock('../services/ragService', () => ({
   __esModule: true,
@@ -68,7 +68,7 @@ describe('AdminScreen navigation', () => {
     });
 
     const ragButton = Array.from(container.querySelectorAll('button')).find(btn =>
-      btn.textContent && btn.textContent.includes('My Documents')
+      btn.textContent && btn.textContent.includes('My Resources')
     );
 
     await act(async () => {
@@ -76,7 +76,7 @@ describe('AdminScreen navigation', () => {
     });
 
     const heading = container.querySelector('h2');
-    expect(heading && heading.textContent).toMatch(/My Documents/i);
+    expect(heading && heading.textContent).toMatch(/My Resources/i);
   });
 
   it('calls onBack when back button is clicked', async () => {

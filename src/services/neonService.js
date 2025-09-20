@@ -388,7 +388,7 @@ class NeonService {
   }
 
   /**
-   * Training resources management
+   * External resources management
    */
   async addTrainingResource(resource) {
     try {
@@ -401,7 +401,7 @@ class NeonService {
       });
       return result.resource;
     } catch (error) {
-      console.error('Failed to add training resource:', error);
+      console.error('Failed to add external resource:', error);
       throw error;
     }
   }
@@ -414,7 +414,7 @@ class NeonService {
       });
       return result.resources || [];
     } catch (error) {
-      console.error('Failed to load training resources:', error);
+      console.error('Failed to load external resources:', error);
       return [];
     }
   }

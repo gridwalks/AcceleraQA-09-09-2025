@@ -87,22 +87,160 @@ const getFirstNonEmptyString = (...values) => {
   return '';
 };
 
-const resolveSourceTitle = (source, fallbackLabel) =>
-  getFirstNonEmptyString(
-    source?.documentTitle,
-    source?.title,
-    source?.metadata?.documentTitle,
-    source?.metadata?.title,
-    source?.document?.title,
-    source?.document?.metadata?.title,
-    source?.display_name,
-    source?.label,
-    source?.name,
-    source?.filename,
-    source?.file_name,
-    source?.document?.filename,
-    source?.document?.file_name
-  ) || fallbackLabel;
+const FILENAME_EXTENSION_PATTERN =
+  /\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|yaml|yml|html|htm|log)$/i;
+
+const isLikelyFilename = (value) => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (/[\\/]/.test(trimmed)) {
+    return true;
+  }
+
+  if (FILENAME_EXTENSION_PATTERN.test(trimmed)) {
+    return true;
+  }
+
+  if (!/\s/.test(trimmed) && /\.[a-z0-9]{2,5}$/i.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+};
+
+const getSourceTitleCandidates = (source) => {
+  if (!source || typeof source !== 'object') {
+    return [];
+  }
+
+  const metadata =
+    source.metadata && typeof source.metadata === 'object' ? source.metadata : {};
+  const document =
+    source.document && typeof source.document === 'object' ? source.document : {};
+  const documentMetadata =
+    document.metadata && typeof document.metadata === 'object' ? document.metadata : {};
+  const metadataDocumentMetadata =
+    metadata.documentMetadata && typeof metadata.documentMetadata === 'object'
+      ? metadata.documentMetadata
+      : {};
+  const fileCitation =
+    source.file_citation && typeof source.file_citation === 'object'
+      ? source.file_citation
+      : {};
+
+  const seen = new Set();
+  const nonFileCandidates = [];
+  const fileCandidates = [];
+
+  const pushCandidate = (rawValue, target) => {
+    if (typeof rawValue !== 'string') {
+      return;
+    }
+
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    target.push(trimmed);
+  };
+
+  const pushNonFile = (value) => pushCandidate(value, nonFileCandidates);
+  const pushFile = (value) => pushCandidate(value, fileCandidates);
+
+  pushNonFile(source.documentTitle);
+  pushNonFile(source.document_title);
+  pushNonFile(source.title);
+  pushNonFile(source.displayTitle);
+  pushNonFile(source.display_title);
+  pushNonFile(source.displayName);
+  pushNonFile(source.display_name);
+  pushNonFile(source.sourceTitle);
+  pushNonFile(source.source_title);
+  pushNonFile(source.label);
+  pushNonFile(source.name);
+
+  pushNonFile(metadata.documentTitle);
+  pushNonFile(metadata.document_title);
+  pushNonFile(metadata.title);
+  pushNonFile(metadata.displayTitle);
+  pushNonFile(metadata.display_title);
+  pushNonFile(metadata.displayName);
+  pushNonFile(metadata.display_name);
+  pushNonFile(metadata.name);
+  pushNonFile(metadata.preferredTitle);
+  pushNonFile(metadata.documentName);
+  pushNonFile(metadata.document_name);
+
+  pushNonFile(document.title);
+  pushNonFile(document.documentTitle);
+  pushNonFile(document.document_title);
+
+  pushNonFile(documentMetadata.title);
+  pushNonFile(documentMetadata.documentTitle);
+  pushNonFile(documentMetadata.document_title);
+  pushNonFile(documentMetadata.displayTitle);
+  pushNonFile(documentMetadata.display_title);
+  pushNonFile(documentMetadata.displayName);
+  pushNonFile(documentMetadata.display_name);
+  pushNonFile(documentMetadata.name);
+
+  pushNonFile(metadataDocumentMetadata.title);
+  pushNonFile(metadataDocumentMetadata.documentTitle);
+  pushNonFile(metadataDocumentMetadata.document_title);
+  pushNonFile(metadataDocumentMetadata.displayTitle);
+  pushNonFile(metadataDocumentMetadata.display_title);
+  pushNonFile(metadataDocumentMetadata.displayName);
+  pushNonFile(metadataDocumentMetadata.display_name);
+  pushNonFile(metadataDocumentMetadata.name);
+
+  pushNonFile(fileCitation.title);
+  pushNonFile(fileCitation.documentTitle);
+  pushNonFile(fileCitation.document_title);
+
+  pushFile(metadata.filename);
+  pushFile(metadata.fileName);
+  pushFile(metadata.file_name);
+  pushFile(metadata.originalFileName);
+  pushFile(metadata.finalFileName);
+
+  pushFile(source.filename);
+  pushFile(source.file_name);
+  pushFile(source.fileName);
+
+  pushFile(document.filename);
+  pushFile(document.file_name);
+
+  pushFile(fileCitation.filename);
+  pushFile(fileCitation.file_name);
+
+  return [...nonFileCandidates, ...fileCandidates];
+};
+
+const selectPreferredSourceTitle = (candidates, fallbackLabel) => {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return fallbackLabel;
+  }
+
+  const preferred = candidates.find(candidate => !isLikelyFilename(candidate));
+  const fallbackCandidate = candidates.find(candidate => isLikelyFilename(candidate));
+
+  return preferred || fallbackCandidate || fallbackLabel;
+};
+
 
 const SOURCE_SNIPPET_MAX_LENGTH = 180;
 
@@ -589,17 +727,16 @@ const ChatArea = ({
                                     ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
                                   }
                                 : {};
-                              const resolvedSourceTitle = resolveSourceTitle(
-                                source,
+
+                              const titleCandidates = getSourceTitleCandidates(source);
+                              const resolvedSourceTitle = selectPreferredSourceTitle(
+                                titleCandidates,
                                 `Document ${idx + 1}`
                               );
 
                               const snippetExclusions = [
                                 resolvedSourceTitle,
-                                source?.filename,
-                                source?.title,
-                                source?.documentTitle,
-                                source?.metadata?.documentTitle,
+                                ...titleCandidates,
                               ];
 
                               const fullSnippet = getSourceSnippet(source, {

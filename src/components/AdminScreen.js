@@ -438,7 +438,7 @@ const AdminScreen = ({ user, onBack }) => {
               { id: 'users', label: 'Users & Auth', icon: Users },
               { id: 'backend', label: 'Backend', icon: Database },
               { id: 'rag', label: 'RAG System', icon: FileText },
-              { id: 'ragConfig', label: 'My Documents', icon: Search },
+              { id: 'ragConfig', label: 'My Resources', icon: Search },
               { id: 'system', label: 'System Health', icon: Activity },
               { id: 'usage', label: 'Token Usage', icon: BarChart3 },
               { id: 'training', label: 'Training Resources', icon: BookOpen },
@@ -724,7 +724,7 @@ const AdminScreen = ({ user, onBack }) => {
             </div>
           )}
 
-          {/* My Documents Tab */}
+          {/* My Resources Tab */}
           {activeTab === 'ragConfig' && (
             <div className="space-y-6">
               <RAGConfigurationPage user={user} onClose={() => setActiveTab('overview')} />

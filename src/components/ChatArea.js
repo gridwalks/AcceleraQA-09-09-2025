@@ -72,6 +72,442 @@ const getSourceUrl = (source) => {
   return resolved ? resolved.trim() : null;
 };
 
+const getFirstNonEmptyString = (...values) => {
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return '';
+};
+
+const FILENAME_EXTENSION_PATTERN =
+  /\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|yaml|yml|html|htm|log)$/i;
+
+const isLikelyFilename = (value) => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (/[\\/]/.test(trimmed)) {
+    return true;
+  }
+
+  if (FILENAME_EXTENSION_PATTERN.test(trimmed)) {
+    return true;
+  }
+
+  if (!/\s/.test(trimmed) && /\.[a-z0-9]{2,5}$/i.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+};
+
+const getSourceTitleCandidates = (source) => {
+  if (!source || typeof source !== 'object') {
+    return [];
+  }
+
+  const metadata =
+    source.metadata && typeof source.metadata === 'object' ? source.metadata : {};
+  const document =
+    source.document && typeof source.document === 'object' ? source.document : {};
+  const documentMetadata =
+    document.metadata && typeof document.metadata === 'object' ? document.metadata : {};
+  const metadataDocumentMetadata =
+    metadata.documentMetadata && typeof metadata.documentMetadata === 'object'
+      ? metadata.documentMetadata
+      : {};
+  const fileCitation =
+    source.file_citation && typeof source.file_citation === 'object'
+      ? source.file_citation
+      : {};
+
+  const seen = new Set();
+  const nonFileCandidates = [];
+  const fileCandidates = [];
+
+  const pushCandidate = (rawValue, target) => {
+    if (typeof rawValue !== 'string') {
+      return;
+    }
+
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    target.push(trimmed);
+  };
+
+  const pushNonFile = (value) => pushCandidate(value, nonFileCandidates);
+  const pushFile = (value) => pushCandidate(value, fileCandidates);
+
+  pushNonFile(source.documentTitle);
+  pushNonFile(source.document_title);
+  pushNonFile(source.title);
+  pushNonFile(source.displayTitle);
+  pushNonFile(source.display_title);
+  pushNonFile(source.displayName);
+  pushNonFile(source.display_name);
+  pushNonFile(source.sourceTitle);
+  pushNonFile(source.source_title);
+  pushNonFile(source.label);
+  pushNonFile(source.name);
+
+  pushNonFile(metadata.documentTitle);
+  pushNonFile(metadata.document_title);
+  pushNonFile(metadata.title);
+  pushNonFile(metadata.displayTitle);
+  pushNonFile(metadata.display_title);
+  pushNonFile(metadata.displayName);
+  pushNonFile(metadata.display_name);
+  pushNonFile(metadata.name);
+  pushNonFile(metadata.preferredTitle);
+  pushNonFile(metadata.documentName);
+  pushNonFile(metadata.document_name);
+
+  pushNonFile(document.title);
+  pushNonFile(document.documentTitle);
+  pushNonFile(document.document_title);
+
+  pushNonFile(documentMetadata.title);
+  pushNonFile(documentMetadata.documentTitle);
+  pushNonFile(documentMetadata.document_title);
+  pushNonFile(documentMetadata.displayTitle);
+  pushNonFile(documentMetadata.display_title);
+  pushNonFile(documentMetadata.displayName);
+  pushNonFile(documentMetadata.display_name);
+  pushNonFile(documentMetadata.name);
+
+  pushNonFile(metadataDocumentMetadata.title);
+  pushNonFile(metadataDocumentMetadata.documentTitle);
+  pushNonFile(metadataDocumentMetadata.document_title);
+  pushNonFile(metadataDocumentMetadata.displayTitle);
+  pushNonFile(metadataDocumentMetadata.display_title);
+  pushNonFile(metadataDocumentMetadata.displayName);
+  pushNonFile(metadataDocumentMetadata.display_name);
+  pushNonFile(metadataDocumentMetadata.name);
+
+  pushNonFile(fileCitation.title);
+  pushNonFile(fileCitation.documentTitle);
+  pushNonFile(fileCitation.document_title);
+
+  pushFile(metadata.filename);
+  pushFile(metadata.fileName);
+  pushFile(metadata.file_name);
+  pushFile(metadata.originalFileName);
+  pushFile(metadata.finalFileName);
+
+  pushFile(source.filename);
+  pushFile(source.file_name);
+  pushFile(source.fileName);
+
+  pushFile(document.filename);
+  pushFile(document.file_name);
+
+  pushFile(fileCitation.filename);
+  pushFile(fileCitation.file_name);
+
+  return [...nonFileCandidates, ...fileCandidates];
+};
+
+const selectPreferredSourceTitle = (candidates, fallbackLabel) => {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return fallbackLabel;
+  }
+
+  const preferred = candidates.find(candidate => !isLikelyFilename(candidate));
+  const fallbackCandidate = candidates.find(candidate => isLikelyFilename(candidate));
+
+  return preferred || fallbackCandidate || fallbackLabel;
+};
+
+const SOURCE_SNIPPET_MAX_LENGTH = 180;
+
+const SNIPPET_FIELD_KEYS = [
+  'text',
+  'snippet',
+  'quote',
+  'preview',
+  'excerpt',
+  'content',
+  'value',
+  'summary',
+  'chunkText',
+  'chunk_text',
+  'context',
+  'documentText',
+  'document_text',
+  'documentSnippet',
+  'document_snippet',
+  'textSnippet',
+  'text_snippet',
+  'highlight',
+  'passage',
+  'passage_text',
+  'passageText',
+  'segment',
+  'span',
+];
+
+const SNIPPET_FIELD_KEY_SET = new Set(SNIPPET_FIELD_KEYS.map(key => key.toLowerCase()));
+
+const SNIPPET_DISALLOWED_PATTERNS = [
+  /^(https?:\/\/|mailto:|ftp:|file:)/i,
+  /^[\w\s-]+\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|mp3|mp4|mov|avi|png|jpg|jpeg)$/i,
+];
+
+const BASE_EXCLUDED_KEYS = new Set([
+  'title',
+  'documenttitle',
+  'filename',
+  'file_name',
+  'name',
+  'label',
+  'displayname',
+  'documentname',
+]);
+
+const normalizeSnippetText = (value) =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+const getFallbackSnippet = (source) =>
+  normalizeSnippetText(
+    getFirstNonEmptyString(
+      source?.text,
+      source?.snippet,
+      source?.quote,
+      source?.preview,
+      source?.excerpt,
+      source?.content,
+      source?.value,
+      source?.summary,
+      source?.chunkText,
+      source?.chunk_text,
+      source?.context,
+      source?.metadata?.text,
+      source?.metadata?.snippet,
+      source?.metadata?.excerpt,
+      source?.file_citation?.quote
+    )
+  );
+
+const buildExclusionSet = (values = []) => {
+  const set = new Set();
+  values.forEach(value => {
+    if (typeof value === 'string') {
+      const normalized = normalizeSnippetText(value);
+      if (normalized) {
+        set.add(normalized.toLowerCase());
+      }
+    }
+  });
+  return set;
+};
+
+const getKeyWeight = (rawKey = '') => {
+  const key = String(rawKey).toLowerCase();
+
+  if (SNIPPET_FIELD_KEY_SET.has(key)) {
+    return 9;
+  }
+
+  if (BASE_EXCLUDED_KEYS.has(key)) {
+    return 0;
+  }
+
+  if (key.includes('snippet') || key.includes('excerpt') || key.includes('quote')) {
+    return 8;
+  }
+
+  if (
+    key.includes('highlight') ||
+    key.includes('passage') ||
+    key.includes('span') ||
+    key.includes('segment')
+  ) {
+    return 7;
+  }
+
+  if (
+    key.includes('text') ||
+    key.includes('content') ||
+    key.includes('context') ||
+    key.includes('paragraph') ||
+    key.includes('section') ||
+    key.includes('body') ||
+    key.includes('description') ||
+    key.includes('summary')
+  ) {
+    return 6;
+  }
+
+  if (key.includes('metadata') || key.includes('document') || key.includes('chunk')) {
+    return 4;
+  }
+
+  return 2;
+};
+
+const isDisallowedSnippet = (text) => {
+  if (!text) {
+    return true;
+  }
+
+  if (SNIPPET_DISALLOWED_PATTERNS.some(pattern => pattern.test(text))) {
+    return true;
+  }
+
+  if (/^document\s+\d+$/i.test(text)) {
+    return true;
+  }
+
+  if (/^[\d\-]+$/.test(text)) {
+    return true;
+  }
+
+  if (text.length <= 8 && !text.includes(' ')) {
+    return true;
+  }
+
+  return false;
+};
+
+function scoreSnippetCandidate(text, weight) {
+  const length = text.length;
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+  let score = weight;
+
+  if (length >= 200) score += 4;
+  else if (length >= 120) score += 3;
+  else if (length >= 80) score += 2.5;
+  else if (length >= 40) score += 2;
+  else if (length >= 24) score += 1.2;
+  else if (length >= 16) score += 0.6;
+
+  if (wordCount >= 25) score += 3;
+  else if (wordCount >= 12) score += 2;
+  else if (wordCount >= 7) score += 1.4;
+  else if (wordCount >= 4) score += 0.8;
+
+  if (wordCount <= 2 && length < 20) {
+    score -= 2;
+  }
+
+  if (/[.!?]/.test(text.slice(-1))) {
+    score += 0.5;
+  }
+
+  if (/[,;:]/.test(text)) {
+    score += 0.3;
+  }
+
+  if (text === text.toUpperCase() && wordCount >= 3) {
+    score -= 1.5;
+  }
+
+  return score;
+}
+
+function getSourceSnippet(source, options = {}) {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  const excludedValues = buildExclusionSet(options.excludeValues);
+
+  const visited = new WeakSet();
+  let bestCandidate = null;
+
+  function considerText(value, weight) {
+    const normalized = normalizeSnippetText(value);
+    if (!normalized) {
+      return;
+    }
+
+    if (excludedValues.has(normalized.toLowerCase())) {
+      return;
+    }
+
+    if (!/[a-z]/i.test(normalized)) {
+      return;
+    }
+
+    if (isDisallowedSnippet(normalized)) {
+      return;
+    }
+
+    const score = scoreSnippetCandidate(normalized, weight);
+    if (score <= 0) {
+      return;
+    }
+
+    if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && normalized.length > bestCandidate.text.length)) {
+      bestCandidate = { text: normalized, score };
+    }
+  }
+
+  function traverse(value, weight = 2) {
+    if (value == null) {
+      return;
+    }
+
+    if (typeof value === 'string') {
+      considerText(value, weight);
+      return;
+    }
+
+    if (typeof value !== 'object') {
+      return;
+    }
+
+    if (visited.has(value)) {
+      return;
+    }
+
+    visited.add(value);
+
+    if (Array.isArray(value)) {
+      value.forEach(entry => traverse(entry, weight));
+      return;
+    }
+
+    Object.entries(value).forEach(([key, nested]) => {
+      if (nested == null) {
+        return;
+      }
+
+      const keyWeight = getKeyWeight(key);
+      const nextWeight = Math.max(weight, keyWeight);
+      traverse(nested, nextWeight);
+    });
+  }
+
+  traverse(source, 7);
+
+  return bestCandidate ? bestCandidate.text : null;
+}
+
 const AttachmentPreview = ({ file, onRemove }) => {
   const needsConversion = file ? !isPdfAttachment(file) : false;
 
@@ -290,6 +726,29 @@ const ChatArea = ({
                                     ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
                                   }
                                 : {};
+                              const titleCandidates = getSourceTitleCandidates(source);
+                              const resolvedSourceTitle = selectPreferredSourceTitle(
+                                titleCandidates,
+                                `Document ${idx + 1}`
+                              );
+
+                              const snippetExclusions = [
+                                resolvedSourceTitle,
+                                ...titleCandidates,
+                              ];
+
+                              const fullSnippet = getSourceSnippet(source, {
+                                excludeValues: snippetExclusions,
+                              });
+                              const fallbackSnippet = getFallbackSnippet(source);
+                              const resolvedSnippet = fullSnippet || fallbackSnippet || null;
+                              const displaySnippet =
+                                resolvedSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
+                                resolvedSnippet.length > SOURCE_SNIPPET_MAX_LENGTH
+                                  ? `${resolvedSnippet
+                                      .slice(0, SOURCE_SNIPPET_MAX_LENGTH)
+                                      .trimEnd()}…`
+                                  : resolvedSnippet;
 
                               const baseClasses = 'text-xs bg-white bg-opacity-50 p-2 rounded border transition-colors';
                               const interactiveClasses = sourceUrl
@@ -304,12 +763,15 @@ const ChatArea = ({
                                 >
                                   <div
                                     className={`font-medium truncate ${sourceUrl ? 'text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700' : ''}`.trim()}
-                                    title={source.filename}
+                                    title={resolvedSourceTitle}
                                   >
-                                    {source.filename || `Document ${idx + 1}`}
+                                    {resolvedSourceTitle}
                                   </div>
-                                  <div className="text-gray-600 line-clamp-2">
-                                    {(source.text || '').substring(0, 150)}...
+                                  <div
+                                    className="text-gray-600 line-clamp-2"
+                                    title={resolvedSnippet || undefined}
+                                  >
+                                    {displaySnippet || 'No excerpt available.'}
                                   </div>
                                   {sourceUrl && (
                                     <div className="mt-1 flex items-center gap-1 text-[11px] text-blue-600">

@@ -172,6 +172,8 @@ const getSourceTitleCandidates = (source) => {
   pushNonFile(source.source_title);
   pushNonFile(source.label);
   pushNonFile(source.name);
+  pushNonFile(source.fileTitle);
+  pushNonFile(source.file_title);
 
   pushNonFile(metadata.documentTitle);
   pushNonFile(metadata.document_title);
@@ -184,10 +186,14 @@ const getSourceTitleCandidates = (source) => {
   pushNonFile(metadata.preferredTitle);
   pushNonFile(metadata.documentName);
   pushNonFile(metadata.document_name);
+  pushNonFile(metadata.fileTitle);
+  pushNonFile(metadata.file_title);
 
   pushNonFile(document.title);
   pushNonFile(document.documentTitle);
   pushNonFile(document.document_title);
+  pushNonFile(document.fileTitle);
+  pushNonFile(document.file_title);
 
   pushNonFile(documentMetadata.title);
   pushNonFile(documentMetadata.documentTitle);
@@ -197,6 +203,8 @@ const getSourceTitleCandidates = (source) => {
   pushNonFile(documentMetadata.displayName);
   pushNonFile(documentMetadata.display_name);
   pushNonFile(documentMetadata.name);
+  pushNonFile(documentMetadata.fileTitle);
+  pushNonFile(documentMetadata.file_title);
 
   pushNonFile(metadataDocumentMetadata.title);
   pushNonFile(metadataDocumentMetadata.documentTitle);
@@ -206,10 +214,14 @@ const getSourceTitleCandidates = (source) => {
   pushNonFile(metadataDocumentMetadata.displayName);
   pushNonFile(metadataDocumentMetadata.display_name);
   pushNonFile(metadataDocumentMetadata.name);
+  pushNonFile(metadataDocumentMetadata.fileTitle);
+  pushNonFile(metadataDocumentMetadata.file_title);
 
   pushNonFile(fileCitation.title);
   pushNonFile(fileCitation.documentTitle);
   pushNonFile(fileCitation.document_title);
+  pushNonFile(fileCitation.fileTitle);
+  pushNonFile(fileCitation.file_title);
 
   pushFile(metadata.filename);
   pushFile(metadata.fileName);
@@ -236,9 +248,8 @@ const selectPreferredSourceTitle = (candidates, fallbackLabel) => {
   }
 
   const preferred = candidates.find(candidate => !isLikelyFilename(candidate));
-  const fallbackCandidate = candidates.find(candidate => isLikelyFilename(candidate));
 
-  return preferred || fallbackCandidate || fallbackLabel;
+  return preferred || fallbackLabel;
 };
 
 
@@ -291,8 +302,8 @@ const BASE_EXCLUDED_KEYS = new Set([
 const normalizeSnippetText = (value) =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
-const getFallbackSnippet = (source) =>
-  normalizeSnippetText(
+const getFallbackSnippet = (source) => {
+  const fallback = normalizeSnippetText(
     getFirstNonEmptyString(
       source?.text,
       source?.snippet,
@@ -311,6 +322,13 @@ const getFallbackSnippet = (source) =>
       source?.file_citation?.quote
     )
   );
+
+  if (!fallback || isLikelyFilename(fallback)) {
+    return '';
+  }
+
+  return fallback;
+};
 
 const buildExclusionSet = (values = []) => {
   const set = new Set();
@@ -447,6 +465,10 @@ function getSourceSnippet(source, options = {}) {
     }
 
     if (excludedValues.has(normalized.toLowerCase())) {
+      return;
+    }
+
+    if (isLikelyFilename(normalized)) {
       return;
     }
 

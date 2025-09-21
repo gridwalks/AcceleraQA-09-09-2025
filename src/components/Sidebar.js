@@ -17,9 +17,9 @@ const Sidebar = ({
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 lg:min-h-0">
       {/* Sidebar Header */}
-        <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900">Resource Center</h3>
-        </div>
+      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900">Resource Center</h3>
+      </div>
 
       {/* Sidebar Content */}
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -30,9 +30,7 @@ const Sidebar = ({
           thirtyDayMessages={thirtyDayMessages}
           onSuggestionsUpdate={onSuggestionsUpdate}
           onAddResource={onAddResource}
-
           onConversationSelect={onConversationSelect}
-
         />
       </div>
 
@@ -77,14 +75,12 @@ const getTimestampValue = (timestamp, fallback) => {
   if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
     return timestamp;
   }
-
   if (typeof timestamp === 'string') {
     const parsed = Date.parse(timestamp);
     if (!Number.isNaN(parsed)) {
       return parsed;
     }
   }
-
   return fallback;
 };
 
@@ -97,65 +93,45 @@ const RELEVANCE_WEIGHTS = {
 };
 
 const isUserMessage = (message) => {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
-
+  if (!message || typeof message !== 'object') return false;
   const candidate = typeof message.role === 'string' ? message.role : message.type;
-  if (typeof candidate !== 'string') {
-    return false;
-  }
-
+  if (typeof candidate !== 'string') return false;
   const normalized = candidate.toLowerCase();
   return normalized === 'user' || normalized === 'human';
 };
 
 const isAssistantMessage = (message) => {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
-
+  if (!message || typeof message !== 'object') return false;
   const candidate = typeof message.role === 'string' ? message.role : message.type;
-  if (typeof candidate !== 'string') {
-    return false;
-  }
-
+  if (typeof candidate !== 'string') return false;
   const normalized = candidate.toLowerCase();
   return normalized === 'assistant' || normalized === 'ai' || normalized === 'bot';
 };
 
 const collectStrings = (value, collector, depth = 0) => {
-  if (depth > 3 || value == null) {
-    return;
-  }
-
+  if (depth > 3 || value == null) return;
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    if (trimmed) {
-      collector.push(trimmed);
-    }
+    if (trimmed) collector.push(trimmed);
     return;
   }
-
   if (Array.isArray(value)) {
     value.forEach((item) => collectStrings(item, collector, depth + 1));
     return;
   }
-
   if (typeof value === 'object') {
     Object.values(value).forEach((item) => collectStrings(item, collector, depth + 1));
   }
 };
 
 const tokenizeForRelevance = (text) => {
-  if (!text) {
-    return [];
-  }
-
-  return String(text)
-    .toLowerCase()
-    .match(/[a-z0-9]+/g)
-    ?.filter((token) => token.length >= MIN_TOKEN_LENGTH) || [];
+  if (!text) return [];
+  return (
+    String(text)
+      .toLowerCase()
+      .match(/[a-z0-9]+/g)
+      ?.filter((token) => token.length >= MIN_TOKEN_LENGTH) || []
+  );
 };
 
 const buildTokenSet = (text) => {
@@ -165,10 +141,7 @@ const buildTokenSet = (text) => {
 };
 
 const extractMessageText = (message) => {
-  if (!message || typeof message !== 'object') {
-    return '';
-  }
-
+  if (!message || typeof message !== 'object') return '';
   const parts = [];
   const { content } = message;
 
@@ -189,12 +162,8 @@ const extractMessageText = (message) => {
       }
     });
   } else if (content && typeof content === 'object') {
-    if (typeof content.text === 'string') {
-      parts.push(content.text);
-    }
-    if (typeof content.content === 'string') {
-      parts.push(content.content);
-    }
+    if (typeof content.text === 'string') parts.push(content.text);
+    if (typeof content.content === 'string') parts.push(content.content);
     if (Array.isArray(content.parts)) {
       content.parts.forEach((part) => {
         if (typeof part === 'string') {
@@ -216,9 +185,7 @@ const extractMessageText = (message) => {
 };
 
 const getResourceSearchableTokens = (resource) => {
-  if (!resource || typeof resource !== 'object') {
-    return new Set();
-  }
+  if (!resource || typeof resource !== 'object') return new Set();
 
   const parts = [];
   collectStrings(resource.title, parts);
@@ -236,47 +203,27 @@ const getResourceSearchableTokens = (resource) => {
 
 const mergeContexts = (existingContexts, newContexts) => {
   const merged = new Set();
-
   if (existingContexts && typeof existingContexts[Symbol.iterator] === 'function') {
-    for (const value of existingContexts) {
-      merged.add(value);
-    }
+    for (const value of existingContexts) merged.add(value);
   }
-
   if (newContexts && typeof newContexts[Symbol.iterator] === 'function') {
-    for (const value of newContexts) {
-      merged.add(value);
-    }
+    for (const value of newContexts) merged.add(value);
   }
-
   return merged;
 };
 
 const contextsHas = (contexts, value) => {
-  if (!contexts) {
-    return false;
-  }
-
-  if (contexts instanceof Set) {
-    return contexts.has(value);
-  }
-
-  if (Array.isArray(contexts)) {
-    return contexts.includes(value);
-  }
-
+  if (!contexts) return false;
+  if (contexts instanceof Set) return contexts.has(value);
+  if (Array.isArray(contexts)) return contexts.includes(value);
   return false;
 };
 
 const ensureResourceTitle = (resource) => {
-  if (!resource || typeof resource !== 'object') {
-    return null;
-  }
+  if (!resource || typeof resource !== 'object') return null;
 
   const metadata =
-    resource.metadata && typeof resource.metadata === 'object'
-      ? resource.metadata
-      : {};
+    resource.metadata && typeof resource.metadata === 'object' ? resource.metadata : {};
 
   const titleCandidates = [
     resource.title,
@@ -290,45 +237,27 @@ const ensureResourceTitle = (resource) => {
     resource.id,
   ];
 
-  const resolvedTitle = titleCandidates.find(
-    (value) => typeof value === 'string' && value.trim()
-  );
-
-  if (!resolvedTitle) {
-    return null;
-  }
+  const resolvedTitle = titleCandidates.find((value) => typeof value === 'string' && value.trim());
+  if (!resolvedTitle) return null;
 
   if (resource.title && resource.title.trim()) {
-    return {
-      ...resource,
-      title: resource.title.trim(),
-      metadata,
-    };
+    return { ...resource, title: resource.title.trim(), metadata };
   }
 
   const normalizedTitle = resolvedTitle.trim();
   const normalizedMetadata = { ...metadata };
-
   if (!normalizedMetadata.documentTitle) {
     normalizedMetadata.documentTitle = normalizedTitle;
   }
 
-  return {
-    ...resource,
-    title: normalizedTitle,
-    metadata: normalizedMetadata,
-  };
+  return { ...resource, title: normalizedTitle, metadata: normalizedMetadata };
 };
 
 const buildResourceKey = (resource, messageIndex, resourceIndex) => {
-  if (!resource) {
-    return `resource-${messageIndex}-${resourceIndex}`;
-  }
+  if (!resource) return `resource-${messageIndex}-${resourceIndex}`;
 
   const metadata =
-    resource.metadata && typeof resource.metadata === 'object'
-      ? resource.metadata
-      : {};
+    resource.metadata && typeof resource.metadata === 'object' ? resource.metadata : {};
 
   const keyCandidates = [
     resource.id,
@@ -345,19 +274,14 @@ const buildResourceKey = (resource, messageIndex, resourceIndex) => {
   for (const candidate of keyCandidates) {
     if (typeof candidate === 'string') {
       const trimmed = candidate.trim();
-      if (trimmed) {
-        return trimmed;
-      }
+      if (trimmed) return trimmed;
     }
   }
-
   return `resource-${messageIndex}-${resourceIndex}`;
 };
 
 const extractResourcesFromMessages = (messages) => {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return [];
-  }
+  if (!Array.isArray(messages) || messages.length === 0) return [];
 
   let latestQuestionIndex = -1;
   let latestQuestionMessage = null;
@@ -376,20 +300,14 @@ const extractResourcesFromMessages = (messages) => {
   const resourcesMap = new Map();
 
   messages.forEach((message, messageIndex) => {
-    const messageResources = Array.isArray(message?.resources)
-      ? message.resources
-      : [];
-
+    const messageResources = Array.isArray(message?.resources) ? message.resources : [];
     const timestampValue = getTimestampValue(message?.timestamp, messageIndex);
 
     messageResources.forEach((resource, resourceIndex) => {
       const normalizedResource = ensureResourceTitle(resource);
-      if (!normalizedResource) {
-        return;
-      }
+      if (!normalizedResource) return;
 
       const key = buildResourceKey(normalizedResource, messageIndex, resourceIndex);
-
       const existing = resourcesMap.get(key);
       const contexts = new Set();
 
@@ -429,12 +347,14 @@ const extractResourcesFromMessages = (messages) => {
 
       if (shouldReplace) {
         resourcesMap.set(key, entry);
-      } else if (existing) {
+      } else {
+        // keep the newer contexts even if we don't replace the full entry
         existing.contexts = mergedContexts;
       }
     });
   });
 
+  // Compute relevance scores
   const scoredEntries = Array.from(resourcesMap.values()).map((entry) => {
     let score = 0;
     const { contexts } = entry;
@@ -442,11 +362,9 @@ const extractResourcesFromMessages = (messages) => {
     if (contextsHas(contexts, 'question')) {
       score += RELEVANCE_WEIGHTS.QUESTION_ATTACHMENT;
     }
-
     if (contextsHas(contexts, 'answer')) {
       score += RELEVANCE_WEIGHTS.ANSWER_RESOURCE;
     }
-
     if (questionTokens.size > 0) {
       const resourceTokens = getResourceSearchableTokens(entry.resource);
       resourceTokens.forEach((token) => {
@@ -456,23 +374,15 @@ const extractResourcesFromMessages = (messages) => {
       });
     }
 
-    return {
-      ...entry,
-      score,
-    };
+    return { ...entry, score };
   });
 
+  // Sort by score first, then stable fallbacks
   return scoredEntries
     .sort((a, b) => {
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
-      if (b.order !== a.order) {
-        return b.order - a.order;
-      }
-      if (b.messageIndex !== a.messageIndex) {
-        return b.messageIndex - a.messageIndex;
-      }
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.order !== a.order) return b.order - a.order;
+      if (b.messageIndex !== a.messageIndex) return b.messageIndex - a.messageIndex;
       return b.resourceIndex - a.resourceIndex;
     })
     .map((entry) => entry.resource);

@@ -1,3 +1,5 @@
+// src/components/Sidebar.test.js
+
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
@@ -105,50 +107,51 @@ describe('Sidebar resource extraction', () => {
     ];
 
     await act(async () => {
-      ReactDOM.render(
-        <Sidebar {...baseProps} messages={messages} />,
-        container
-      );
+      ReactDOM.render(<Sidebar {...baseProps} messages={messages} />, container);
     });
 
     const headings = Array.from(container.querySelectorAll('h4'));
-    expect(headings[0].textContent).toContain('CAPA Evidence Template');
-    expect(headings[1].textContent).toContain('CAPA Evidence SOP');
-    expect(headings[2].textContent).toContain('General Onboarding Guide');
+    expect(headings[0].textContent).toContain('CAPA Evidence Template'); // question attachment (highest)
+    expect(headings[1].textContent).toContain('CAPA Evidence SOP');     // answer resource
+    expect(headings[2].textContent).toContain('General Onboarding Guide'); // newer unrelated
     expect(headings[3].textContent).toContain('CAPA Readiness Checklist');
     expect(headings[4].textContent).toContain('General Quality Manual');
   });
 
-  it('falls back to recency when no user question is present', async () => {
-    const messages = [
+  it('orders by recency when there is no user question and updates when continuing a chat', async () => {
+    const initialMessages = [
       {
-        id: 'assistant-first',
+        id: 'msg-1',
         role: 'assistant',
-        resources: [
-          { id: 'older-resource', title: 'Legacy Guidance', type: 'Guideline' },
-        ],
+        resources: [{ id: 'old-resource', title: 'Legacy Guidance', type: 'Guideline' }],
         timestamp: 1000,
       },
+    ];
+
+    await act(async () => {
+      ReactDOM.render(<Sidebar {...baseProps} messages={initialMessages} />, container);
+    });
+
+    const initialHeadings = Array.from(container.querySelectorAll('h4'));
+    expect(initialHeadings[0].textContent).toContain('Legacy Guidance');
+
+    const updatedMessages = [
+      ...initialMessages,
       {
-        id: 'assistant-second',
+        id: 'msg-2',
         role: 'assistant',
-        resources: [
-          { id: 'newer-resource', title: 'Latest CAPA Update', type: 'Training' },
-        ],
+        resources: [{ id: 'new-resource', title: 'Latest CAPA Update', type: 'Training' }],
         timestamp: 2000,
       },
     ];
 
     await act(async () => {
-      ReactDOM.render(
-        <Sidebar {...baseProps} messages={messages} />,
-        container
-      );
+      ReactDOM.render(<Sidebar {...baseProps} messages={updatedMessages} />, container);
     });
 
-    const headings = Array.from(container.querySelectorAll('h4'));
-    expect(headings[0].textContent).toContain('Latest CAPA Update');
-    expect(headings[1].textContent).toContain('Legacy Guidance');
+    const updatedHeadings = Array.from(container.querySelectorAll('h4'));
+    expect(updatedHeadings[0].textContent).toContain('Latest CAPA Update');
+    expect(updatedHeadings[1].textContent).toContain('Legacy Guidance');
   });
 
   it('derives a display title for resources that are missing one', async () => {
@@ -168,10 +171,7 @@ describe('Sidebar resource extraction', () => {
     ];
 
     await act(async () => {
-      ReactDOM.render(
-        <Sidebar {...baseProps} messages={messages} />,
-        container
-      );
+      ReactDOM.render(<Sidebar {...baseProps} messages={messages} />, container);
     });
 
     const headings = Array.from(container.querySelectorAll('h4'));

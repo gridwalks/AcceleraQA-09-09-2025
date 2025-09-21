@@ -1,12 +1,38 @@
 // Enhanced with Learning Suggestions
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search, ChevronRight, ExternalLink, BookOpen, Brain, Sparkles, Target, Award, BookmarkPlus, Check, MessageSquare, FileText, Loader2 } from 'lucide-react';
+import {
+  Search,
+  ChevronRight,
+  ExternalLink,
+  BookOpen,
+  Brain,
+  Sparkles,
+  Target,
+  Award,
+  BookmarkPlus,
+  Check,
+  MessageSquare,
+  FileText,
+  Loader2,
+  X,
+  Download,
+  AlertCircle,
+} from 'lucide-react';
 import learningSuggestionsService from '../services/learningSuggestionsService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import ConversationList from './ConversationList';
 import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
 import ragService from '../services/ragService';
 
+
+const createInitialViewerState = () => ({
+  isOpen: false,
+  title: '',
+  url: '',
+  filename: '',
+  contentType: '',
+  allowDownload: false,
+});
 
 const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [], thirtyDayMessages = [], onConversationSelect }) => {
 
@@ -25,6 +51,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const [showToast, setShowToast] = useState(false);
   const [downloadingResourceId, setDownloadingResourceId] = useState(null);
   const toastTimeoutRef = useRef(null);
+  const [viewerState, setViewerState] = useState(() => createInitialViewerState());
+  const [isViewerLoading, setIsViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState(null);
+  const activeObjectUrlRef = useRef(null);
+  const viewerRequestRef = useRef(0);
 
   const conversations = useMemo(() => {
     const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
@@ -89,16 +120,9 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     }
   }, []);
 
-  const openBlobInNewTab = useCallback((blob, filename, pendingWindow = null) => {
+  const createObjectUrlFromBlob = useCallback((blob) => {
     if (!blob) {
-      if (pendingWindow && !pendingWindow.closed) {
-        try {
-          pendingWindow.close();
-        } catch (closeError) {
-          console.warn('Failed to close pending document window:', closeError);
-        }
-      }
-      return;
+      return null;
     }
 
     const urlFactory = (() => {
@@ -112,89 +136,73 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     })();
 
     if (!urlFactory) {
-      console.error('Object URL API is not available; unable to open document preview.');
-      if (pendingWindow && !pendingWindow.closed) {
-        try {
-          pendingWindow.close();
-        } catch (closeError) {
-          console.warn('Failed to close pending document window:', closeError);
-        }
-      }
-      return;
+      console.error('Object URL API is not available; unable to preview document.');
+      return null;
     }
 
-    const blobUrl = urlFactory.createObjectURL(blob);
-
-    const scheduleRevoke = () => {
-      setTimeout(() => {
+    try {
+      const objectUrl = urlFactory.createObjectURL(blob);
+      const revoke = () => {
         try {
-          urlFactory.revokeObjectURL(blobUrl);
+          urlFactory.revokeObjectURL(objectUrl);
         } catch (revokeError) {
           console.warn('Failed to revoke object URL:', revokeError);
         }
-      }, 60 * 1000);
-    };
+      };
 
-    const closePendingWindow = () => {
-      if (pendingWindow && !pendingWindow.closed) {
-        try {
-          pendingWindow.close();
-        } catch (closeError) {
-          console.warn('Failed to close pending document window:', closeError);
-        }
-      }
-    };
-
-    try {
-      if (pendingWindow && !pendingWindow.closed) {
-        pendingWindow.location = blobUrl;
-        if (filename) {
-          try {
-            pendingWindow.document.title = filename;
-          } catch (titleError) {
-            console.debug('Unable to set title on pending document window:', titleError);
-          }
-        }
-        scheduleRevoke();
-        return;
-      }
-
-      if (typeof window !== 'undefined') {
-        const openedWindow = window.open(blobUrl, '_blank', 'noopener');
-        if (openedWindow) {
-          if (filename) {
-            try {
-              openedWindow.document.title = filename;
-            } catch (titleError) {
-              console.debug('Unable to set title on opened document window:', titleError);
-            }
-          }
-          scheduleRevoke();
-          return;
-        }
-      }
-
-      if (typeof document !== 'undefined' && document.body) {
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.target = '_blank';
-        link.rel = 'noopener';
-        if (filename) {
-          link.download = filename;
-        }
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        scheduleRevoke();
-        return;
-      }
+      return { url: objectUrl, revoke };
     } catch (error) {
-      console.error('Failed to open blob in new tab:', error);
+      console.error('Failed to create object URL for document blob:', error);
+      return null;
+    }
+  }, []);
+
+  const revokeActiveObjectUrl = useCallback(() => {
+    if (activeObjectUrlRef.current?.revoke) {
+      try {
+        activeObjectUrlRef.current.revoke();
+      } catch (error) {
+        console.warn('Failed to revoke active object URL:', error);
+      }
+    }
+    activeObjectUrlRef.current = null;
+
+  }, []);
+
+  const closeDocumentViewer = useCallback(() => {
+    viewerRequestRef.current += 1;
+    revokeActiveObjectUrl();
+    setViewerState(createInitialViewerState());
+    setViewerError(null);
+    setIsViewerLoading(false);
+  }, [revokeActiveObjectUrl]);
+
+  useEffect(() => () => {
+    revokeActiveObjectUrl();
+  }, [revokeActiveObjectUrl]);
+
+  useEffect(() => {
+    if (!viewerState.isOpen) {
+      return undefined;
     }
 
-    urlFactory.revokeObjectURL(blobUrl);
-    closePendingWindow();
-  }, []);
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDocumentViewer();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [viewerState.isOpen, closeDocumentViewer]);
 
   // Load learning suggestions on component mount and user change
   useEffect(() => {
@@ -260,16 +268,31 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       return;
     }
 
-    const directUrl = typeof resource.url === 'string' ? resource.url.trim() : '';
-    if (directUrl) {
-      window.open(directUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
+    const requestId = viewerRequestRef.current + 1;
+    viewerRequestRef.current = requestId;
 
     const metadata = resource.metadata || {};
+    const fallbackTitle = metadata.documentTitle || resource.title || 'Document';
+    const fallbackFilename = metadata.filename || metadata.documentTitle || resource.title || 'document';
+    const contentType = metadata.contentType || '';
+
+    const directUrl = typeof resource.url === 'string' ? resource.url.trim() : '';
     const metadataUrl = typeof metadata.downloadUrl === 'string' ? metadata.downloadUrl.trim() : '';
-    if (metadataUrl) {
-      window.open(metadataUrl, '_blank', 'noopener,noreferrer');
+    const resolvedUrl = directUrl || metadataUrl;
+
+    revokeActiveObjectUrl();
+    setViewerError(null);
+
+    if (resolvedUrl) {
+      setViewerState({
+        isOpen: true,
+        title: fallbackTitle,
+        url: resolvedUrl,
+        filename: fallbackFilename,
+        contentType,
+        allowDownload: true,
+      });
+      setIsViewerLoading(false);
       return;
     }
 
@@ -278,6 +301,16 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
     if (!documentId && !fileId) {
       console.warn('Resource does not include a downloadable reference.');
+      setViewerState({
+        isOpen: true,
+        title: fallbackTitle,
+        url: '',
+        filename: fallbackFilename,
+        contentType,
+        allowDownload: false,
+      });
+      setViewerError('This resource does not include a downloadable document.');
+      setIsViewerLoading(false);
       return;
     }
 
@@ -301,29 +334,42 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
     const resourceKey = getResourceKey(resource, index);
     setDownloadingResourceId(resourceKey);
+    setIsViewerLoading(true);
+    setViewerState({
+      isOpen: true,
+      title: fallbackTitle,
+      url: '',
+      filename: fallbackFilename,
+      contentType,
+      allowDownload: false,
+    });
 
     try {
       const response = await ragService.downloadDocument({ documentId, fileId });
+      if (viewerRequestRef.current !== requestId) {
+        return;
+      }
+
       if (!response) {
         throw new Error('No response received from download request');
       }
 
       const responseUrl = typeof response.downloadUrl === 'string' ? response.downloadUrl.trim() : '';
+
       if (responseUrl) {
-        if (pendingWindow && !pendingWindow.closed) {
-          pendingWindow.location = responseUrl;
-        } else if (typeof window !== 'undefined') {
-          const opened = window.open(responseUrl, '_blank', 'noopener');
-          if (!opened && typeof document !== 'undefined' && document.body) {
-            const link = document.createElement('a');
-            link.href = responseUrl;
-            link.target = '_blank';
-            link.rel = 'noopener';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-          }
+        if (viewerRequestRef.current !== requestId) {
+          return;
         }
+
+        setViewerState({
+          isOpen: true,
+          title: fallbackTitle,
+          url: responseUrl,
+          filename: response.filename || fallbackFilename,
+          contentType: response.contentType || contentType,
+          allowDownload: true,
+        });
+        setIsViewerLoading(false);
         return;
       }
 
@@ -332,10 +378,27 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         throw new Error('Unable to decode document content');
       }
 
-      const fallbackFilename = metadata.filename || metadata.documentTitle || resource.title || 'document';
-      const filename = response.filename || fallbackFilename;
-      openBlobInNewTab(blob, filename, pendingWindow);
-      pendingWindow = null;
+      const objectUrlResult = createObjectUrlFromBlob(blob);
+      if (!objectUrlResult) {
+        throw new Error('Unable to create object URL for document');
+      }
+
+      if (viewerRequestRef.current !== requestId) {
+        objectUrlResult.revoke();
+        return;
+      }
+
+      activeObjectUrlRef.current = objectUrlResult;
+
+      setViewerState({
+        isOpen: true,
+        title: fallbackTitle,
+        url: objectUrlResult.url,
+        filename: response.filename || fallbackFilename,
+        contentType: response.contentType || contentType,
+        allowDownload: true,
+      });
+      setIsViewerLoading(false);
     } catch (error) {
       if (pendingWindow && !pendingWindow.closed) {
         try {
@@ -345,10 +408,14 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         }
       }
       console.error('Failed to open resource document:', error);
+      if (viewerRequestRef.current === requestId) {
+        setViewerError('We were unable to load this document in the viewer. If a download option is available, please try that instead.');
+        setIsViewerLoading(false);
+      }
     } finally {
       setDownloadingResourceId(current => (current === resourceKey ? null : current));
     }
-  }, [decodeBase64ToBlob, getResourceKey, openBlobInNewTab]);
+  }, [createObjectUrlFromBlob, decodeBase64ToBlob, getResourceKey, revokeActiveObjectUrl]);
 
   const handleSuggestionClick = (suggestion) => {
     // For AI-generated suggestions, we might need to search for actual resources
@@ -652,9 +719,118 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
           Added to Notebook
         </div>
       )}
+      <DocumentViewer
+        isOpen={viewerState.isOpen}
+        title={viewerState.title}
+        url={viewerState.url}
+        contentType={viewerState.contentType}
+        filename={viewerState.filename}
+        isLoading={isViewerLoading}
+        error={viewerError}
+        allowDownload={viewerState.allowDownload}
+        onClose={closeDocumentViewer}
+      />
     </div>
   );
 });
+
+const DocumentViewer = ({
+  isOpen,
+  title,
+  url,
+  contentType,
+  isLoading,
+  onClose,
+  filename,
+  error,
+  allowDownload,
+}) => {
+  if (!isOpen) {
+    return null;
+  }
+
+  const safeTitle = title || 'Document';
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/70 backdrop-blur-sm px-4 sm:px-6 py-8"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="relative flex h-full max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${safeTitle} viewer`}
+      >
+        <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+          <div className="pr-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Document Viewer</p>
+            <h2 className="text-lg font-semibold text-gray-900">{safeTitle}</h2>
+            {contentType ? (
+              <p className="mt-1 text-xs text-gray-500">{contentType}</p>
+            ) : null}
+          </div>
+          <div className="flex items-center space-x-3">
+            {allowDownload && url && !isLoading && (
+              <a
+                href={url}
+                download={filename || true}
+                className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+              >
+                <Download className="h-4 w-4" />
+                <span>Download</span>
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+              aria-label="Close document viewer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden bg-gray-50">
+          {isLoading ? (
+            <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="text-sm font-medium">Loading document...</p>
+            </div>
+          ) : error ? (
+            <div className="flex h-full flex-col items-center justify-center space-y-3 px-6 text-center text-gray-600">
+              <AlertCircle className="h-10 w-10 text-amber-500" />
+              <p className="text-sm">{error}</p>
+              {allowDownload && url && (
+                <a
+                  href={url}
+                  download={filename || true}
+                  className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download document</span>
+                </a>
+              )}
+            </div>
+          ) : url ? (
+            <iframe
+              title={safeTitle}
+              src={url}
+              className="h-full w-full border-0 bg-white"
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
+              <FileText className="h-10 w-10 text-gray-300" />
+              <p className="text-sm">Document preview is not available.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Individual suggestion card component
 const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeIcon, index, onAdd, isAdded }) => {

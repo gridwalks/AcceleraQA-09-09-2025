@@ -35,12 +35,30 @@ describe('createKnowledgeBaseResources', () => {
     expect(resources[0].metadata.documentTitle).toBe('Quality Event SOP');
   });
 
+  it('uses document description from metadata when available', () => {
+    const sources = [
+      {
+        documentId: 'doc-3',
+        metadata: {
+          documentMetadata: {
+            description: 'Defines the quality system requirements for the organization.',
+          },
+        },
+      },
+    ];
+
+    const resources = createKnowledgeBaseResources(sources);
+    expect(resources).toHaveLength(1);
+    expect(resources[0].description).toBe(
+      'Defines the quality system requirements for the organization.'
+    );
+  });
+
   it('falls back to generic label when no title available', () => {
     const sources = [
       {
         documentId: 'doc-2',
         filename: 'Deviation_Guide.pdf',
-        text: 'Deviation handling guidance.',
       },
     ];
 
@@ -48,5 +66,6 @@ describe('createKnowledgeBaseResources', () => {
     expect(resources).toHaveLength(1);
     expect(resources[0].title).toBe('Referenced document 1');
     expect(resources[0].metadata.documentTitle).toBe('Referenced document 1');
+    expect(resources[0].description).toBe('Referenced from your uploaded knowledge base.');
   });
 });

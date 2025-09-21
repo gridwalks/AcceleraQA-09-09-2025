@@ -6,6 +6,25 @@ const MIN_TOKEN_LENGTH = 3;
 const FILENAME_EXTENSION_PATTERN =
   /\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|yaml|yml|html|htm|log)$/i;
 
+const KNOWLEDGE_DESCRIPTION_FIELDS = [
+  'description',
+  'summary',
+  'abstract',
+  'overview',
+  'notes',
+  'documentDescription',
+  'document_description',
+  'shortDescription',
+  'short_description',
+  'longDescription',
+  'long_description',
+  'details',
+  'detail',
+  'synopsis',
+];
+
+const KNOWLEDGE_FALLBACK_DESCRIPTION = 'Referenced from your uploaded knowledge base.';
+
 function isLikelyFilename(value) {
   if (typeof value !== 'string') {
     return false;
@@ -101,6 +120,71 @@ function collectKnowledgeSourceTitleCandidates(source) {
   pushFromObject(documentMetadata);
   pushFromObject(fileCitation);
   pushFromObject(fileCitationMetadata);
+
+  return candidates;
+}
+
+function collectKnowledgeSourceDescriptionCandidates(source) {
+  if (!source || typeof source !== 'object') {
+    return [];
+  }
+
+  const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : {};
+  const metadataDocumentMetadata =
+    metadata.documentMetadata && typeof metadata.documentMetadata === 'object'
+      ? metadata.documentMetadata
+      : {};
+  const document = source.document && typeof source.document === 'object' ? source.document : {};
+  const documentMetadata =
+    document.metadata && typeof document.metadata === 'object' ? document.metadata : {};
+  const fileCitation =
+    source.file_citation && typeof source.file_citation === 'object' ? source.file_citation : {};
+  const fileCitationMetadata =
+    fileCitation.metadata && typeof fileCitation.metadata === 'object'
+      ? fileCitation.metadata
+      : {};
+
+  const seen = new Set();
+  const candidates = [];
+
+  const pushCandidate = (rawValue) => {
+    if (typeof rawValue !== 'string') {
+      return;
+    }
+
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    candidates.push(trimmed);
+  };
+
+  const pushFromObject = (obj) => {
+    if (!obj || typeof obj !== 'object') {
+      return;
+    }
+
+    KNOWLEDGE_DESCRIPTION_FIELDS.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(obj, field)) {
+        pushCandidate(obj[field]);
+      }
+    });
+  };
+
+  pushFromObject(metadataDocumentMetadata);
+  pushFromObject(documentMetadata);
+  pushFromObject(metadata);
+  pushFromObject(document);
+  pushFromObject(fileCitationMetadata);
+  pushFromObject(fileCitation);
+  pushFromObject(source);
 
   return candidates;
 }
@@ -245,6 +329,19 @@ export function createKnowledgeBaseResources(sources = []) {
     const preferredTitle = titleCandidates.find(candidate => !isLikelyFilename(candidate));
     const resolvedTitle = preferredTitle || fallbackTitle;
 
+    const descriptionCandidates = collectKnowledgeSourceDescriptionCandidates(source);
+    const documentDescription = descriptionCandidates.length > 0 ? descriptionCandidates[0] : '';
+    const truncatedDocumentDescription = documentDescription
+      ? truncateText(documentDescription, 220)
+      : '';
+    const resolvedDescription =
+      snippet || truncatedDocumentDescription || KNOWLEDGE_FALLBACK_DESCRIPTION;
+    const descriptionSource = snippet
+      ? 'snippet'
+      : truncatedDocumentDescription
+        ? 'document'
+        : 'fallback';
+
     const metadataDocumentId =
       getFirstNonEmptyString(
         source.documentId,
@@ -268,23 +365,43 @@ export function createKnowledgeBaseResources(sources = []) {
                 : typeof source.file_citation?.chunk_index === 'number'
                   ? source.file_citation.chunk_index
                   : null;
-    const existing = deduped.get(key);
+    const existingEntry = deduped.get(key);
 
-    if (existing) {
-      if (snippet && !existing.description.includes(snippet)) {
-        const merged = `${existing.description} ${snippet}`.trim();
-        existing.description = truncateText(merged, 220);
+    if (existingEntry) {
+      const existingResource = existingEntry.resource;
+
+      if (snippet) {
+        if (
+          typeof existingResource.description !== 'string' ||
+          !existingResource.description.includes(snippet)
+        ) {
+          const merged = `${existingResource.description || ''} ${snippet}`.trim();
+          existingResource.description = truncateText(merged, 220);
+        }
+        existingEntry.descriptionSource = 'snippet';
+      } else if (
+        descriptionSource === 'document' &&
+        existingEntry.descriptionSource !== 'snippet'
+      ) {
+        if (truncatedDocumentDescription) {
+          existingResource.description = truncatedDocumentDescription;
+          existingEntry.descriptionSource = 'document';
+        }
+      } else if (!existingResource.description) {
+        existingResource.description = resolvedDescription;
+        existingEntry.descriptionSource = descriptionSource;
       }
-      if (resolvedTitle && existing.title !== resolvedTitle) {
-        existing.title = resolvedTitle;
+
+      if (resolvedTitle && existingResource.title !== resolvedTitle) {
+        existingResource.title = resolvedTitle;
       }
-      if (!existing.metadata?.documentTitle && resolvedTitle) {
-        existing.metadata = {
-          ...(existing.metadata || {}),
+      if (!existingResource.metadata?.documentTitle && resolvedTitle) {
+        existingResource.metadata = {
+          ...(existingResource.metadata || {}),
           documentTitle: resolvedTitle,
         };
       }
-      deduped.set(key, existing);
+      deduped.set(key, existingEntry);
       return;
     }
 
@@ -297,18 +414,21 @@ export function createKnowledgeBaseResources(sources = []) {
     }
 
     deduped.set(key, {
-      id: buildResourceId('knowledge', key, index),
-      title: resolvedTitle,
-      type: 'Knowledge Base',
-      url: source.url || null,
-      description: snippet || 'Referenced from your uploaded knowledge base.',
-      origin: 'Knowledge Base',
-      location: 'Derived from retrieved document context',
-      metadata,
+      resource: {
+        id: buildResourceId('knowledge', key, index),
+        title: resolvedTitle,
+        type: 'Knowledge Base',
+        url: source.url || null,
+        description: resolvedDescription,
+        origin: 'Knowledge Base',
+        location: 'Derived from retrieved document context',
+        metadata,
+      },
+      descriptionSource,
     });
   });
 
-  return Array.from(deduped.values());
+  return Array.from(deduped.values()).map(entry => entry.resource);
 }
 
 function scoreAdminResource(resource, contextTokens) {

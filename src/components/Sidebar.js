@@ -174,100 +174,6 @@ const buildResourceKey = (resource, messageIndex, resourceIndex) => {
   return `resource-${messageIndex}-${resourceIndex}`;
 };
 
-const normalizeRole = (value) =>
-  typeof value === 'string' ? value.trim().toLowerCase() : '';
-
-const isUserMessage = (message) => {
-  const role = normalizeRole(message?.role);
-  const type = normalizeRole(message?.type);
-
-  return role === 'user' || type === 'user';
-};
-
-const isAssistantMessage = (message) => {
-  const role = normalizeRole(message?.role);
-  const type = normalizeRole(message?.type);
-
-  return role === 'assistant' || role === 'ai' || type === 'assistant' || type === 'ai';
-};
-
-const collectStrings = (value, results = []) => {
-  if (value == null) {
-    return results;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed) {
-      results.push(trimmed);
-    }
-    return results;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    results.push(String(value));
-    return results;
-  }
-
-  if (Array.isArray(value)) {
-    value.forEach((item) => collectStrings(item, results));
-    return results;
-  }
-
-  if (typeof value === 'object') {
-    Object.values(value).forEach((item) => collectStrings(item, results));
-  }
-
-  return results;
-};
-
-const getMessageText = (message) => {
-  const fragments = [];
-
-  collectStrings(message?.content, fragments);
-  collectStrings(message?.text, fragments);
-  collectStrings(message?.message, fragments);
-
-  if (Array.isArray(message?.parts)) {
-    message.parts.forEach((part) => {
-      if (typeof part === 'string' || typeof part === 'number' || typeof part === 'boolean') {
-        collectStrings(part, fragments);
-      } else if (part && typeof part === 'object') {
-        collectStrings(part.text, fragments);
-        collectStrings(part.content, fragments);
-      }
-    });
-  }
-
-  return fragments.join(' ');
-};
-
-const tokenize = (value) => {
-  if (typeof value !== 'string') {
-    return [];
-  }
-
-  return value
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-};
-
-const getResourceTokens = (resource) => {
-  const fragments = [];
-
-  collectStrings(resource?.title, fragments);
-  collectStrings(resource?.description, fragments);
-  collectStrings(resource?.type, fragments);
-  collectStrings(resource?.tags, fragments);
-  collectStrings(resource?.metadata, fragments);
-
-  return tokenize(fragments.join(' '));
-};
-
-const QUESTION_ATTACHMENT_BONUS = 100;
-const ASSISTANT_FOLLOWUP_BONUS = 50;
 
 const extractResourcesFromMessages = (messages) => {
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -280,22 +186,12 @@ const extractResourcesFromMessages = (messages) => {
     .reverse()
     .find(({ message }) => isUserMessage(message))?.index ?? -1;
 
-  const questionTokens = questionIndex >= 0
-    ? new Set(tokenize(getMessageText(messages[questionIndex])))
-    : new Set();
-
   messages.forEach((message, messageIndex) => {
     const messageResources = Array.isArray(message?.resources)
       ? message.resources
       : [];
 
     const timestampValue = getTimestampValue(message?.timestamp, messageIndex);
-    const isQuestionMessage = messageIndex === questionIndex;
-    const isFollowupAssistantMessage =
-      questionIndex >= 0 &&
-      messageIndex > questionIndex &&
-      isAssistantMessage(message);
-
     messageResources.forEach((resource, resourceIndex) => {
       const normalizedResource = ensureResourceTitle(resource);
       if (!normalizedResource) {
@@ -304,23 +200,6 @@ const extractResourcesFromMessages = (messages) => {
 
       const key = buildResourceKey(normalizedResource, messageIndex, resourceIndex);
 
-      const resourceTokens = getResourceTokens(normalizedResource);
-      let overlapScore = 0;
-      if (questionTokens.size > 0 && resourceTokens.length > 0) {
-        const resourceTokenSet = new Set(resourceTokens);
-        questionTokens.forEach((token) => {
-          if (resourceTokenSet.has(token)) {
-            overlapScore += 1;
-          }
-        });
-      }
-
-      let score = overlapScore;
-      if (isQuestionMessage) {
-        score += QUESTION_ATTACHMENT_BONUS;
-      } else if (isFollowupAssistantMessage) {
-        score += ASSISTANT_FOLLOWUP_BONUS;
-      }
 
       const existing = resourcesMap.get(key);
       const entry = {
@@ -328,7 +207,6 @@ const extractResourcesFromMessages = (messages) => {
         order: timestampValue,
         messageIndex,
         resourceIndex,
-        score,
       };
 
       if (!existing) {
@@ -337,13 +215,13 @@ const extractResourcesFromMessages = (messages) => {
       }
 
       if (
-        entry.score > existing.score ||
-        (entry.score === existing.score &&
-          (entry.order > existing.order ||
-            (entry.order === existing.order && entry.messageIndex > existing.messageIndex) ||
-            (entry.order === existing.order &&
-              entry.messageIndex === existing.messageIndex &&
-              entry.resourceIndex >= existing.resourceIndex)))
+
+        entry.order > existing.order ||
+        (entry.order === existing.order && entry.messageIndex > existing.messageIndex) ||
+        (entry.order === existing.order &&
+          entry.messageIndex === existing.messageIndex &&
+          entry.resourceIndex >= existing.resourceIndex)
+
       ) {
         resourcesMap.set(key, entry);
       }
@@ -352,9 +230,7 @@ const extractResourcesFromMessages = (messages) => {
 
   return Array.from(resourcesMap.values())
     .sort((a, b) => {
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
+
       if (b.order !== a.order) {
         return b.order - a.order;
       }

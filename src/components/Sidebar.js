@@ -73,30 +73,165 @@ const Sidebar = ({
  * @param {Array} messages - Array of messages
  * @returns {Array} - Array of unique resources
  */
+const getTimestampValue = (timestamp, fallback) => {
+  if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
+    return timestamp;
+  }
+
+  if (typeof timestamp === 'string') {
+    const parsed = Date.parse(timestamp);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return fallback;
+};
+
+const ensureResourceTitle = (resource) => {
+  if (!resource || typeof resource !== 'object') {
+    return null;
+  }
+
+  const metadata =
+    resource.metadata && typeof resource.metadata === 'object'
+      ? resource.metadata
+      : {};
+
+  const titleCandidates = [
+    resource.title,
+    metadata.documentTitle,
+    metadata.document_title,
+    metadata.filename,
+    metadata.documentName,
+    metadata.document_name,
+    metadata.title,
+    resource.url,
+    resource.id,
+  ];
+
+  const resolvedTitle = titleCandidates.find(
+    (value) => typeof value === 'string' && value.trim()
+  );
+
+  if (!resolvedTitle) {
+    return null;
+  }
+
+  if (resource.title && resource.title.trim()) {
+    return {
+      ...resource,
+      title: resource.title.trim(),
+      metadata,
+    };
+  }
+
+  const normalizedTitle = resolvedTitle.trim();
+  const normalizedMetadata = { ...metadata };
+
+  if (!normalizedMetadata.documentTitle) {
+    normalizedMetadata.documentTitle = normalizedTitle;
+  }
+
+  return {
+    ...resource,
+    title: normalizedTitle,
+    metadata: normalizedMetadata,
+  };
+};
+
+const buildResourceKey = (resource, messageIndex, resourceIndex) => {
+  if (!resource) {
+    return `resource-${messageIndex}-${resourceIndex}`;
+  }
+
+  const metadata =
+    resource.metadata && typeof resource.metadata === 'object'
+      ? resource.metadata
+      : {};
+
+  const keyCandidates = [
+    resource.id,
+    metadata.documentId,
+    metadata.document_id,
+    metadata.fileId,
+    metadata.file_id,
+    metadata.documentTitle,
+    metadata.document_title,
+    resource.url,
+    resource.title ? `${resource.title}-${resource.type || ''}` : null,
+  ];
+
+  for (const candidate of keyCandidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+
+  return `resource-${messageIndex}-${resourceIndex}`;
+};
+
 const extractResourcesFromMessages = (messages) => {
-  if (!messages || !Array.isArray(messages)) {
+  if (!Array.isArray(messages) || messages.length === 0) {
     return [];
   }
 
   const resourcesMap = new Map();
 
-  messages.forEach(message => {
-    if (message.resources && Array.isArray(message.resources)) {
-      message.resources.forEach(resource => {
-        if (!resource || !resource.title) {
-          return;
-        }
+  messages.forEach((message, messageIndex) => {
+    const messageResources = Array.isArray(message?.resources)
+      ? message.resources
+      : [];
 
-        const key = resource.url || resource.id || `${resource.title}-${resource.type || ''}`;
+    const timestampValue = getTimestampValue(message?.timestamp, messageIndex);
 
-        if (!resourcesMap.has(key)) {
-          resourcesMap.set(key, resource);
-        }
-      });
-    }
+    messageResources.forEach((resource, resourceIndex) => {
+      const normalizedResource = ensureResourceTitle(resource);
+      if (!normalizedResource) {
+        return;
+      }
+
+      const key = buildResourceKey(normalizedResource, messageIndex, resourceIndex);
+
+      const existing = resourcesMap.get(key);
+      const entry = {
+        resource: normalizedResource,
+        order: timestampValue,
+        messageIndex,
+        resourceIndex,
+      };
+
+      if (!existing) {
+        resourcesMap.set(key, entry);
+        return;
+      }
+
+      if (
+        entry.order > existing.order ||
+        (entry.order === existing.order && entry.messageIndex > existing.messageIndex) ||
+        (entry.order === existing.order &&
+          entry.messageIndex === existing.messageIndex &&
+          entry.resourceIndex >= existing.resourceIndex)
+      ) {
+        resourcesMap.set(key, entry);
+      }
+    });
   });
 
-  return Array.from(resourcesMap.values());
+  return Array.from(resourcesMap.values())
+    .sort((a, b) => {
+      if (b.order !== a.order) {
+        return b.order - a.order;
+      }
+      if (b.messageIndex !== a.messageIndex) {
+        return b.messageIndex - a.messageIndex;
+      }
+      return b.resourceIndex - a.resourceIndex;
+    })
+    .map((entry) => entry.resource);
 };
 
 export default Sidebar;

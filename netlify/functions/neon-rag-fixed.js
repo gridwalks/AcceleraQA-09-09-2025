@@ -703,16 +703,9 @@ async function handleSearch(userId, query, options = {}) {
       }
 
       const preferredTitle = titleCandidates.find(candidate => !isLikelyFilename(candidate));
-      const fallbackTitle = titleCandidates.find(candidate => isLikelyFilename(candidate));
+      const resolvedTitle = preferredTitle || `Document ${index + 1}`;
 
-      const resolvedTitle =
-        preferredTitle ||
-        fallbackTitle ||
-        fallbackFilename ||
-        fallbackOriginal ||
-        `Document ${index + 1}`;
-
-      const documentTitle = preferredTitle || fallbackTitle || null;
+      const documentTitle = preferredTitle || null;
 
       const metadataWithTitle = { ...metadata };
       if (documentTitle) {

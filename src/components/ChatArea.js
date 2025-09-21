@@ -248,9 +248,8 @@ const selectPreferredSourceTitle = (candidates, fallbackLabel) => {
   }
 
   const preferred = candidates.find(candidate => !isLikelyFilename(candidate));
-  const fallbackCandidate = candidates.find(candidate => isLikelyFilename(candidate));
 
-  return preferred || fallbackCandidate || fallbackLabel;
+  return preferred || fallbackLabel;
 };
 
 

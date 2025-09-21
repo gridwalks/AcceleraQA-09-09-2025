@@ -118,6 +118,53 @@ const mapDocumentRow = (row) => ({
   updatedAt: row.updated_at,
 });
 
+const sanitizeDocumentMetadata = (metadata = {}) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return {};
+  }
+
+  const sanitized = {};
+
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        sanitized[key] = trimmed;
+      }
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      const normalizedArray = value
+        .map(item => (typeof item === 'string' ? item.trim() : item))
+        .filter(item => {
+          if (item === null || item === undefined) {
+            return false;
+          }
+
+          if (typeof item === 'string') {
+            return item !== '';
+          }
+
+          return true;
+        });
+
+      if (normalizedArray.length > 0) {
+        sanitized[key] = normalizedArray;
+      }
+      continue;
+    }
+
+    sanitized[key] = value;
+  }
+
+  return sanitized;
+};
+
 const handleHealth = async (sql) => {
   await sql`SELECT 1`;
   return createResponse(200, {
@@ -193,9 +240,9 @@ const handleSaveDocument = async (sql, userId, payload) => {
   }
 
   const documentId = document.id || document.documentId || document.fileId || randomUUID();
-  const normalizedMetadata = document.metadata && typeof document.metadata === 'object'
-    ? document.metadata
-    : {};
+  const normalizedMetadata = sanitizeDocumentMetadata(
+    document.metadata && typeof document.metadata === 'object' ? document.metadata : {}
+  );
 
   const rows = await sql`
     INSERT INTO rag_user_documents (
@@ -323,6 +370,66 @@ const handleDeleteDocument = async (sql, userId, payload) => {
   return createResponse(200, { success: true });
 };
 
+const handleUpdateDocument = async (sql, userId, payload) => {
+  const documentId = payload?.documentId;
+  const metadataUpdates = payload?.metadata;
+  const clearFieldsInput = Array.isArray(payload?.clearFields) ? payload.clearFields : [];
+
+  if (!documentId) {
+    return createResponse(400, { error: 'documentId is required' });
+  }
+
+  const existingRows = await sql`
+    SELECT document_id, file_id, filename, content_type, size, metadata, chunks, vector_store_id, created_at, updated_at
+    FROM rag_user_documents
+    WHERE user_id = ${userId}
+      AND document_id = ${documentId}
+    LIMIT 1
+  `;
+
+  const existingRow = existingRows[0];
+  if (!existingRow) {
+    return createResponse(404, { error: 'Document not found for this user' });
+  }
+
+  const currentMetadata = existingRow.metadata && typeof existingRow.metadata === 'object'
+    ? { ...existingRow.metadata }
+    : {};
+
+  const fieldsToClear = clearFieldsInput
+    .map(field => (typeof field === 'string' ? field.trim() : ''))
+    .filter(Boolean);
+
+  fieldsToClear.forEach(field => {
+    delete currentMetadata[field];
+  });
+
+  const sanitizedUpdates = sanitizeDocumentMetadata(metadataUpdates || {});
+  const hasUpdates = Object.keys(sanitizedUpdates).length > 0;
+  const hasClears = fieldsToClear.length > 0;
+
+  if (!hasUpdates && !hasClears) {
+    return createResponse(200, { document: mapDocumentRow(existingRow) });
+  }
+
+  const mergedMetadata = sanitizeDocumentMetadata({
+    ...currentMetadata,
+    ...sanitizedUpdates,
+  });
+
+  const updatedRows = await sql`
+    UPDATE rag_user_documents
+    SET metadata = ${mergedMetadata},
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ${userId}
+      AND document_id = ${documentId}
+    RETURNING document_id, file_id, filename, content_type, size, metadata, chunks, vector_store_id, created_at, updated_at
+  `;
+
+  const updatedRow = updatedRows[0];
+  return createResponse(200, { document: mapDocumentRow(updatedRow) });
+};
+
 export const handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -373,6 +480,8 @@ export const handler = async (event, context) => {
         return await handleSaveDocument(sql, userId, data);
       case 'delete_document':
         return await handleDeleteDocument(sql, userId, data);
+      case 'update_document':
+        return await handleUpdateDocument(sql, userId, data);
       case 'download_document':
         return await handleDownloadDocument(sql, userId, data);
       default:

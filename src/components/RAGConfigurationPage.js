@@ -14,7 +14,9 @@ import {
   Key,
   BookOpen,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  Pencil,
+  Save
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
@@ -53,6 +55,23 @@ const getDocumentTitle = (doc) => {
 
 const USER_DOCUMENT_LIMIT = 20;
 
+const INITIAL_UPLOAD_METADATA = {
+  fileName: '',
+  title: '',
+  description: '',
+  tags: '',
+  category: 'general',
+  version: ''
+};
+
+const INITIAL_EDIT_METADATA = {
+  title: '',
+  description: '',
+  tags: '',
+  category: 'general',
+  version: ''
+};
+
 const RAGConfigurationPage = ({ user, onClose }) => {
   const [activeTab, setActiveTab] = useState('documents');
   const [documents, setDocuments] = useState([]);
@@ -62,14 +81,11 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const [error, setError] = useState(null);
   const [debugInfo, setDebugInfo] = useState(null);
   const [authDebug, setAuthDebug] = useState(null);
-  const [uploadMetadata, setUploadMetadata] = useState({
-    fileName: '',
-    title: '',
-    description: '',
-    tags: '',
-    category: 'general',
-    version: ''
-  });
+  const [uploadMetadata, setUploadMetadata] = useState(() => ({ ...INITIAL_UPLOAD_METADATA }));
+  const [editingDocument, setEditingDocument] = useState(null);
+  const [editMetadata, setEditMetadata] = useState(() => ({ ...INITIAL_EDIT_METADATA }));
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editFormError, setEditFormError] = useState(null);
   const [trainingResources, setTrainingResources] = useState([]);
   const [isLoadingTraining, setIsLoadingTraining] = useState(false);
   const [trainingError, setTrainingError] = useState(null);
@@ -87,9 +103,11 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const documentLimitMessage = `You have reached the maximum of ${USER_DOCUMENT_LIMIT} documents (${documents.length}/${USER_DOCUMENT_LIMIT}). Delete an existing document before uploading a new one.`;
   const documentCountLabel = isAdmin
     ? `${documents.length} document${documents.length === 1 ? '' : 's'} uploaded`
-    : `${documents.length} of ${USER_DOCUMENT_LIMIT} document uploads`
+    : `${documents.length} of ${USER_DOCUMENT_LIMIT} document uploads`;
+  const editingDocumentTitle = editingDocument ? getDocumentTitle(editingDocument) : '';
+  const editingDocumentFilename = editingDocument?.filename || '';
 
-
+  
   // Enhanced authentication debugging
   const checkAuthentication = useCallback(async () => {
     try {
@@ -363,14 +381,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
       });
 
       setSelectedFile(null);
-      setUploadMetadata({
-        fileName: '',
-        title: '',
-        description: '',
-        tags: '',
-        category: 'general',
-        version: ''
-      });
+      setUploadMetadata({ ...INITIAL_UPLOAD_METADATA });
 
       const fileInput = document.getElementById('file-upload');
       if (fileInput) fileInput.value = '';
@@ -396,20 +407,138 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
   const handleDelete = async (documentId, filename) => {
     const confirmed = window.confirm(`Are you sure you want to delete "${filename}"? This action cannot be undone.`);
-    
+
     if (!confirmed) return;
 
     try {
       await ragService.deleteDocument(documentId, user?.sub);
       setDocuments(prev => prev.filter(doc => doc.id !== documentId));
-      
+
     } catch (error) {
       console.error('Error deleting document:', error);
       setError(`Failed to delete "${filename}": ${error.message}`);
-      
+
       if (error.message.includes('authentication') || error.message.includes('401')) {
         await checkAuthentication();
       }
+    }
+  };
+
+  const formatTagsForInput = (tags) => {
+    if (Array.isArray(tags)) {
+      return tags
+        .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    if (typeof tags === 'string') {
+      return tags;
+    }
+
+    return '';
+  };
+
+  const startEditingDocument = (doc) => {
+    if (!doc) {
+      return;
+    }
+
+    const metadata = doc.metadata && typeof doc.metadata === 'object' ? doc.metadata : {};
+    const normalizedCategory = typeof metadata.category === 'string' && metadata.category.trim()
+      ? metadata.category.trim().toLowerCase()
+      : 'general';
+
+    const normalizedMetadata = {
+      title: typeof metadata.title === 'string' ? metadata.title.trim() : '',
+      description: typeof metadata.description === 'string' ? metadata.description.trim() : '',
+      category: normalizedCategory,
+      version: typeof metadata.version === 'string' ? metadata.version.trim() : '',
+      tags: formatTagsForInput(metadata.tags),
+    };
+
+    setEditMetadata(normalizedMetadata);
+    setEditFormError(null);
+    setEditingDocument(doc);
+  };
+
+  const closeEditModal = ({ force = false } = {}) => {
+    if (isSavingEdit && !force) {
+      return;
+    }
+
+    setEditingDocument(null);
+    setEditMetadata({ ...INITIAL_EDIT_METADATA });
+    setEditFormError(null);
+  };
+
+  const handleEditMetadataChange = (field, value) => {
+    setEditMetadata(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleSaveMetadataChanges = async (event) => {
+    if (event?.preventDefault) {
+      event.preventDefault();
+    }
+
+    if (!editingDocument) {
+      return;
+    }
+
+    const documentId = editingDocument.id || editingDocument.documentId || editingDocument.fileId;
+    if (!documentId) {
+      setEditFormError('Unable to determine which document to update.');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditFormError(null);
+
+    try {
+      const metadataPayload = {
+        title: editMetadata.title,
+        description: editMetadata.description,
+        category: editMetadata.category || 'general',
+        version: editMetadata.version,
+        tags: editMetadata.tags,
+      };
+
+      const updatedDocument = await ragService.updateDocumentMetadata(documentId, metadataPayload, user?.sub);
+
+      if (updatedDocument && typeof updatedDocument === 'object') {
+        setDocuments(prevDocuments => {
+          const index = prevDocuments.findIndex(doc => doc.id === updatedDocument.id);
+          if (index === -1) {
+            return prevDocuments;
+          }
+
+          const nextDocuments = [...prevDocuments];
+          nextDocuments[index] = { ...prevDocuments[index], ...updatedDocument };
+          return nextDocuments;
+        });
+
+        const updatedTitle = getDocumentTitle(updatedDocument) || updatedDocument.filename || 'document';
+        setUploadStatus({
+          type: 'success',
+          title: 'Document details updated',
+          message: `Saved new details for "${updatedTitle}".`,
+        });
+      }
+
+      closeEditModal({ force: true });
+    } catch (metadataError) {
+      console.error('Failed to update document metadata:', metadataError);
+      setEditFormError(metadataError.message || 'Failed to update document metadata.');
+
+      const message = metadataError?.message || '';
+      if (message.includes('authentication') || message.includes('401')) {
+        await checkAuthentication();
+      }
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -423,7 +552,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+      <div className="relative bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
@@ -549,9 +678,13 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                   uploadStatus.type === 'error' ? 'text-red-800' :
                   'text-blue-800'
                 }`}>
-                  {uploadStatus.type === 'success' ? 'Upload Successful' :
-                   uploadStatus.type === 'error' ? 'Upload Failed' :
-                   'Processing...'}
+                  {uploadStatus.title
+                    ? uploadStatus.title
+                    : uploadStatus.type === 'success'
+                      ? 'Upload Successful'
+                      : uploadStatus.type === 'error'
+                        ? 'Upload Failed'
+                        : 'Processing...'}
                 </p>
                 <p className={`text-sm ${
                   uploadStatus.type === 'success' ? 'text-green-700' :
@@ -842,13 +975,22 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                                   )}
                                 </td>
                                 <td className="px-4 py-3 text-right">
-                                  <button
-                                    onClick={() => handleDelete(doc.id, displayTitle || doc.filename)}
-                                    className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                                    aria-label={`Delete ${displayTitle || doc.filename}`}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                                  <div className="inline-flex items-center space-x-2">
+                                    <button
+                                      onClick={() => startEditingDocument(doc)}
+                                      className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+                                      aria-label={`Edit ${displayTitle || doc.filename}`}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDelete(doc.id, displayTitle || doc.filename)}
+                                      className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                      aria-label={`Delete ${displayTitle || doc.filename}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -970,6 +1112,151 @@ const RAGConfigurationPage = ({ user, onClose }) => {
           )}
 
         </div>
+
+        {editingDocument && (
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="bg-white w-full max-w-3xl rounded-lg shadow-2xl flex flex-col max-h-[80vh]">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <Pencil className="h-5 w-5 text-blue-600" />
+                    <h3 className="text-lg font-semibold text-gray-900">Edit document details</h3>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1 truncate">
+                    {editingDocumentTitle || editingDocumentFilename}
+                    {editingDocumentFilename && editingDocumentTitle && editingDocumentTitle !== editingDocumentFilename && (
+                      <span className="text-gray-400"> · {editingDocumentFilename}</span>
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => closeEditModal()}
+                  disabled={isSavingEdit}
+                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-60 disabled:cursor-not-allowed"
+                  aria-label="Close edit document modal"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveMetadataChanges} className="flex-1 flex flex-col">
+                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+                  {editFormError && (
+                    <div className="p-3 border border-red-200 bg-red-50 rounded-md text-sm text-red-700">
+                      {editFormError}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
+                        Title
+                      </label>
+                      <input
+                        type="text"
+                        value={editMetadata.title}
+                        onChange={(event) => handleEditMetadataChange('title', event.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        placeholder="Document title"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
+                        Document Summary (optional)
+                      </label>
+                      <textarea
+                        value={editMetadata.description}
+                        onChange={(event) => handleEditMetadataChange('description', event.target.value)}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        placeholder="Add a short summary to help teammates understand when to use this document"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
+                        Category
+                      </label>
+                      <select
+                        value={editMetadata.category}
+                        onChange={(event) => handleEditMetadataChange('category', event.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                      >
+                        <option value="general">General</option>
+                        <option value="gmp">GMP</option>
+                        <option value="validation">Validation</option>
+                        <option value="capa">CAPA</option>
+                        <option value="regulatory">Regulatory</option>
+                        <option value="quality">Quality</option>
+                        <option value="sop">SOP</option>
+                        <option value="training">Training</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
+                        Document Version (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={editMetadata.version}
+                        onChange={(event) => handleEditMetadataChange('version', event.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        placeholder="e.g. v1.2, Rev B"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
+                        Tags (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={editMetadata.tags}
+                        onChange={(event) => handleEditMetadataChange('tags', event.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                        placeholder="Comma separated keywords (e.g. policy, onboarding)"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Separate tags with commas to help group similar documents in search results.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-100 px-6 py-4 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => closeEditModal()}
+                    disabled={isSavingEdit}
+                    className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 border border-gray-300 rounded-md hover:border-gray-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingEdit}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isSavingEdit ? (
+                      <>
+                        <Loader className="h-4 w-4 animate-spin" />
+                        <span className="ml-2">Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        <span className="ml-2">Save changes</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

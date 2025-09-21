@@ -506,6 +506,10 @@ const isDisallowedSnippet = (text) => {
     return true;
   }
 
+  if (isLikelyOpaqueIdentifier(text)) {
+    return true;
+  }
+
   if (/^document\s+\d+$/i.test(text)) {
     return true;
   }
@@ -586,7 +590,7 @@ function getSourceSnippet(source, options = {}) {
       return;
     }
 
-    if (isDisallowedSnippet(normalized)) {
+    if (isLikelyOpaqueIdentifier(normalized) || isDisallowedSnippet(normalized)) {
       return;
     }
 

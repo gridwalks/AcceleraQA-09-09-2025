@@ -951,7 +951,10 @@ function App() {
   }, []);
 
   const handleShowRAGConfig = useCallback(() => setShowRAGConfig(true), []);
-  const handleCloseRAGConfig = useCallback(() => setShowRAGConfig(false), []);
+  const handleCloseRAGConfig = useCallback(() => {
+    setShowRAGConfig(false);
+    refreshAdminResources();
+  }, [refreshAdminResources]);
   const handleShowAdmin = useCallback(() => setShowAdmin(true), []);
   const handleCloseAdmin = useCallback(() => setShowAdmin(false), []);
 

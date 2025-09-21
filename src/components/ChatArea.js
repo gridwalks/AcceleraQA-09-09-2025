@@ -4,6 +4,16 @@ import React, { useCallback } from 'react';
 import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown } from 'lucide-react';
 import { exportToWord } from '../utils/exportUtils';
 
+const createUnicodeLetterRegex = () => {
+  try {
+    return new RegExp('\\p{L}', 'u');
+  } catch (error) {
+    return /[a-z]/i;
+  }
+};
+
+const UNICODE_LETTER_REGEX = createUnicodeLetterRegex();
+
 const isPdfAttachment = (file) => {
   if (!file) return false;
   const name = typeof file.name === 'string' ? file.name.toLowerCase() : '';
@@ -136,7 +146,7 @@ const isLikelyOpaqueIdentifier = (value) => {
     return false;
   }
 
-  if (!/[a-z]/i.test(trimmed)) {
+  if (!UNICODE_LETTER_REGEX.test(trimmed)) {
     return true;
   }
 
@@ -583,10 +593,6 @@ function getSourceSnippet(source, options = {}) {
     }
 
     if (isLikelyFilename(normalized)) {
-      return;
-    }
-
-    if (!/[a-z]/i.test(normalized)) {
       return;
     }
 
@@ -1043,4 +1049,5 @@ const ChatArea = ({
   );
 };
 
+export { getSourceSnippet, isDisallowedSnippet };
 export default ChatArea;

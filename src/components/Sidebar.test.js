@@ -88,6 +88,83 @@ describe('Sidebar resource extraction', () => {
     expect(updatedHeadings[1].textContent).toContain('Legacy Guidance');
   });
 
+  it('prioritizes question-related resources based on relevance scoring', async () => {
+    const messages = [
+      {
+        id: 'msg-legacy',
+        role: 'assistant',
+        content: 'Historical reference shared earlier.',
+        resources: [
+          {
+            id: 'resource-legacy',
+            title: 'Legacy Process Overview',
+            type: 'Guideline',
+            description: 'Archived manufacturing process guidance.',
+          },
+        ],
+        timestamp: 500,
+      },
+      {
+        id: 'msg-question',
+        role: 'user',
+        content: 'Can you share the CAPA procedure steps for recent audits?',
+        resources: [
+          {
+            id: 'resource-upload',
+            title: 'CAPA Procedure Attachment',
+            type: 'User Upload',
+            description: 'CAPA procedure steps shared by the user.',
+          },
+        ],
+        timestamp: 1000,
+      },
+      {
+        id: 'msg-answer',
+        role: 'assistant',
+        content: 'Here is the procedure you requested.',
+        resources: [
+          {
+            id: 'resource-capa',
+            title: 'CAPA Process Guide',
+            type: 'Guide',
+            description: 'Comprehensive CAPA procedure steps for audits.',
+          },
+        ],
+        timestamp: 1500,
+      },
+      {
+        id: 'msg-unrelated',
+        role: 'assistant',
+        content: 'Unrelated update about finances.',
+        resources: [
+          {
+            id: 'resource-finance',
+            title: 'Annual Financial Report',
+            type: 'Report',
+            description: 'Latest financial performance overview.',
+          },
+        ],
+        timestamp: 2000,
+      },
+    ];
+
+    await act(async () => {
+      ReactDOM.render(
+        <Sidebar {...baseProps} messages={messages} />,
+        container
+      );
+    });
+
+    const headings = Array.from(container.querySelectorAll('h4')).map((heading) =>
+      heading.textContent.trim()
+    );
+
+    expect(headings[0]).toContain('CAPA Procedure Attachment');
+    expect(headings[1]).toContain('CAPA Process Guide');
+    expect(headings[2]).toContain('Annual Financial Report');
+    expect(headings[3]).toContain('Legacy Process Overview');
+  });
+
   it('derives a display title for resources that are missing one', async () => {
     const messages = [
       {

@@ -74,6 +74,75 @@ class RAGService {
     return sanitized;
   }
 
+  prepareMetadataUpdate(metadata = {}) {
+    const editableFields = ['title', 'description', 'category', 'version', 'tags'];
+    const sanitizedMetadata = {};
+    const clearFields = new Set();
+
+    if (!metadata || typeof metadata !== 'object') {
+      return { sanitizedMetadata, clearFields: [] };
+    }
+
+    editableFields.forEach(field => {
+      if (!(field in metadata)) {
+        return;
+      }
+
+      const value = metadata[field];
+
+      if (field === 'tags') {
+        if (Array.isArray(value)) {
+          const normalizedTags = value
+            .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
+            .filter(Boolean);
+          if (normalizedTags.length) {
+            sanitizedMetadata.tags = normalizedTags;
+          } else {
+            clearFields.add('tags');
+          }
+          return;
+        }
+
+        if (typeof value === 'string') {
+          const normalizedTags = value
+            .split(',')
+            .map(tag => tag.trim())
+            .filter(tag => tag);
+          if (normalizedTags.length) {
+            sanitizedMetadata.tags = normalizedTags;
+          } else {
+            clearFields.add('tags');
+          }
+          return;
+        }
+
+        if (value == null) {
+          clearFields.add('tags');
+        }
+        return;
+      }
+
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+          sanitizedMetadata[field] = trimmed;
+        } else {
+          clearFields.add(field);
+        }
+        return;
+      }
+
+      if (value == null) {
+        clearFields.add(field);
+        return;
+      }
+
+      sanitizedMetadata[field] = value;
+    });
+
+    return { sanitizedMetadata, clearFields: Array.from(clearFields) };
+  }
+
   clearDocumentMetadataCache(userId) {
     if (!userId) {
       return;
@@ -523,6 +592,41 @@ class RAGService {
     }
     this.clearDocumentMetadataCache(resolvedUserId);
     return { success: true };
+  }
+
+  async updateDocumentMetadata(documentId, metadataUpdates = {}, userId) {
+    if (!documentId) {
+      throw new Error('documentId is required to update metadata');
+    }
+
+    if (this.isNeonBackend()) {
+      throw new Error('Document metadata editing is not supported when using the Neon backend');
+    }
+
+    const resolvedUserId = userId || (await getUserId());
+    if (!resolvedUserId) {
+      throw new Error('User ID is required to update document metadata');
+    }
+
+    const { sanitizedMetadata, clearFields } = this.prepareMetadataUpdate(metadataUpdates || {});
+    const payload = {
+      documentId,
+      metadata: sanitizedMetadata,
+    };
+
+    if (clearFields.length > 0) {
+      payload.clearFields = clearFields;
+    }
+
+    const response = await this.makeDocumentMetadataRequest('update_document', resolvedUserId, payload);
+    const updatedDocument = response?.document;
+
+    if (!updatedDocument) {
+      throw new Error('Failed to update document metadata');
+    }
+
+    this.clearDocumentMetadataCache(resolvedUserId);
+    return updatedDocument;
   }
 
   async downloadDocument(documentReference, userId) {

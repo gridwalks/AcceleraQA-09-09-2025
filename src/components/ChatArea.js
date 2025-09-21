@@ -115,6 +115,34 @@ const isLikelyFilename = (value) => {
   return false;
 };
 
+const OPAQUE_ID_PATTERNS = [
+  /^file[-_][a-z0-9]{6,}$/i,
+  /^doc[-_][a-z0-9]{6,}$/i,
+  /^tmp[-_][a-z0-9]{6,}$/i,
+  /^ts[-_][a-z0-9]{6,}$/i,
+  /^cs[-_][a-z0-9]{6,}$/i,
+  /^as[-_][a-z0-9]{6,}$/i,
+  /^vs[-_][a-z0-9]{6,}$/i,
+  /^[a-f0-9]{8,}(?:-[a-f0-9]{4}){3,4}$/i,
+];
+
+const isLikelyOpaqueIdentifier = (value) => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (!/[a-z]/i.test(trimmed)) {
+    return true;
+  }
+
+  return OPAQUE_ID_PATTERNS.some(pattern => pattern.test(trimmed));
+};
+
 const getSourceTitleCandidates = (source) => {
   if (!source || typeof source !== 'object') {
     return [];
@@ -134,8 +162,11 @@ const getSourceTitleCandidates = (source) => {
     source.file_citation && typeof source.file_citation === 'object'
       ? source.file_citation
       : {};
+  const fileCitationMetadata =
+    fileCitation.metadata && typeof fileCitation.metadata === 'object' ? fileCitation.metadata : {};
 
   const seen = new Set();
+  const priorityCandidates = [];
   const nonFileCandidates = [];
   const fileCandidates = [];
 
@@ -158,8 +189,85 @@ const getSourceTitleCandidates = (source) => {
     target.push(trimmed);
   };
 
+  const pushPriority = (value) => pushCandidate(value, priorityCandidates);
   const pushNonFile = (value) => pushCandidate(value, nonFileCandidates);
   const pushFile = (value) => pushCandidate(value, fileCandidates);
+
+  pushPriority(source.citation);
+  pushPriority(source.citationText);
+  pushPriority(source.citation_text);
+  pushPriority(source.citationLabel);
+  pushPriority(source.citation_label);
+  pushPriority(source.documentCitation);
+  pushPriority(source.document_citation);
+  pushPriority(source.documentCitationText);
+  pushPriority(source.document_citation_text);
+  pushPriority(source.documentCitationLabel);
+  pushPriority(source.document_citation_label);
+  pushPriority(metadata.citation);
+  pushPriority(metadata.citationText);
+  pushPriority(metadata.citation_text);
+  pushPriority(metadata.citationLabel);
+  pushPriority(metadata.citation_label);
+  pushPriority(metadata.documentCitation);
+  pushPriority(metadata.document_citation);
+  pushPriority(metadata.documentCitationText);
+  pushPriority(metadata.document_citation_text);
+  pushPriority(metadata.documentCitationLabel);
+  pushPriority(metadata.document_citation_label);
+  pushPriority(metadataDocumentMetadata.citation);
+  pushPriority(metadataDocumentMetadata.citationText);
+  pushPriority(metadataDocumentMetadata.citation_text);
+  pushPriority(metadataDocumentMetadata.documentCitation);
+  pushPriority(metadataDocumentMetadata.document_citation);
+  pushPriority(metadataDocumentMetadata.documentCitationText);
+  pushPriority(metadataDocumentMetadata.document_citation_text);
+  pushPriority(metadataDocumentMetadata.documentCitationLabel);
+  pushPriority(metadataDocumentMetadata.document_citation_label);
+  pushPriority(document.citation);
+  pushPriority(document.citationText);
+  pushPriority(document.citation_text);
+  pushPriority(document.citationLabel);
+  pushPriority(document.citation_label);
+  pushPriority(document.documentCitation);
+  pushPriority(document.document_citation);
+  pushPriority(document.documentCitationText);
+  pushPriority(document.document_citation_text);
+  pushPriority(document.documentCitationLabel);
+  pushPriority(document.document_citation_label);
+  pushPriority(documentMetadata.citation);
+  pushPriority(documentMetadata.citationText);
+  pushPriority(documentMetadata.citation_text);
+  pushPriority(documentMetadata.citationLabel);
+  pushPriority(documentMetadata.citation_label);
+  pushPriority(documentMetadata.documentCitation);
+  pushPriority(documentMetadata.document_citation);
+  pushPriority(documentMetadata.documentCitationText);
+  pushPriority(documentMetadata.document_citation_text);
+  pushPriority(documentMetadata.documentCitationLabel);
+  pushPriority(documentMetadata.document_citation_label);
+  pushPriority(fileCitation.citation);
+  pushPriority(fileCitation.citationText);
+  pushPriority(fileCitation.citation_text);
+  pushPriority(fileCitation.citationLabel);
+  pushPriority(fileCitation.citation_label);
+  pushPriority(fileCitation.documentCitation);
+  pushPriority(fileCitation.document_citation);
+  pushPriority(fileCitation.documentCitationText);
+  pushPriority(fileCitation.document_citation_text);
+  pushPriority(fileCitation.documentCitationLabel);
+  pushPriority(fileCitation.document_citation_label);
+  pushPriority(fileCitationMetadata.citation);
+  pushPriority(fileCitationMetadata.citationText);
+  pushPriority(fileCitationMetadata.citation_text);
+  pushPriority(fileCitationMetadata.citationLabel);
+  pushPriority(fileCitationMetadata.citation_label);
+  pushPriority(fileCitationMetadata.documentCitation);
+  pushPriority(fileCitationMetadata.document_citation);
+  pushPriority(fileCitationMetadata.documentCitationText);
+  pushPriority(fileCitationMetadata.document_citation_text);
+  pushPriority(fileCitationMetadata.documentCitationLabel);
+  pushPriority(fileCitationMetadata.document_citation_label);
 
   pushNonFile(source.documentTitle);
   pushNonFile(source.document_title);
@@ -239,7 +347,7 @@ const getSourceTitleCandidates = (source) => {
   pushFile(fileCitation.filename);
   pushFile(fileCitation.file_name);
 
-  return [...nonFileCandidates, ...fileCandidates];
+  return [...priorityCandidates, ...nonFileCandidates, ...fileCandidates];
 };
 
 const selectPreferredSourceTitle = (candidates, fallbackLabel) => {
@@ -247,7 +355,9 @@ const selectPreferredSourceTitle = (candidates, fallbackLabel) => {
     return fallbackLabel;
   }
 
-  const preferred = candidates.find(candidate => !isLikelyFilename(candidate));
+  const preferred = candidates.find(
+    candidate => !isLikelyFilename(candidate) && !isLikelyOpaqueIdentifier(candidate)
+  );
 
   return preferred || fallbackLabel;
 };

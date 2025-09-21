@@ -89,28 +89,111 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     }
   }, []);
 
-  const openBlobInNewTab = useCallback((blob, filename) => {
+  const openBlobInNewTab = useCallback((blob, filename, pendingWindow = null) => {
     if (!blob) {
+      if (pendingWindow && !pendingWindow.closed) {
+        try {
+          pendingWindow.close();
+        } catch (closeError) {
+          console.warn('Failed to close pending document window:', closeError);
+        }
+      }
       return;
     }
 
-    const blobUrl = URL.createObjectURL(blob);
-    const newWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer');
-
-    if (!newWindow) {
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      if (filename) {
-        link.download = filename;
+    const urlFactory = (() => {
+      if (typeof window !== 'undefined' && window.URL && typeof window.URL.createObjectURL === 'function') {
+        return window.URL;
       }
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        return URL;
+      }
+      return null;
+    })();
+
+    if (!urlFactory) {
+      console.error('Object URL API is not available; unable to open document preview.');
+      if (pendingWindow && !pendingWindow.closed) {
+        try {
+          pendingWindow.close();
+        } catch (closeError) {
+          console.warn('Failed to close pending document window:', closeError);
+        }
+      }
+      return;
     }
 
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60 * 1000);
+    const blobUrl = urlFactory.createObjectURL(blob);
+
+    const scheduleRevoke = () => {
+      setTimeout(() => {
+        try {
+          urlFactory.revokeObjectURL(blobUrl);
+        } catch (revokeError) {
+          console.warn('Failed to revoke object URL:', revokeError);
+        }
+      }, 60 * 1000);
+    };
+
+    const closePendingWindow = () => {
+      if (pendingWindow && !pendingWindow.closed) {
+        try {
+          pendingWindow.close();
+        } catch (closeError) {
+          console.warn('Failed to close pending document window:', closeError);
+        }
+      }
+    };
+
+    try {
+      if (pendingWindow && !pendingWindow.closed) {
+        pendingWindow.location = blobUrl;
+        if (filename) {
+          try {
+            pendingWindow.document.title = filename;
+          } catch (titleError) {
+            console.debug('Unable to set title on pending document window:', titleError);
+          }
+        }
+        scheduleRevoke();
+        return;
+      }
+
+      if (typeof window !== 'undefined') {
+        const openedWindow = window.open(blobUrl, '_blank', 'noopener');
+        if (openedWindow) {
+          if (filename) {
+            try {
+              openedWindow.document.title = filename;
+            } catch (titleError) {
+              console.debug('Unable to set title on opened document window:', titleError);
+            }
+          }
+          scheduleRevoke();
+          return;
+        }
+      }
+
+      if (typeof document !== 'undefined' && document.body) {
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        if (filename) {
+          link.download = filename;
+        }
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        scheduleRevoke();
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to open blob in new tab:', error);
+    }
+
+    urlFactory.revokeObjectURL(blobUrl);
+    closePendingWindow();
   }, []);
 
   // Load learning suggestions on component mount and user change
@@ -198,6 +281,24 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       return;
     }
 
+    let pendingWindow = null;
+    if (typeof window !== 'undefined') {
+      try {
+        pendingWindow = window.open('', '_blank', 'noopener');
+        if (pendingWindow && pendingWindow.document) {
+          pendingWindow.document.write(
+            '<!DOCTYPE html><html><head><title>Preparing document...</title></head>' +
+              '<body style="font-family: system-ui, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif; padding: 16px;">' +
+              '<p>Preparing document...</p></body></html>'
+          );
+          pendingWindow.document.close();
+        }
+      } catch (openError) {
+        console.warn('Unable to open placeholder window for document download:', openError);
+        pendingWindow = null;
+      }
+    }
+
     const resourceKey = getResourceKey(resource, index);
     setDownloadingResourceId(resourceKey);
 
@@ -209,7 +310,20 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
       const responseUrl = typeof response.downloadUrl === 'string' ? response.downloadUrl.trim() : '';
       if (responseUrl) {
-        window.open(responseUrl, '_blank', 'noopener,noreferrer');
+        if (pendingWindow && !pendingWindow.closed) {
+          pendingWindow.location = responseUrl;
+        } else if (typeof window !== 'undefined') {
+          const opened = window.open(responseUrl, '_blank', 'noopener');
+          if (!opened && typeof document !== 'undefined' && document.body) {
+            const link = document.createElement('a');
+            link.href = responseUrl;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+        }
         return;
       }
 
@@ -220,8 +334,16 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
       const fallbackFilename = metadata.filename || metadata.documentTitle || resource.title || 'document';
       const filename = response.filename || fallbackFilename;
-      openBlobInNewTab(blob, filename);
+      openBlobInNewTab(blob, filename, pendingWindow);
+      pendingWindow = null;
     } catch (error) {
+      if (pendingWindow && !pendingWindow.closed) {
+        try {
+          pendingWindow.close();
+        } catch (closeError) {
+          console.warn('Failed to close pending window after error:', closeError);
+        }
+      }
       console.error('Failed to open resource document:', error);
     } finally {
       setDownloadingResourceId(current => (current === resourceKey ? null : current));

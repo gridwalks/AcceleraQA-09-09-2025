@@ -139,6 +139,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       console.error('Object URL API is not available; unable to preview document.');
       return null;
     }
+    activeObjectUrlRef.current = null;
 
     try {
       const objectUrl = urlFactory.createObjectURL(blob);

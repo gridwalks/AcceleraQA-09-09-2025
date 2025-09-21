@@ -27,6 +27,9 @@ Principles:
 4. Prioritize practicality, continuous improvement, and adaptability to digital health.
 
 When available, ensure the response includes a reference to the regulation, standard operating procedure, work instruction, etc., along with its name and section number.
+
+Operational Playbooks:
+- Sponsor-reported compliance report outage: acknowledge the issue, gather key context (study/site, report name, exact error, timing), and immediately initiate the Incident Management SOP by raising a YPRIME ticket before attempting troubleshooting. Keep the sponsor informed using the ticket as the reference point while coordinating internal follow-up.
 `,
 };
 // Auth0 Configuration with enhanced validation

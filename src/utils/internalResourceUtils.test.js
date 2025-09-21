@@ -35,7 +35,7 @@ describe('createKnowledgeBaseResources', () => {
     expect(resources[0].metadata.documentTitle).toBe('Quality Event SOP');
   });
 
-  it('falls back to filename when no title available', () => {
+  it('falls back to generic label when no title available', () => {
     const sources = [
       {
         documentId: 'doc-2',
@@ -46,7 +46,7 @@ describe('createKnowledgeBaseResources', () => {
 
     const resources = createKnowledgeBaseResources(sources);
     expect(resources).toHaveLength(1);
-    expect(resources[0].title).toBe('Deviation_Guide.pdf');
-    expect(resources[0].metadata.documentTitle).toBe('Deviation_Guide.pdf');
+    expect(resources[0].title).toBe('Referenced document 1');
+    expect(resources[0].metadata.documentTitle).toBe('Referenced document 1');
   });
 });

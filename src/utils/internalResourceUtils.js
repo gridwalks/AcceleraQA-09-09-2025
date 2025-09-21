@@ -3,6 +3,108 @@ import { UI_CONFIG } from '../config/constants';
 const DEFAULT_LIMIT = UI_CONFIG?.MAX_RESOURCES_PER_RESPONSE || 5;
 const MIN_TOKEN_LENGTH = 3;
 
+const FILENAME_EXTENSION_PATTERN =
+  /\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|yaml|yml|html|htm|log)$/i;
+
+function isLikelyFilename(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (/[\\/]/.test(trimmed)) {
+    return true;
+  }
+
+  if (FILENAME_EXTENSION_PATTERN.test(trimmed)) {
+    return true;
+  }
+
+  if (!/\s/.test(trimmed) && /\.[a-z0-9]{2,5}$/i.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+function collectKnowledgeSourceTitleCandidates(source) {
+  if (!source || typeof source !== 'object') {
+    return [];
+  }
+
+  const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : {};
+  const metadataDocumentMetadata =
+    metadata.documentMetadata && typeof metadata.documentMetadata === 'object'
+      ? metadata.documentMetadata
+      : {};
+  const document = source.document && typeof source.document === 'object' ? source.document : {};
+  const documentMetadata =
+    document.metadata && typeof document.metadata === 'object' ? document.metadata : {};
+  const fileCitation =
+    source.file_citation && typeof source.file_citation === 'object' ? source.file_citation : {};
+  const fileCitationMetadata =
+    fileCitation.metadata && typeof fileCitation.metadata === 'object'
+      ? fileCitation.metadata
+      : {};
+
+  const seen = new Set();
+  const candidates = [];
+
+  const pushCandidate = (rawValue) => {
+    if (typeof rawValue !== 'string') {
+      return;
+    }
+
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    candidates.push(trimmed);
+  };
+
+  const pushFromObject = (obj) => {
+    if (!obj || typeof obj !== 'object') {
+      return;
+    }
+
+    pushCandidate(obj.documentTitle);
+    pushCandidate(obj.document_title);
+    pushCandidate(obj.title);
+    pushCandidate(obj.displayTitle);
+    pushCandidate(obj.display_title);
+    pushCandidate(obj.displayName);
+    pushCandidate(obj.display_name);
+    pushCandidate(obj.name);
+    pushCandidate(obj.label);
+    pushCandidate(obj.fileTitle);
+    pushCandidate(obj.file_title);
+    pushCandidate(obj.preferredTitle);
+    pushCandidate(obj.documentName);
+    pushCandidate(obj.document_name);
+  };
+
+  pushFromObject(source);
+  pushFromObject(metadata);
+  pushFromObject(metadataDocumentMetadata);
+  pushFromObject(document);
+  pushFromObject(documentMetadata);
+  pushFromObject(fileCitation);
+  pushFromObject(fileCitationMetadata);
+
+  return candidates;
+}
+
 function getFirstNonEmptyString(...values) {
   for (const value of values) {
     if (typeof value === 'string') {
@@ -137,27 +239,10 @@ export function createKnowledgeBaseResources(sources = []) {
       `source-${index}`;
     const snippet = truncateText(source.text || '', 180);
 
-    const fallbackFilename = getFirstNonEmptyString(
-      source.filename,
-      source.file_name,
-      source.document?.filename,
-      source.document?.file_name
-    );
+    const fallbackTitle = `Referenced document ${index + 1}`;
 
-    const fallbackTitle = fallbackFilename || `Referenced document ${index + 1}`;
-
-    const preferredTitle = getFirstNonEmptyString(
-      source.title,
-      source.documentTitle,
-      source.metadata?.title,
-      source.metadata?.documentTitle,
-      source.document?.title,
-      source.document?.metadata?.title,
-      source.file_title,
-      source.display_name,
-      fallbackFilename
-    );
-
+    const titleCandidates = collectKnowledgeSourceTitleCandidates(source);
+    const preferredTitle = titleCandidates.find(candidate => !isLikelyFilename(candidate));
     const resolvedTitle = preferredTitle || fallbackTitle;
 
     const metadataDocumentId =
@@ -207,11 +292,6 @@ export function createKnowledgeBaseResources(sources = []) {
       documentId: metadataDocumentId,
       chunkIndex,
     };
-
-    const filenameForMetadata = fallbackFilename || null;
-    if (filenameForMetadata) {
-      metadata.filename = filenameForMetadata;
-    }
     if (resolvedTitle) {
       metadata.documentTitle = resolvedTitle;
     }

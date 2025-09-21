@@ -3,6 +3,81 @@ import { UI_CONFIG } from '../config/constants';
 const DEFAULT_LIMIT = UI_CONFIG?.MAX_RESOURCES_PER_RESPONSE || 5;
 const MIN_TOKEN_LENGTH = 3;
 
+const STOP_WORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'from',
+  'with',
+  'that',
+  'this',
+  'your',
+  'into',
+  'onto',
+  'about',
+  'have',
+  'has',
+  'had',
+  'been',
+  'were',
+  'was',
+  'will',
+  'shall',
+  'should',
+  'could',
+  'would',
+  'their',
+  'there',
+  'which',
+  'while',
+  'when',
+  'what',
+  'than',
+  'then',
+  'them',
+  'they',
+  'also',
+  'such',
+  'only',
+  'very',
+  'just',
+  'even',
+  'over',
+  'under',
+  'through',
+  'across',
+  'after',
+  'before',
+  'because',
+  'during',
+  'among',
+  'between',
+  'within',
+  'without',
+  'using',
+  'based',
+  'some',
+  'many',
+  'most',
+  'more',
+  'less',
+  'much',
+  'other',
+  'others',
+  'another',
+  'every',
+  'again',
+  'still',
+  'since',
+  'until',
+  'upon',
+  'here',
+  'else',
+  'each',
+  'per',
+  'via',
+]);
+
 const FILENAME_EXTENSION_PATTERN =
   /\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|yaml|yml|html|htm|log)$/i;
 
@@ -206,9 +281,11 @@ function tokenizeText(text) {
     return [];
   }
 
-  return String(text)
-    .toLowerCase()
-    .match(/[a-z0-9]{3,}/g) || [];
+  return (
+    String(text)
+      .toLowerCase()
+      .match(/[a-z0-9]{3,}/g) || []
+  ).filter((token) => !STOP_WORDS.has(token));
 }
 
 function buildResourceId(prefix, key, index) {
@@ -433,33 +510,40 @@ export function createKnowledgeBaseResources(sources = []) {
 
 function scoreAdminResource(resource, contextTokens) {
   const searchableText = `${resource.name || ''} ${resource.description || ''} ${resource.tag || ''}`;
-  const resourceTokens = tokenizeText(searchableText);
+  const resourceTokens = new Set(tokenizeText(searchableText));
 
-  if (resourceTokens.length === 0) {
-    return 0;
+  if (resourceTokens.size === 0) {
+    return { score: 0, matchedTokenCount: 0, tagMatched: false };
   }
 
-  let score = 0;
   const matchedTokens = new Set();
 
-  resourceTokens.forEach(token => {
+  resourceTokens.forEach((token) => {
     if (token.length < MIN_TOKEN_LENGTH) {
       return;
     }
-    if (contextTokens.has(token) && !matchedTokens.has(token)) {
+    if (contextTokens.has(token)) {
       matchedTokens.add(token);
-      score += 1;
     }
   });
 
+  let tagMatched = false;
   if (resource.tag) {
-    const tagToken = resource.tag.toLowerCase();
-    if (contextTokens.has(tagToken)) {
-      score += 2;
-    }
+    tokenizeText(resource.tag).forEach((token) => {
+      if (contextTokens.has(token)) {
+        tagMatched = true;
+        matchedTokens.add(token);
+      }
+    });
   }
 
-  return score;
+  const score = matchedTokens.size + (tagMatched ? 2 : 0);
+
+  return {
+    score,
+    matchedTokenCount: matchedTokens.size,
+    tagMatched,
+  };
 }
 
 export function matchAdminResourcesToContext(contextText, adminResources = [], limit = DEFAULT_LIMIT) {
@@ -478,8 +562,15 @@ export function matchAdminResourcesToContext(contextText, adminResources = [], l
         return null;
       }
 
-      const score = scoreAdminResource(resource, contextTokens);
-      if (score === 0) {
+      const { score, matchedTokenCount, tagMatched } = scoreAdminResource(resource, contextTokens);
+      if (matchedTokenCount === 0) {
+        return null;
+      }
+
+      const hasSufficientOverlap =
+        matchedTokenCount >= 2 || (tagMatched && matchedTokenCount >= 1);
+
+      if (!hasSufficientOverlap) {
         return null;
       }
 

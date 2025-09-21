@@ -166,6 +166,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       }
     }
     activeObjectUrlRef.current = null;
+
   }, []);
 
   const closeDocumentViewer = useCallback(() => {
@@ -313,6 +314,24 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       return;
     }
 
+    let pendingWindow = null;
+    if (typeof window !== 'undefined') {
+      try {
+        pendingWindow = window.open('', '_blank', 'noopener');
+        if (pendingWindow && pendingWindow.document) {
+          pendingWindow.document.write(
+            '<!DOCTYPE html><html><head><title>Preparing document...</title></head>' +
+              '<body style="font-family: system-ui, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif; padding: 16px;">' +
+              '<p>Preparing document...</p></body></html>'
+          );
+          pendingWindow.document.close();
+        }
+      } catch (openError) {
+        console.warn('Unable to open placeholder window for document download:', openError);
+        pendingWindow = null;
+      }
+    }
+
     const resourceKey = getResourceKey(resource, index);
     setDownloadingResourceId(resourceKey);
     setIsViewerLoading(true);
@@ -381,6 +400,13 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       });
       setIsViewerLoading(false);
     } catch (error) {
+      if (pendingWindow && !pendingWindow.closed) {
+        try {
+          pendingWindow.close();
+        } catch (closeError) {
+          console.warn('Failed to close pending window after error:', closeError);
+        }
+      }
       console.error('Failed to open resource document:', error);
       if (viewerRequestRef.current === requestId) {
         setViewerError('We were unable to load this document in the viewer. If a download option is available, please try that instead.');

@@ -174,12 +174,17 @@ const buildResourceKey = (resource, messageIndex, resourceIndex) => {
   return `resource-${messageIndex}-${resourceIndex}`;
 };
 
+
 const extractResourcesFromMessages = (messages) => {
   if (!Array.isArray(messages) || messages.length === 0) {
     return [];
   }
 
   const resourcesMap = new Map();
+  const questionIndex = [...messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find(({ message }) => isUserMessage(message))?.index ?? -1;
 
   messages.forEach((message, messageIndex) => {
     const messageResources = Array.isArray(message?.resources)
@@ -187,7 +192,6 @@ const extractResourcesFromMessages = (messages) => {
       : [];
 
     const timestampValue = getTimestampValue(message?.timestamp, messageIndex);
-
     messageResources.forEach((resource, resourceIndex) => {
       const normalizedResource = ensureResourceTitle(resource);
       if (!normalizedResource) {
@@ -195,6 +199,7 @@ const extractResourcesFromMessages = (messages) => {
       }
 
       const key = buildResourceKey(normalizedResource, messageIndex, resourceIndex);
+
 
       const existing = resourcesMap.get(key);
       const entry = {
@@ -210,11 +215,13 @@ const extractResourcesFromMessages = (messages) => {
       }
 
       if (
+
         entry.order > existing.order ||
         (entry.order === existing.order && entry.messageIndex > existing.messageIndex) ||
         (entry.order === existing.order &&
           entry.messageIndex === existing.messageIndex &&
           entry.resourceIndex >= existing.resourceIndex)
+
       ) {
         resourcesMap.set(key, entry);
       }
@@ -223,6 +230,7 @@ const extractResourcesFromMessages = (messages) => {
 
   return Array.from(resourcesMap.values())
     .sort((a, b) => {
+
       if (b.order !== a.order) {
         return b.order - a.order;
       }

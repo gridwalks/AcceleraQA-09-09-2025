@@ -16,7 +16,8 @@ import {
   RefreshCw,
   ExternalLink,
   Pencil,
-  Save
+  Save,
+  PlusCircle
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
@@ -72,6 +73,64 @@ const INITIAL_EDIT_METADATA = {
   version: ''
 };
 
+const TRAINING_RESOURCE_FORM_INITIAL_STATE = {
+  name: '',
+  description: '',
+  url: '',
+  tag: '',
+};
+
+const normalizeFormValue = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const buildTrainingResourcePayload = (form, { includeEmpty = false } = {}) => {
+  if (!form || typeof form !== 'object') {
+    return {};
+  }
+
+  const payload = {};
+  const name = normalizeFormValue(form.name || form.title);
+  const url = normalizeFormValue(form.url);
+  const description = normalizeFormValue(form.description);
+  const tag = normalizeFormValue(form.tag);
+
+  if (name) {
+    payload.name = name;
+  }
+
+  if (url || includeEmpty) {
+    payload.url = url;
+  }
+
+  if (description || includeEmpty) {
+    payload.description = description;
+  }
+
+  if (tag || includeEmpty) {
+    payload.tag = tag;
+  }
+
+  if (payload.name && !payload.title) {
+    payload.title = payload.name;
+  }
+
+  return payload;
+};
+
+const resolveExternalResourceId = (resource) => {
+  if (!resource || typeof resource !== 'object') {
+    return null;
+  }
+
+  return (
+    resource.id ||
+    resource.resourceId ||
+    resource.externalId ||
+    resource.trainingResourceId ||
+    resource.url ||
+    null
+  );
+};
+
 const RAGConfigurationPage = ({ user, onClose }) => {
   const [activeTab, setActiveTab] = useState('documents');
   const [documents, setDocuments] = useState([]);
@@ -89,6 +148,14 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const [trainingResources, setTrainingResources] = useState([]);
   const [isLoadingTraining, setIsLoadingTraining] = useState(false);
   const [trainingError, setTrainingError] = useState(null);
+  const [trainingForm, setTrainingForm] = useState({ ...TRAINING_RESOURCE_FORM_INITIAL_STATE });
+  const [trainingFormError, setTrainingFormError] = useState(null);
+  const [isSavingTrainingResource, setIsSavingTrainingResource] = useState(false);
+  const [trainingStatus, setTrainingStatus] = useState(null);
+  const [editingTrainingResourceId, setEditingTrainingResourceId] = useState(null);
+  const [editingTrainingForm, setEditingTrainingForm] = useState({ ...TRAINING_RESOURCE_FORM_INITIAL_STATE });
+  const [isSavingTrainingEdit, setIsSavingTrainingEdit] = useState(false);
+  const [trainingEditError, setTrainingEditError] = useState(null);
   const isMountedRef = useRef(false);
 
   useEffect(() => {
@@ -230,6 +297,150 @@ const RAGConfigurationPage = ({ user, onClose }) => {
       loadTrainingResources();
     }
   }, [activeTab, loadTrainingResources]);
+
+
+  const handleTrainingFormChange = useCallback((field, value) => {
+    setTrainingForm((prev) => ({ ...prev, [field]: value }));
+    setTrainingFormError(null);
+    setTrainingStatus(null);
+  }, []);
+
+  const handleAddTrainingResource = useCallback(async (event) => {
+    event.preventDefault();
+
+    if (isSavingTrainingResource) {
+      return;
+    }
+
+    const payload = buildTrainingResourcePayload(trainingForm);
+    if (!payload.name || !payload.url) {
+      setTrainingFormError('Name and URL are required.');
+      return;
+    }
+
+    setIsSavingTrainingResource(true);
+    setTrainingFormError(null);
+    setTrainingStatus(null);
+
+    try {
+      const created = await trainingResourceService.addTrainingResource(payload);
+      setTrainingResources((prev) => {
+        if (!Array.isArray(prev) || prev.length === 0) {
+          return [created];
+        }
+
+        const createdId = resolveExternalResourceId(created);
+        if (!createdId) {
+          return [created, ...prev];
+        }
+
+        const seenIds = new Set(prev.map((item) => resolveExternalResourceId(item)));
+        if (seenIds.has(createdId)) {
+          return prev.map((item) => {
+            const itemId = resolveExternalResourceId(item);
+            return itemId && String(itemId) === String(createdId)
+              ? { ...item, ...created }
+              : item;
+          });
+        }
+
+        return [created, ...prev];
+      });
+
+      const displayName = normalizeFormValue(created?.name || created?.title) || 'resource';
+      setTrainingStatus({
+        type: 'success',
+        message: `Added "${displayName}" to external resources.`,
+      });
+      setTrainingForm({ ...TRAINING_RESOURCE_FORM_INITIAL_STATE });
+    } catch (error) {
+      setTrainingFormError(error.message || 'Failed to add external resource.');
+    } finally {
+      setIsSavingTrainingResource(false);
+    }
+  }, [isSavingTrainingResource, trainingForm]);
+
+  const startEditingTrainingResource = useCallback((resource) => {
+    const resourceId = resolveExternalResourceId(resource);
+
+    if (!resourceId) {
+      setTrainingStatus({
+        type: 'error',
+        message: 'Unable to edit this resource because it is missing an identifier.',
+      });
+      return;
+    }
+
+    setTrainingStatus(null);
+    setEditingTrainingResourceId(resourceId);
+    setEditingTrainingForm({
+      name: normalizeFormValue(resource?.name || resource?.title),
+      description: normalizeFormValue(resource?.description),
+      url: normalizeFormValue(resource?.url),
+      tag: normalizeFormValue(resource?.tag),
+    });
+    setTrainingEditError(null);
+  }, []);
+
+  const handleEditingTrainingFieldChange = useCallback((field, value) => {
+    setEditingTrainingForm((prev) => ({ ...prev, [field]: value }));
+    setTrainingEditError(null);
+  }, []);
+
+  const cancelEditingTrainingResource = useCallback(() => {
+    setEditingTrainingResourceId(null);
+    setEditingTrainingForm({ ...TRAINING_RESOURCE_FORM_INITIAL_STATE });
+    setTrainingEditError(null);
+  }, []);
+
+  const handleSaveTrainingResource = useCallback(async (event) => {
+    event.preventDefault();
+
+    if (!editingTrainingResourceId || isSavingTrainingEdit) {
+      return;
+    }
+
+    const payload = buildTrainingResourcePayload(editingTrainingForm, { includeEmpty: true });
+
+    if (!normalizeFormValue(payload.name || payload.title) || !normalizeFormValue(payload.url)) {
+      setTrainingEditError('Name and URL are required.');
+      return;
+    }
+
+    setIsSavingTrainingEdit(true);
+    setTrainingEditError(null);
+    setTrainingStatus(null);
+
+    try {
+      const updated = await trainingResourceService.updateTrainingResource(
+        editingTrainingResourceId,
+        payload
+      );
+      const updatedId = resolveExternalResourceId(updated) || editingTrainingResourceId;
+
+      setTrainingResources((prev) =>
+        prev.map((item) => {
+          const itemId = resolveExternalResourceId(item);
+          return itemId && String(itemId) === String(updatedId)
+            ? { ...item, ...updated }
+            : item;
+        })
+      );
+
+      const displayName = normalizeFormValue(updated?.name || updated?.title) || 'resource';
+      setTrainingStatus({
+        type: 'success',
+        message: `Updated "${displayName}" successfully.`,
+      });
+
+      setEditingTrainingResourceId(null);
+      setEditingTrainingForm({ ...TRAINING_RESOURCE_FORM_INITIAL_STATE });
+    } catch (error) {
+      setTrainingEditError(error.message || 'Failed to update external resource.');
+    } finally {
+      setIsSavingTrainingEdit(false);
+    }
+  }, [editingTrainingForm, editingTrainingResourceId, isSavingTrainingEdit]);
 
 
   const testConnection = async () => {
@@ -1008,9 +1219,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
           {activeTab === 'training' && (
             <div className="space-y-6">
               <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                    <h3 className="flex items-center space-x-2 text-lg font-semibold text-gray-900">
                       <BookOpen className="h-5 w-5 text-purple-600" />
                       <span>External Resources</span>
                     </h3>
@@ -1022,91 +1233,286 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     type="button"
                     onClick={loadTrainingResources}
                     disabled={isLoadingTraining}
-                    className="inline-flex items-center px-3 py-2 text-sm font-medium border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex items-center rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingTraining ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingTraining ? 'animate-spin' : ''}`} />
                     Refresh
                   </button>
                 </div>
 
                 {trainingError && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+                  <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     {trainingError}
                   </div>
                 )}
 
-                {isLoadingTraining ? (
-                  <div className="py-12 text-center text-gray-600">
-                    <Loader className="h-6 w-6 animate-spin mx-auto mb-3 text-purple-500" />
-                    <p>Loading external resources...</p>
-                  </div>
-                ) : trainingResources.length === 0 ? (
-                  <div className="py-12 text-center text-gray-600">
-                    <BookOpen className="h-8 w-8 mx-auto mb-3 text-purple-500" />
-                    <h4 className="text-lg font-medium text-gray-900 mb-2">No external resources yet</h4>
-                    <p className="text-sm">
-                      External resources added by your administrators will appear here.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-4">
-                    {trainingResources.map((resource, index) => {
-                      const name = typeof resource?.name === 'string' && resource.name.trim()
-                        ? resource.name.trim()
-                        : typeof resource?.title === 'string' && resource.title.trim()
-                          ? resource.title.trim()
-                          : 'Untitled resource';
-                      const description = typeof resource?.description === 'string' ? resource.description.trim() : '';
-                      const url = typeof resource?.url === 'string' ? resource.url.trim() : '';
-                      const tag = typeof resource?.tag === 'string' ? resource.tag.trim() : '';
-                      let hostname = '';
-
-                      if (url) {
-                        try {
-                          hostname = new URL(url).hostname;
-                        } catch (urlError) {
-                          hostname = url;
-                        }
-                      }
-
-                      return (
-                        <div
-                          key={resource?.id || index}
-                          className="p-4 border border-gray-200 rounded-lg hover:border-purple-300 hover:shadow-sm transition-all"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <h4 className="text-base font-semibold text-gray-900">{name}</h4>
-                              {tag && (
-                                <span className="inline-flex items-center mt-2 px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-700">
-                                  #{tag}
-                                </span>
-                              )}
-                            </div>
-                            {url && (
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center text-sm text-purple-600 hover:text-purple-800"
-                                title={url}
-                              >
-                                <span>{hostname ? `Open ${hostname}` : 'Open resource'}</span>
-                                <ExternalLink className="h-4 w-4 ml-1" />
-                              </a>
-                            )}
-                          </div>
-                          {description && (
-                            <p className="mt-3 text-sm text-gray-600">{description}</p>
-                          )}
-                          {!url && (
-                            <p className="mt-3 text-xs text-gray-500">No direct link provided for this resource.</p>
-                          )}
-                        </div>
-                      );
-                    })}
+                {trainingStatus && (
+                  <div
+                    className={`mt-4 flex items-start justify-between gap-3 rounded-md border p-4 text-sm ${
+                      trainingStatus.type === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-800'
+                        : 'border-red-200 bg-red-50 text-red-800'
+                    }`}
+                  >
+                    <p className="flex-1">{trainingStatus.message}</p>
+                    <button
+                      type="button"
+                      onClick={() => setTrainingStatus(null)}
+                      className="text-current transition-colors hover:text-gray-900"
+                      aria-label="Dismiss external resource status"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
                 )}
+
+                <form
+                  onSubmit={handleAddTrainingResource}
+                  className="mt-6 rounded-lg border border-purple-200 bg-purple-50 p-4"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h4 className="flex items-center text-sm font-semibold text-purple-900">
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Add external resource
+                      </h4>
+                      <p className="mt-1 text-xs text-purple-800/80">
+                        Store helpful links so they are always available in your workspace.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-purple-900">Name</label>
+                      <input
+                        type="text"
+                        value={trainingForm.name}
+                        onChange={(event) => handleTrainingFormChange('name', event.target.value)}
+                        className="w-full rounded-md border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40"
+                        placeholder="Resource title"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-purple-900">URL</label>
+                      <input
+                        type="url"
+                        value={trainingForm.url}
+                        onChange={(event) => handleTrainingFormChange('url', event.target.value)}
+                        className="w-full rounded-md border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40"
+                        placeholder="https://example.com/resource"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-xs font-medium text-purple-900">Description (optional)</label>
+                      <textarea
+                        rows={3}
+                        value={trainingForm.description}
+                        onChange={(event) => handleTrainingFormChange('description', event.target.value)}
+                        className="w-full rounded-md border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40"
+                        placeholder="Brief summary of how this resource helps"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-purple-900">Tag (optional)</label>
+                      <input
+                        type="text"
+                        value={trainingForm.tag}
+                        onChange={(event) => handleTrainingFormChange('tag', event.target.value)}
+                        className="w-full rounded-md border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40"
+                        placeholder="e.g., compliance"
+                      />
+                    </div>
+                  </div>
+
+                  {trainingFormError && (
+                    <p className="mt-3 text-sm text-red-600">{trainingFormError}</p>
+                  )}
+
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={isSavingTrainingResource}
+                      className="inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isSavingTrainingResource ? (
+                        <Loader className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                      )}
+                      {isSavingTrainingResource ? 'Saving...' : 'Add Resource'}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="mt-6 border-t border-gray-100 pt-6">
+                  {isLoadingTraining ? (
+                    <div className="py-12 text-center text-gray-600">
+                      <Loader className="mx-auto mb-3 h-6 w-6 animate-spin text-purple-500" />
+                      <p>Loading external resources...</p>
+                    </div>
+                  ) : trainingResources.length === 0 ? (
+                    <div className="py-12 text-center text-gray-600">
+                      <BookOpen className="mx-auto mb-3 h-8 w-8 text-purple-500" />
+                      <h4 className="mb-2 text-lg font-medium text-gray-900">No external resources yet</h4>
+                      <p className="text-sm">
+                        External resources added by your team will appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {trainingResources.map((resource, index) => {
+                        const resourceId = resolveExternalResourceId(resource);
+                        const resourceKey = resourceId ? String(resourceId) : `resource-${index}`;
+                        const name = normalizeFormValue(resource?.name || resource?.title) || 'Untitled resource';
+                        const description = normalizeFormValue(resource?.description);
+                        const url = normalizeFormValue(resource?.url);
+                        const tag = normalizeFormValue(resource?.tag);
+                        const isEditing = Boolean(
+                          editingTrainingResourceId &&
+                          resourceId &&
+                          String(editingTrainingResourceId) === String(resourceId)
+                        );
+                        let hostname = '';
+
+                        if (url) {
+                          try {
+                            hostname = new URL(url).hostname;
+                          } catch (urlError) {
+                            hostname = url;
+                          }
+                        }
+
+                        return (
+                          <div
+                            key={resourceKey}
+                            className="rounded-lg border border-gray-200 p-4 transition-all hover:border-purple-300 hover:shadow-sm"
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <h4 className="text-base font-semibold text-gray-900">{name}</h4>
+                                {tag && (
+                                  <span className="mt-2 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                                    #{tag}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {!isEditing && (
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingTrainingResource(resource)}
+                                    className="inline-flex items-center rounded-md border border-purple-200 px-2.5 py-1 text-xs font-medium text-purple-700 transition-colors hover:border-purple-300 hover:text-purple-900"
+                                  >
+                                    <Pencil className="mr-1 h-3.5 w-3.5" />
+                                    Edit
+                                  </button>
+                                )}
+                                {url && (
+                                  <a
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center text-sm text-purple-600 transition-colors hover:text-purple-800"
+                                    title={url}
+                                  >
+                                    <span>{hostname ? `Open ${hostname}` : 'Open resource'}</span>
+                                    <ExternalLink className="ml-1 h-4 w-4" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+
+                            {isEditing ? (
+                              <form
+                                onSubmit={handleSaveTrainingResource}
+                                className="mt-4 space-y-4 rounded-lg border border-purple-100 bg-purple-50 p-4"
+                              >
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <div>
+                                    <label className="mb-1 block text-xs font-medium text-purple-900">Name</label>
+                                    <input
+                                      type="text"
+                                      value={editingTrainingForm.name}
+                                      onChange={(event) => handleEditingTrainingFieldChange('name', event.target.value)}
+                                      className="w-full rounded-md border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40"
+                                      placeholder="Resource title"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-1 block text-xs font-medium text-purple-900">URL</label>
+                                    <input
+                                      type="url"
+                                      value={editingTrainingForm.url}
+                                      onChange={(event) => handleEditingTrainingFieldChange('url', event.target.value)}
+                                      className="w-full rounded-md border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40"
+                                      placeholder="https://example.com/resource"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <label className="mb-1 block text-xs font-medium text-purple-900">Description (optional)</label>
+                                    <textarea
+                                      rows={3}
+                                      value={editingTrainingForm.description}
+                                      onChange={(event) => handleEditingTrainingFieldChange('description', event.target.value)}
+                                      className="w-full rounded-md border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40"
+                                      placeholder="Brief summary"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-1 block text-xs font-medium text-purple-900">Tag (optional)</label>
+                                    <input
+                                      type="text"
+                                      value={editingTrainingForm.tag}
+                                      onChange={(event) => handleEditingTrainingFieldChange('tag', event.target.value)}
+                                      className="w-full rounded-md border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40"
+                                      placeholder="e.g., compliance"
+                                    />
+                                  </div>
+                                </div>
+                                {trainingEditError && (
+                                  <p className="text-sm text-red-600">{trainingEditError}</p>
+                                )}
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingTrainingResource}
+                                    className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    disabled={isSavingTrainingEdit}
+                                    className="inline-flex items-center rounded-md bg-purple-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {isSavingTrainingEdit ? (
+                                      <Loader className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Save className="mr-2 h-4 w-4" />
+                                    )}
+                                    {isSavingTrainingEdit ? 'Saving...' : 'Save changes'}
+                                  </button>
+                                </div>
+                              </form>
+                            ) : (
+                              <>
+                                {description && (
+                                  <p className="mt-3 text-sm text-gray-600">{description}</p>
+                                )}
+                                {!url && (
+                                  <p className="mt-3 text-xs text-gray-500">
+                                    No direct link provided for this resource.
+                                  </p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

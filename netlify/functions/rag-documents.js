@@ -284,6 +284,66 @@ const handleSaveDocument = async (sql, userId, payload) => {
   });
 };
 
+const downloadDocumentContentFromOpenAI = async ({ apiKey, fileId, vectorStoreId }) => {
+  if (!fileId) {
+    return { error: 'File identifier is required to download document content', statusCode: 400 };
+  }
+
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'OpenAI-Beta': 'assistants=v2',
+  };
+
+  const attempts = [];
+
+  if (vectorStoreId) {
+    attempts.push({
+      type: 'vector-store',
+      url: `https://api.openai.com/v1/vector_stores/${vectorStoreId}/files/${fileId}/content`,
+    });
+  }
+
+  attempts.push({
+    type: 'file',
+    url: `https://api.openai.com/v1/files/${fileId}/content`,
+  });
+
+  let lastError = null;
+
+  for (const attempt of attempts) {
+    try {
+      const response = await fetch(attempt.url, { method: 'GET', headers });
+
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const contentType = response.headers.get('content-type');
+
+        return { buffer, contentType };
+      }
+
+      let errorMessage = `Failed to retrieve document content (status ${response.status})`;
+      try {
+        const errorBody = await response.json();
+        errorMessage = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorMessage;
+      } catch (parseError) {
+        console.warn('Unable to parse OpenAI error response for document download:', parseError);
+      }
+
+      console.warn(`Document download via ${attempt.type} endpoint failed: ${errorMessage}`);
+      lastError = { statusCode: response.status, message: errorMessage };
+    } catch (error) {
+      console.error(`Document download attempt via ${attempt.type} endpoint encountered an error:`, error);
+      lastError = { statusCode: 502, message: error.message };
+    }
+  }
+
+  return {
+    error: lastError?.message || 'Failed to retrieve document content',
+    statusCode: lastError?.statusCode || 502,
+  };
+};
+
 const handleDownloadDocument = async (sql, userId, payload) => {
   const documentId = payload?.documentId;
   const fileId = payload?.fileId;
@@ -293,7 +353,7 @@ const handleDownloadDocument = async (sql, userId, payload) => {
   }
 
   const rows = await sql`
-    SELECT document_id, file_id, filename, content_type, size, metadata
+    SELECT document_id, file_id, filename, content_type, size, metadata, vector_store_id
     FROM rag_user_documents
     WHERE user_id = ${userId}
       AND (document_id = ${documentId} OR file_id = ${fileId})
@@ -311,43 +371,26 @@ const handleDownloadDocument = async (sql, userId, payload) => {
   }
 
   const resolvedFileId = record.file_id || fileId || documentId;
-  let downloadResponse;
-  try {
-    downloadResponse = await fetch(`https://api.openai.com/v1/files/${resolvedFileId}/content`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'OpenAI-Beta': 'assistants=v2',
-      },
-    });
-  } catch (error) {
-    console.error('Failed to fetch document content from OpenAI:', error);
-    return createResponse(502, { error: 'Failed to retrieve document content' });
+  const vectorStoreId = record.vector_store_id || null;
+
+  const downloadResult = await downloadDocumentContentFromOpenAI({
+    apiKey,
+    fileId: resolvedFileId,
+    vectorStoreId,
+  });
+
+  if (downloadResult.error) {
+    return createResponse(downloadResult.statusCode, { error: downloadResult.error });
   }
 
-  if (!downloadResponse.ok) {
-    let errorMessage = `Failed to retrieve document content (status ${downloadResponse.status})`;
-    try {
-      const errorBody = await downloadResponse.json();
-      errorMessage = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorMessage;
-    } catch (parseError) {
-      console.warn('Unable to parse OpenAI error response for document download:', parseError);
-    }
-    return createResponse(downloadResponse.status, { error: errorMessage });
-  }
-
-  const arrayBuffer = await downloadResponse.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  const base64Content = buffer.toString('base64');
-
-  const responseContentType = downloadResponse.headers.get('content-type');
+  const base64Content = downloadResult.buffer.toString('base64');
 
   return createResponse(200, {
     documentId: record.document_id,
     fileId: record.file_id,
     filename: record.filename,
-    contentType: record.content_type || responseContentType || 'application/octet-stream',
-    size: record.size == null ? buffer.length : Number(record.size),
+    contentType: record.content_type || downloadResult.contentType || 'application/octet-stream',
+    size: record.size == null ? downloadResult.buffer.length : Number(record.size),
     encoding: 'base64',
     content: base64Content,
     metadata: record.metadata || {},

@@ -1,12 +1,40 @@
 // Enhanced with Learning Suggestions
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search, ChevronRight, ExternalLink, BookOpen, Brain, Sparkles, Target, Award, BookmarkPlus, Check, MessageSquare, FileText, Loader2 } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
+import {
+  Search,
+  ChevronRight,
+  ExternalLink,
+  BookOpen,
+  Brain,
+  Sparkles,
+  Target,
+  Award,
+  BookmarkPlus,
+  Check,
+  MessageSquare,
+  FileText,
+  Loader2,
+  X,
+  Download,
+  AlertCircle,
+} from 'lucide-react';
 import learningSuggestionsService from '../services/learningSuggestionsService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import ConversationList from './ConversationList';
 import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
 import ragService from '../services/ragService';
 
+
+const createInitialViewerState = () => ({
+  isOpen: false,
+  title: '',
+  filename: '',
+  contentType: '',
+  allowDownload: false,
+  downloadUrl: '',
+  contentBytes: null,
+});
 
 const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [], thirtyDayMessages = [], onConversationSelect }) => {
 
@@ -25,6 +53,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const [showToast, setShowToast] = useState(false);
   const [downloadingResourceId, setDownloadingResourceId] = useState(null);
   const toastTimeoutRef = useRef(null);
+  const [viewerState, setViewerState] = useState(() => createInitialViewerState());
+  const [isViewerLoading, setIsViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState(null);
+  const activeObjectUrlRef = useRef(null);
+  const viewerRequestRef = useRef(0);
 
   const conversations = useMemo(() => {
     const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
@@ -58,7 +91,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     );
   }, []);
 
-  const decodeBase64ToBlob = useCallback((base64, contentType = 'application/octet-stream') => {
+  const decodeBase64ToUint8Array = useCallback((base64) => {
     if (!base64) {
       return null;
     }
@@ -81,37 +114,95 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       for (let i = 0; i < byteCharacters.length; i += 1) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
-      const byteArray = new Uint8Array(byteNumbers);
-      return new Blob([byteArray], { type: contentType || 'application/octet-stream' });
+      return new Uint8Array(byteNumbers);
     } catch (error) {
       console.error('Failed to decode base64 document content:', error);
       return null;
     }
   }, []);
 
-  const openBlobInNewTab = useCallback((blob, filename) => {
+  const createObjectUrlFromBlob = useCallback((blob) => {
     if (!blob) {
-      return;
+      return null;
     }
 
-    const blobUrl = URL.createObjectURL(blob);
-    const newWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer');
-
-    if (!newWindow) {
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      if (filename) {
-        link.download = filename;
+    const urlFactory = (() => {
+      if (typeof window !== 'undefined' && window.URL && typeof window.URL.createObjectURL === 'function') {
+        return window.URL;
       }
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        return URL;
+      }
+      return null;
+    })();
+
+    if (!urlFactory) {
+      console.error('Object URL API is not available; unable to preview document.');
+      return null;
     }
 
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60 * 1000);
+    try {
+      const objectUrl = urlFactory.createObjectURL(blob);
+      const revoke = () => {
+        try {
+          urlFactory.revokeObjectURL(objectUrl);
+        } catch (revokeError) {
+          console.warn('Failed to revoke object URL:', revokeError);
+        }
+      };
+
+      return { url: objectUrl, revoke };
+    } catch (error) {
+      console.error('Failed to create object URL for document blob:', error);
+      return null;
+    }
   }, []);
+
+  const revokeActiveObjectUrl = useCallback(() => {
+    if (activeObjectUrlRef.current?.revoke) {
+      try {
+        activeObjectUrlRef.current.revoke();
+      } catch (error) {
+        console.warn('Failed to revoke active object URL:', error);
+      }
+    }
+    activeObjectUrlRef.current = null;
+  }, []);
+
+  const closeDocumentViewer = useCallback(() => {
+    viewerRequestRef.current += 1;
+    revokeActiveObjectUrl();
+    setViewerState(createInitialViewerState());
+    setViewerError(null);
+    setIsViewerLoading(false);
+  }, [revokeActiveObjectUrl]);
+
+  useEffect(() => () => {
+    revokeActiveObjectUrl();
+  }, [revokeActiveObjectUrl]);
+
+  useEffect(() => {
+    if (!viewerState.isOpen) {
+      return undefined;
+    }
+
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDocumentViewer();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [viewerState.isOpen, closeDocumentViewer]);
 
   // Load learning suggestions on component mount and user change
   useEffect(() => {
@@ -177,16 +268,33 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       return;
     }
 
-    const directUrl = typeof resource.url === 'string' ? resource.url.trim() : '';
-    if (directUrl) {
-      window.open(directUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
+    const requestId = viewerRequestRef.current + 1;
+    viewerRequestRef.current = requestId;
 
     const metadata = resource.metadata || {};
+    const fallbackTitle = metadata.documentTitle || resource.title || 'Document';
+    const fallbackFilename = metadata.filename || metadata.documentTitle || resource.title || 'document';
+    const contentType = metadata.contentType || '';
+
+    const directUrl = typeof resource.url === 'string' ? resource.url.trim() : '';
     const metadataUrl = typeof metadata.downloadUrl === 'string' ? metadata.downloadUrl.trim() : '';
-    if (metadataUrl) {
-      window.open(metadataUrl, '_blank', 'noopener,noreferrer');
+    const resolvedUrl = directUrl || metadataUrl;
+
+    revokeActiveObjectUrl();
+    setViewerError(null);
+
+    if (resolvedUrl) {
+      setViewerState({
+        isOpen: true,
+        title: fallbackTitle,
+        filename: fallbackFilename,
+        contentType,
+        allowDownload: true,
+        downloadUrl: resolvedUrl,
+        contentBytes: null,
+      });
+      setViewerError('This document needs to be opened outside the app. Use the download button to view it.');
+      setIsViewerLoading(false);
       return;
     }
 
@@ -195,38 +303,103 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
     if (!documentId && !fileId) {
       console.warn('Resource does not include a downloadable reference.');
+      setViewerState({
+        isOpen: true,
+        title: fallbackTitle,
+        filename: fallbackFilename,
+        contentType,
+        allowDownload: false,
+        downloadUrl: '',
+        contentBytes: null,
+      });
+      setViewerError('This resource does not include a downloadable document.');
+      setIsViewerLoading(false);
       return;
     }
 
     const resourceKey = getResourceKey(resource, index);
     setDownloadingResourceId(resourceKey);
+    setIsViewerLoading(true);
+    setViewerState({
+      isOpen: true,
+      title: fallbackTitle,
+      filename: fallbackFilename,
+      contentType,
+      allowDownload: false,
+      downloadUrl: '',
+      contentBytes: null,
+    });
 
     try {
       const response = await ragService.downloadDocument({ documentId, fileId });
+      if (viewerRequestRef.current !== requestId) {
+        return;
+      }
+
       if (!response) {
         throw new Error('No response received from download request');
       }
 
-      const responseUrl = typeof response.downloadUrl === 'string' ? response.downloadUrl.trim() : '';
-      if (responseUrl) {
-        window.open(responseUrl, '_blank', 'noopener,noreferrer');
+      const rawDownloadUrl = typeof response.downloadUrl === 'string' ? response.downloadUrl.trim() : '';
+      const base64Content = typeof response.content === 'string' ? response.content.trim() : '';
+      const resolvedContentType = response.contentType || contentType || 'application/octet-stream';
+
+      let downloadUrl = rawDownloadUrl;
+
+      if (!base64Content) {
+        setViewerState({
+          isOpen: true,
+          title: fallbackTitle,
+          filename: response.filename || fallbackFilename,
+          contentType: resolvedContentType,
+          allowDownload: Boolean(downloadUrl),
+          downloadUrl,
+          contentBytes: null,
+        });
+        setViewerError('We were unable to retrieve a preview for this document. Use the download option to open it.');
+        setIsViewerLoading(false);
         return;
       }
 
-      const blob = decodeBase64ToBlob(response.content, response.contentType);
-      if (!blob) {
+      const byteArray = decodeBase64ToUint8Array(base64Content);
+      if (!byteArray) {
         throw new Error('Unable to decode document content');
       }
 
-      const fallbackFilename = metadata.filename || metadata.documentTitle || resource.title || 'document';
-      const filename = response.filename || fallbackFilename;
-      openBlobInNewTab(blob, filename);
+      if (!downloadUrl) {
+        const blob = new Blob([byteArray], { type: resolvedContentType || 'application/octet-stream' });
+        const objectUrlResult = createObjectUrlFromBlob(blob);
+        if (!objectUrlResult) {
+          console.warn('Unable to create object URL for document download.');
+        } else if (viewerRequestRef.current !== requestId) {
+          objectUrlResult.revoke();
+          return;
+        } else {
+          activeObjectUrlRef.current = objectUrlResult;
+          downloadUrl = objectUrlResult.url;
+        }
+      }
+
+      setViewerState({
+        isOpen: true,
+        title: fallbackTitle,
+        filename: response.filename || fallbackFilename,
+        contentType: resolvedContentType,
+        allowDownload: Boolean(downloadUrl),
+        downloadUrl,
+        contentBytes: byteArray,
+      });
+      setIsViewerLoading(false);
     } catch (error) {
       console.error('Failed to open resource document:', error);
+      if (viewerRequestRef.current === requestId) {
+        setViewerError('We were unable to load this document in the viewer. If a download option is available, please try that instead.');
+        setIsViewerLoading(false);
+      }
     } finally {
       setDownloadingResourceId(current => (current === resourceKey ? null : current));
     }
-  }, [decodeBase64ToBlob, getResourceKey, openBlobInNewTab]);
+  }, [createObjectUrlFromBlob, decodeBase64ToUint8Array, getResourceKey, revokeActiveObjectUrl]);
 
   const handleSuggestionClick = (suggestion) => {
     // For AI-generated suggestions, we might need to search for actual resources
@@ -530,9 +703,295 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
           Added to Notebook
         </div>
       )}
+      <DocumentViewer
+        isOpen={viewerState.isOpen}
+        title={viewerState.title}
+        contentType={viewerState.contentType}
+        filename={viewerState.filename}
+        isLoading={isViewerLoading}
+        error={viewerError}
+        allowDownload={viewerState.allowDownload}
+        downloadUrl={viewerState.downloadUrl}
+        contentBytes={viewerState.contentBytes}
+        onClose={closeDocumentViewer}
+      />
     </div>
   );
 });
+
+const DocumentViewer = ({
+  isOpen,
+  title,
+  contentType,
+  isLoading,
+  onClose,
+  filename,
+  error,
+  allowDownload,
+  downloadUrl,
+  contentBytes,
+}) => {
+  const [renderError, setRenderError] = useState(null);
+  const [textPreview, setTextPreview] = useState('');
+  const [isRenderingPdf, setIsRenderingPdf] = useState(false);
+  const pdfContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setRenderError(null);
+      setTextPreview('');
+      setIsRenderingPdf(false);
+      if (pdfContainerRef.current) {
+        pdfContainerRef.current.innerHTML = '';
+      }
+    }
+  }, [isOpen]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  const safeTitle = title || 'Document';
+  const normalizedType = (contentType || '').toLowerCase();
+  const contentLength = typeof contentBytes === 'object' && contentBytes !== null && typeof contentBytes.length === 'number'
+    ? contentBytes.length
+    : 0;
+  const hasBinaryContent = contentLength > 0;
+  const isPdf = hasBinaryContent && normalizedType.includes('pdf');
+  const isTextLike = hasBinaryContent && (
+    normalizedType.startsWith('text/') ||
+    normalizedType.includes('json') ||
+    normalizedType.includes('xml') ||
+    normalizedType.includes('csv') ||
+    normalizedType.includes('yaml') ||
+    normalizedType.includes('markdown')
+  );
+
+  useEffect(() => {
+    if (!isOpen || isLoading) {
+      return undefined;
+    }
+
+    setRenderError(null);
+    setTextPreview('');
+
+    if (pdfContainerRef.current) {
+      pdfContainerRef.current.innerHTML = '';
+    }
+
+    if (!hasBinaryContent) {
+      setIsRenderingPdf(false);
+      return undefined;
+    }
+
+    if (isPdf) {
+      if (typeof window === 'undefined' || typeof document === 'undefined') {
+        setRenderError('PDF previews are not available in this environment. Please download the document to view it.');
+        setIsRenderingPdf(false);
+        return undefined;
+      }
+
+      let cancelled = false;
+      setIsRenderingPdf(true);
+
+      const loadingTask = pdfjsLib.getDocument({ data: contentBytes, disableWorker: true });
+
+      loadingTask.promise.then(async (pdf) => {
+        if (cancelled) {
+          return;
+        }
+
+        const container = pdfContainerRef.current;
+        if (!container) {
+          return;
+        }
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          if (cancelled) {
+            break;
+          }
+
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale: 1.2 });
+          const canvas = document.createElement('canvas');
+          canvas.className = 'mb-6 max-w-full border border-gray-200 bg-white shadow-sm rounded';
+          const context = canvas.getContext('2d');
+
+          if (!context) {
+            throw new Error('Canvas 2D context is not available.');
+          }
+
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          container.appendChild(canvas);
+          await page.render({ canvasContext: context, viewport }).promise;
+        }
+
+        if (!cancelled) {
+          setIsRenderingPdf(false);
+        }
+      }).catch((renderErr) => {
+        if (cancelled) {
+          return;
+        }
+        console.error('Failed to render PDF preview:', renderErr);
+        setRenderError('We were unable to render a preview for this PDF. Please download the document to view it.');
+        setIsRenderingPdf(false);
+      });
+
+      return () => {
+        cancelled = true;
+        loadingTask.destroy?.();
+        if (pdfContainerRef.current) {
+          pdfContainerRef.current.innerHTML = '';
+        }
+      };
+    }
+
+    setIsRenderingPdf(false);
+
+    if (isTextLike) {
+      try {
+        if (typeof TextDecoder === 'undefined') {
+          throw new Error('TextDecoder is not available.');
+        }
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        let text = decoder.decode(contentBytes);
+        const MAX_LENGTH = 200000;
+        if (text.length > MAX_LENGTH) {
+          text = `${text.slice(0, MAX_LENGTH)}\n\n… Preview truncated. Download the document to view the remaining content.`;
+        }
+        setTextPreview(text);
+      } catch (decodeError) {
+        console.error('Failed to decode text document:', decodeError);
+        setRenderError('We were unable to display this text document. Please download the file to view it.');
+      }
+      return undefined;
+    }
+
+    setRenderError('This file type is not currently supported for inline preview. Please download the document to view it.');
+    return undefined;
+  }, [contentBytes, hasBinaryContent, isLoading, isOpen, isPdf, isTextLike]);
+
+  const displayError = error || renderError;
+  const effectiveDownloadUrl = allowDownload && !isLoading && downloadUrl ? downloadUrl : '';
+  const isObjectUrl = typeof effectiveDownloadUrl === 'string' && effectiveDownloadUrl.startsWith('blob:');
+  const downloadLinkProps = isObjectUrl ? {} : { target: '_blank', rel: 'noopener noreferrer' };
+  const showPdfPreview = !displayError && !isLoading && isPdf;
+  const showTextPreview = !displayError && !isLoading && isTextLike && Boolean(textPreview);
+  const showUnsupportedMessage = !displayError && !isLoading && hasBinaryContent && !isPdf && !isTextLike;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/70 backdrop-blur-sm px-4 sm:px-6 py-8"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="relative flex h-full max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${safeTitle} viewer`}
+      >
+        <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+          <div className="pr-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Document Viewer</p>
+            <h2 className="text-lg font-semibold text-gray-900">{safeTitle}</h2>
+            {contentType ? (
+              <p className="mt-1 text-xs text-gray-500">{contentType}</p>
+            ) : null}
+          </div>
+          <div className="flex items-center space-x-3">
+            {effectiveDownloadUrl ? (
+              <a
+                href={effectiveDownloadUrl}
+                download={filename || true}
+                className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                {...downloadLinkProps}
+              >
+                <Download className="h-4 w-4" />
+                <span>Download</span>
+              </a>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+              aria-label="Close document viewer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden bg-gray-50">
+          {isLoading ? (
+            <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="text-sm font-medium">Loading document...</p>
+            </div>
+          ) : displayError ? (
+            <div className="flex h-full flex-col items-center justify-center space-y-3 px-6 text-center text-gray-600">
+              <AlertCircle className="h-10 w-10 text-amber-500" />
+              <p className="text-sm">{displayError}</p>
+              {effectiveDownloadUrl ? (
+                <a
+                  href={effectiveDownloadUrl}
+                  download={filename || true}
+                  className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                  {...downloadLinkProps}
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download document</span>
+                </a>
+              ) : null}
+            </div>
+          ) : showPdfPreview ? (
+            <div className="relative h-full overflow-auto bg-gray-100">
+              {isRenderingPdf && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center space-x-3 bg-gray-100/70 text-gray-600">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <span className="text-sm font-medium">Rendering preview...</span>
+                </div>
+              )}
+              <div
+                ref={pdfContainerRef}
+                className={`mx-auto max-w-full p-6 ${isRenderingPdf ? 'opacity-0' : 'opacity-100'} transition-opacity`}
+              />
+            </div>
+          ) : showTextPreview ? (
+            <div className="h-full overflow-auto bg-white px-6 py-5">
+              <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-gray-800">
+                {textPreview}
+              </pre>
+            </div>
+          ) : showUnsupportedMessage ? (
+            <div className="flex h-full flex-col items-center justify-center space-y-3 px-6 text-center text-gray-600">
+              <AlertCircle className="h-10 w-10 text-amber-500" />
+              <p className="text-sm">This document type cannot be previewed yet. Please download it to view the contents.</p>
+              {effectiveDownloadUrl ? (
+                <a
+                  href={effectiveDownloadUrl}
+                  download={filename || true}
+                  className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                  {...downloadLinkProps}
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download document</span>
+                </a>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
+              <FileText className="h-10 w-10 text-gray-300" />
+              <p className="text-sm">Document preview is not available.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Individual suggestion card component
 const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeIcon, index, onAdd, isAdded }) => {

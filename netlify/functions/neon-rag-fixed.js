@@ -8,7 +8,7 @@ const jwksClient = require('jwks-rsa');
 // JWKS client for Auth0 token verification
 const client = jwksClient({
   jwksUri: `https://${process.env.REACT_APP_AUTH0_DOMAIN}/.well-known/jwks.json`,
-  requestHeaders: {}, 
+  requestHeaders: {},
   timeout: 30000,
   cache: true,
   rateLimit: true,
@@ -25,6 +25,129 @@ function getKey(header, callback) {
     callback(null, signingKey);
   });
 }
+
+const FILENAME_EXTENSION_PATTERN =
+  /\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|yaml|yml|html|htm|log)$/i;
+
+const isLikelyFilename = (value) => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (/[\\/]/.test(trimmed)) {
+    return true;
+  }
+
+  if (FILENAME_EXTENSION_PATTERN.test(trimmed)) {
+    return true;
+  }
+
+  if (!/\s/.test(trimmed) && /\.[a-z0-9]{2,5}$/i.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+};
+
+const parseMetadata = (rawMetadata) => {
+  if (!rawMetadata) {
+    return {};
+  }
+
+  if (typeof rawMetadata === 'object') {
+    if (Array.isArray(rawMetadata)) {
+      return {};
+    }
+    return { ...rawMetadata };
+  }
+
+  if (typeof rawMetadata === 'string') {
+    try {
+      const parsed = JSON.parse(rawMetadata);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? { ...parsed } : {};
+    } catch (error) {
+      console.warn('Failed to parse document metadata JSON:', error.message);
+      return {};
+    }
+  }
+
+  return {};
+};
+
+const collectTitleCandidates = (...objects) => {
+  const seen = new Set();
+  const candidates = [];
+
+  const pushCandidate = (value) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    candidates.push(trimmed);
+  };
+
+  const visit = (obj, depth = 0) => {
+    if (!obj || typeof obj !== 'object' || depth > 3) {
+      return;
+    }
+
+    if (Array.isArray(obj)) {
+      obj.forEach(item => visit(item, depth + 1));
+      return;
+    }
+
+    pushCandidate(obj.documentTitle);
+    pushCandidate(obj.document_title);
+    pushCandidate(obj.title);
+    pushCandidate(obj.displayTitle);
+    pushCandidate(obj.display_title);
+    pushCandidate(obj.displayName);
+    pushCandidate(obj.display_name);
+    pushCandidate(obj.name);
+    pushCandidate(obj.label);
+    pushCandidate(obj.fileTitle);
+    pushCandidate(obj.file_title);
+    pushCandidate(obj.documentName);
+    pushCandidate(obj.document_name);
+
+    const nestedKeys = [
+      'metadata',
+      'documentMetadata',
+      'document',
+      'file',
+      'details',
+      'info',
+      'source',
+      'data',
+    ];
+
+    nestedKeys.forEach(key => {
+      if (key in obj) {
+        visit(obj[key], depth + 1);
+      }
+    });
+  };
+
+  objects.forEach(obj => visit(obj));
+
+  return candidates;
+};
 
 // Enhanced user extraction with JWT verification
 const extractUserId = async (event, context) => {
@@ -548,7 +671,7 @@ async function handleSearch(userId, query, options = {}) {
     const { limit = 10 } = options;
     const sql = await getSql();
     const rows = await sql`
-      SELECT c.document_id, c.chunk_index, c.chunk_text, d.filename
+      SELECT c.document_id, c.chunk_index, c.chunk_text, d.filename, d.original_filename, d.metadata
       FROM rag_document_chunks c
       JOIN rag_documents d ON c.document_id = d.id
       WHERE d.user_id = ${userId}
@@ -556,13 +679,67 @@ async function handleSearch(userId, query, options = {}) {
       LIMIT ${limit}
     `;
 
-    const results = rows.map(r => ({
-      documentId: r.document_id,
-      filename: r.filename,
-      chunkIndex: r.chunk_index,
-      text: r.chunk_text,
-      similarity: 1,
-    }));
+    const results = rows.map((row, index) => {
+      const metadata = parseMetadata(row.metadata);
+      const titleCandidates = collectTitleCandidates(
+        metadata,
+        metadata?.documentMetadata,
+        metadata?.metadata,
+        metadata?.file,
+        metadata?.fileMetadata,
+        metadata?.details,
+        metadata?.info
+      );
+
+      const fallbackFilename = typeof row.filename === 'string' ? row.filename.trim() : '';
+      const fallbackOriginal =
+        typeof row.original_filename === 'string' ? row.original_filename.trim() : '';
+
+      if (fallbackFilename) {
+        titleCandidates.push(fallbackFilename);
+      }
+      if (fallbackOriginal && fallbackOriginal !== fallbackFilename) {
+        titleCandidates.push(fallbackOriginal);
+      }
+
+      const preferredTitle = titleCandidates.find(candidate => !isLikelyFilename(candidate));
+      const fallbackTitle = titleCandidates.find(candidate => isLikelyFilename(candidate));
+
+      const resolvedTitle =
+        preferredTitle ||
+        fallbackTitle ||
+        fallbackFilename ||
+        fallbackOriginal ||
+        `Document ${index + 1}`;
+
+      const documentTitle = preferredTitle || fallbackTitle || null;
+
+      const metadataWithTitle = { ...metadata };
+      if (documentTitle) {
+        if (
+          typeof metadataWithTitle.documentTitle !== 'string' ||
+          !metadataWithTitle.documentTitle.trim()
+        ) {
+          metadataWithTitle.documentTitle = documentTitle;
+        }
+
+        if (typeof metadataWithTitle.title !== 'string' || !metadataWithTitle.title.trim()) {
+          metadataWithTitle.title = documentTitle;
+        }
+      }
+
+      return {
+        documentId: row.document_id,
+        filename: row.filename,
+        originalFilename: row.original_filename || null,
+        chunkIndex: row.chunk_index,
+        text: row.chunk_text,
+        similarity: 1,
+        title: resolvedTitle,
+        documentTitle: documentTitle || resolvedTitle,
+        metadata: metadataWithTitle,
+      };
+    });
 
     return {
       statusCode: 200,

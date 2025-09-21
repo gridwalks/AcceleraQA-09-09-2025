@@ -637,6 +637,23 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-1">
+                        Document Summary (optional)
+                      </label>
+                      <textarea
+                        value={uploadMetadata.description}
+                        onChange={(e) => setUploadMetadata(prev => ({ ...prev, description: e.target.value }))}
+                        disabled={hasReachedDocumentLimit}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                        placeholder="Add a short summary to help teammates understand when to use this document"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Provide 1-2 sentences describing the document so it appears in search results with helpful context.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
                         Category
                       </label>
                       <select
@@ -762,6 +779,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                             const displayTitle = getDocumentTitle(doc);
                             const storedFilename = doc?.filename || '';
                             const showStoredFilename = Boolean(rawTitle) && storedFilename && displayTitle !== storedFilename;
+                            const description = typeof doc?.metadata?.description === 'string'
+                              ? doc.metadata.description.trim()
+                              : '';
 
                             return (
                               <tr key={doc.id} className="hover:bg-gray-50">
@@ -781,6 +801,11 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                                           title={storedFilename}
                                         >
                                           {storedFilename}
+                                        </p>
+                                      )}
+                                      {description && (
+                                        <p className="mt-1 text-xs text-gray-600">
+                                          {description}
                                         </p>
                                       )}
                                       {doc.metadata?.conversion && doc.metadata?.originalFilename && (

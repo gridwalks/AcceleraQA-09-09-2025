@@ -119,6 +119,7 @@ describe('Sidebar resource extraction', () => {
     expect(headings[4].textContent).toContain('General Quality Manual');
   });
 
+
   it('falls back to recency when no user question is present', async () => {
     const messages = [
       {

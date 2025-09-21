@@ -17,9 +17,9 @@ const Sidebar = ({
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 lg:min-h-0">
       {/* Sidebar Header */}
-        <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900">Resource Center</h3>
-        </div>
+      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900">Resource Center</h3>
+      </div>
 
       {/* Sidebar Content */}
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -30,9 +30,7 @@ const Sidebar = ({
           thirtyDayMessages={thirtyDayMessages}
           onSuggestionsUpdate={onSuggestionsUpdate}
           onAddResource={onAddResource}
-
           onConversationSelect={onConversationSelect}
-
         />
       </div>
 
@@ -97,6 +95,7 @@ const RELEVANCE_WEIGHTS = {
 };
 
 const isUserMessage = (message) => {
+
   if (!message || typeof message !== 'object') {
     return false;
   }
@@ -119,12 +118,12 @@ const isAssistantMessage = (message) => {
   if (typeof candidate !== 'string') {
     return false;
   }
-
   const normalized = candidate.toLowerCase();
   return normalized === 'assistant' || normalized === 'ai' || normalized === 'bot';
 };
 
 const collectStrings = (value, collector, depth = 0) => {
+
   if (depth > 3 || value == null) {
     return;
   }
@@ -195,6 +194,7 @@ const extractMessageText = (message) => {
     if (typeof content.content === 'string') {
       parts.push(content.content);
     }
+
     if (Array.isArray(content.parts)) {
       content.parts.forEach((part) => {
         if (typeof part === 'string') {
@@ -264,7 +264,6 @@ const contextsHas = (contexts, value) => {
   if (Array.isArray(contexts)) {
     return contexts.includes(value);
   }
-
   return false;
 };
 
@@ -289,7 +288,7 @@ const ensureResourceTitle = (resource) => {
     resource.url,
     resource.id,
   ];
-
+  
   const resolvedTitle = titleCandidates.find(
     (value) => typeof value === 'string' && value.trim()
   );

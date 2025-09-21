@@ -302,8 +302,8 @@ const BASE_EXCLUDED_KEYS = new Set([
 const normalizeSnippetText = (value) =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
-const getFallbackSnippet = (source) =>
-  normalizeSnippetText(
+const getFallbackSnippet = (source) => {
+  const fallback = normalizeSnippetText(
     getFirstNonEmptyString(
       source?.text,
       source?.snippet,
@@ -322,6 +322,13 @@ const getFallbackSnippet = (source) =>
       source?.file_citation?.quote
     )
   );
+
+  if (!fallback || isLikelyFilename(fallback)) {
+    return '';
+  }
+
+  return fallback;
+};
 
 const buildExclusionSet = (values = []) => {
   const set = new Set();
@@ -458,6 +465,10 @@ function getSourceSnippet(source, options = {}) {
     }
 
     if (excludedValues.has(normalized.toLowerCase())) {
+      return;
+    }
+
+    if (isLikelyFilename(normalized)) {
       return;
     }
 

@@ -1,3 +1,5 @@
+// src/components/Sidebar.test.js
+
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
@@ -42,23 +44,92 @@ describe('Sidebar resource extraction', () => {
     }
   });
 
-  it('places the newest resources at the top when continuing a chat', async () => {
+  it('prioritizes resources relevant to the latest user question', async () => {
+    const messages = [
+      {
+        id: 'intro-assistant',
+        role: 'assistant',
+        resources: [
+          {
+            id: 'quality-manual',
+            title: 'General Quality Manual',
+            type: 'Guideline',
+            description: 'High level company quality overview.',
+          },
+          {
+            id: 'capa-checklist',
+            title: 'CAPA Readiness Checklist',
+            type: 'Guideline',
+            description: 'Checklist used before closing CAPA evidence.',
+          },
+        ],
+        timestamp: 1000,
+      },
+      {
+        id: 'user-question',
+        role: 'user',
+        content: 'How do we handle CAPA evidence retention requirements?',
+        resources: [
+          {
+            id: 'question-upload',
+            title: 'CAPA Evidence Template',
+            type: 'User Upload',
+          },
+        ],
+        timestamp: 2000,
+      },
+      {
+        id: 'assistant-answer',
+        role: 'assistant',
+        resources: [
+          {
+            id: 'answer-resource',
+            title: 'CAPA Evidence SOP',
+            description: 'Step-by-step CAPA evidence retention process.',
+            type: 'Knowledge Base',
+          },
+        ],
+        timestamp: 3000,
+      },
+      {
+        id: 'assistant-newer',
+        role: 'assistant',
+        resources: [
+          {
+            id: 'new-unrelated',
+            title: 'General Onboarding Guide',
+            description: 'Orientation material for new hires.',
+            type: 'Training',
+          },
+        ],
+        timestamp: 4000,
+      },
+    ];
+
+    await act(async () => {
+      ReactDOM.render(<Sidebar {...baseProps} messages={messages} />, container);
+    });
+
+    const headings = Array.from(container.querySelectorAll('h4'));
+    expect(headings[0].textContent).toContain('CAPA Evidence Template'); // question attachment (highest)
+    expect(headings[1].textContent).toContain('CAPA Evidence SOP');     // answer resource
+    expect(headings[2].textContent).toContain('General Onboarding Guide'); // newer unrelated
+    expect(headings[3].textContent).toContain('CAPA Readiness Checklist');
+    expect(headings[4].textContent).toContain('General Quality Manual');
+  });
+
+  it('orders by recency when there is no user question and updates when continuing a chat', async () => {
     const initialMessages = [
       {
         id: 'msg-1',
         role: 'assistant',
-        resources: [
-          { id: 'old-resource', title: 'Legacy Guidance', type: 'Guideline' },
-        ],
+        resources: [{ id: 'old-resource', title: 'Legacy Guidance', type: 'Guideline' }],
         timestamp: 1000,
       },
     ];
 
     await act(async () => {
-      ReactDOM.render(
-        <Sidebar {...baseProps} messages={initialMessages} />,
-        container
-      );
+      ReactDOM.render(<Sidebar {...baseProps} messages={initialMessages} />, container);
     });
 
     const initialHeadings = Array.from(container.querySelectorAll('h4'));
@@ -69,18 +140,13 @@ describe('Sidebar resource extraction', () => {
       {
         id: 'msg-2',
         role: 'assistant',
-        resources: [
-          { id: 'new-resource', title: 'Latest CAPA Update', type: 'Training' },
-        ],
+        resources: [{ id: 'new-resource', title: 'Latest CAPA Update', type: 'Training' }],
         timestamp: 2000,
       },
     ];
 
     await act(async () => {
-      ReactDOM.render(
-        <Sidebar {...baseProps} messages={updatedMessages} />,
-        container
-      );
+      ReactDOM.render(<Sidebar {...baseProps} messages={updatedMessages} />, container);
     });
 
     const updatedHeadings = Array.from(container.querySelectorAll('h4'));
@@ -105,10 +171,7 @@ describe('Sidebar resource extraction', () => {
     ];
 
     await act(async () => {
-      ReactDOM.render(
-        <Sidebar {...baseProps} messages={messages} />,
-        container
-      );
+      ReactDOM.render(<Sidebar {...baseProps} messages={messages} />, container);
     });
 
     const headings = Array.from(container.querySelectorAll('h4'));

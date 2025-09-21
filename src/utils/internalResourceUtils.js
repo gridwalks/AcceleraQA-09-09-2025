@@ -3,8 +3,102 @@ import { UI_CONFIG } from '../config/constants';
 const DEFAULT_LIMIT = UI_CONFIG?.MAX_RESOURCES_PER_RESPONSE || 5;
 const MIN_TOKEN_LENGTH = 3;
 
+const STOP_WORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'from',
+  'with',
+  'that',
+  'this',
+  'your',
+  'into',
+  'onto',
+  'about',
+  'have',
+  'has',
+  'had',
+  'been',
+  'were',
+  'was',
+  'will',
+  'shall',
+  'should',
+  'could',
+  'would',
+  'their',
+  'there',
+  'which',
+  'while',
+  'when',
+  'what',
+  'than',
+  'then',
+  'them',
+  'they',
+  'also',
+  'such',
+  'only',
+  'very',
+  'just',
+  'even',
+  'over',
+  'under',
+  'through',
+  'across',
+  'after',
+  'before',
+  'because',
+  'during',
+  'among',
+  'between',
+  'within',
+  'without',
+  'using',
+  'based',
+  'some',
+  'many',
+  'most',
+  'more',
+  'less',
+  'much',
+  'other',
+  'others',
+  'another',
+  'every',
+  'again',
+  'still',
+  'since',
+  'until',
+  'upon',
+  'here',
+  'else',
+  'each',
+  'per',
+  'via',
+]);
+
 const FILENAME_EXTENSION_PATTERN =
   /\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|yaml|yml|html|htm|log)$/i;
+
+const KNOWLEDGE_DESCRIPTION_FIELDS = [
+  'description',
+  'summary',
+  'abstract',
+  'overview',
+  'notes',
+  'documentDescription',
+  'document_description',
+  'shortDescription',
+  'short_description',
+  'longDescription',
+  'long_description',
+  'details',
+  'detail',
+  'synopsis',
+];
+
+const KNOWLEDGE_FALLBACK_DESCRIPTION = 'Referenced from your uploaded knowledge base.';
 
 function isLikelyFilename(value) {
   if (typeof value !== 'string') {
@@ -105,6 +199,71 @@ function collectKnowledgeSourceTitleCandidates(source) {
   return candidates;
 }
 
+function collectKnowledgeSourceDescriptionCandidates(source) {
+  if (!source || typeof source !== 'object') {
+    return [];
+  }
+
+  const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : {};
+  const metadataDocumentMetadata =
+    metadata.documentMetadata && typeof metadata.documentMetadata === 'object'
+      ? metadata.documentMetadata
+      : {};
+  const document = source.document && typeof source.document === 'object' ? source.document : {};
+  const documentMetadata =
+    document.metadata && typeof document.metadata === 'object' ? document.metadata : {};
+  const fileCitation =
+    source.file_citation && typeof source.file_citation === 'object' ? source.file_citation : {};
+  const fileCitationMetadata =
+    fileCitation.metadata && typeof fileCitation.metadata === 'object'
+      ? fileCitation.metadata
+      : {};
+
+  const seen = new Set();
+  const candidates = [];
+
+  const pushCandidate = (rawValue) => {
+    if (typeof rawValue !== 'string') {
+      return;
+    }
+
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    candidates.push(trimmed);
+  };
+
+  const pushFromObject = (obj) => {
+    if (!obj || typeof obj !== 'object') {
+      return;
+    }
+
+    KNOWLEDGE_DESCRIPTION_FIELDS.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(obj, field)) {
+        pushCandidate(obj[field]);
+      }
+    });
+  };
+
+  pushFromObject(metadataDocumentMetadata);
+  pushFromObject(documentMetadata);
+  pushFromObject(metadata);
+  pushFromObject(document);
+  pushFromObject(fileCitationMetadata);
+  pushFromObject(fileCitation);
+  pushFromObject(source);
+
+  return candidates;
+}
+
 function getFirstNonEmptyString(...values) {
   for (const value of values) {
     if (typeof value === 'string') {
@@ -122,9 +281,11 @@ function tokenizeText(text) {
     return [];
   }
 
-  return String(text)
-    .toLowerCase()
-    .match(/[a-z0-9]{3,}/g) || [];
+  return (
+    String(text)
+      .toLowerCase()
+      .match(/[a-z0-9]{3,}/g) || []
+  ).filter((token) => !STOP_WORDS.has(token));
 }
 
 function buildResourceId(prefix, key, index) {
@@ -245,6 +406,19 @@ export function createKnowledgeBaseResources(sources = []) {
     const preferredTitle = titleCandidates.find(candidate => !isLikelyFilename(candidate));
     const resolvedTitle = preferredTitle || fallbackTitle;
 
+    const descriptionCandidates = collectKnowledgeSourceDescriptionCandidates(source);
+    const documentDescription = descriptionCandidates.length > 0 ? descriptionCandidates[0] : '';
+    const truncatedDocumentDescription = documentDescription
+      ? truncateText(documentDescription, 220)
+      : '';
+    const resolvedDescription =
+      snippet || truncatedDocumentDescription || KNOWLEDGE_FALLBACK_DESCRIPTION;
+    const descriptionSource = snippet
+      ? 'snippet'
+      : truncatedDocumentDescription
+        ? 'document'
+        : 'fallback';
+
     const metadataDocumentId =
       getFirstNonEmptyString(
         source.documentId,
@@ -268,23 +442,43 @@ export function createKnowledgeBaseResources(sources = []) {
                 : typeof source.file_citation?.chunk_index === 'number'
                   ? source.file_citation.chunk_index
                   : null;
-    const existing = deduped.get(key);
+    const existingEntry = deduped.get(key);
 
-    if (existing) {
-      if (snippet && !existing.description.includes(snippet)) {
-        const merged = `${existing.description} ${snippet}`.trim();
-        existing.description = truncateText(merged, 220);
+    if (existingEntry) {
+      const existingResource = existingEntry.resource;
+
+      if (snippet) {
+        if (
+          typeof existingResource.description !== 'string' ||
+          !existingResource.description.includes(snippet)
+        ) {
+          const merged = `${existingResource.description || ''} ${snippet}`.trim();
+          existingResource.description = truncateText(merged, 220);
+        }
+        existingEntry.descriptionSource = 'snippet';
+      } else if (
+        descriptionSource === 'document' &&
+        existingEntry.descriptionSource !== 'snippet'
+      ) {
+        if (truncatedDocumentDescription) {
+          existingResource.description = truncatedDocumentDescription;
+          existingEntry.descriptionSource = 'document';
+        }
+      } else if (!existingResource.description) {
+        existingResource.description = resolvedDescription;
+        existingEntry.descriptionSource = descriptionSource;
       }
-      if (resolvedTitle && existing.title !== resolvedTitle) {
-        existing.title = resolvedTitle;
+
+      if (resolvedTitle && existingResource.title !== resolvedTitle) {
+        existingResource.title = resolvedTitle;
       }
-      if (!existing.metadata?.documentTitle && resolvedTitle) {
-        existing.metadata = {
-          ...(existing.metadata || {}),
+      if (!existingResource.metadata?.documentTitle && resolvedTitle) {
+        existingResource.metadata = {
+          ...(existingResource.metadata || {}),
           documentTitle: resolvedTitle,
         };
       }
-      deduped.set(key, existing);
+      deduped.set(key, existingEntry);
       return;
     }
 
@@ -297,49 +491,59 @@ export function createKnowledgeBaseResources(sources = []) {
     }
 
     deduped.set(key, {
-      id: buildResourceId('knowledge', key, index),
-      title: resolvedTitle,
-      type: 'Knowledge Base',
-      url: source.url || null,
-      description: snippet || 'Referenced from your uploaded knowledge base.',
-      origin: 'Knowledge Base',
-      location: 'Derived from retrieved document context',
-      metadata,
+      resource: {
+        id: buildResourceId('knowledge', key, index),
+        title: resolvedTitle,
+        type: 'Knowledge Base',
+        url: source.url || null,
+        description: resolvedDescription,
+        origin: 'Knowledge Base',
+        location: 'Derived from retrieved document context',
+        metadata,
+      },
+      descriptionSource,
     });
   });
 
-  return Array.from(deduped.values());
+  return Array.from(deduped.values()).map(entry => entry.resource);
 }
 
 function scoreAdminResource(resource, contextTokens) {
   const searchableText = `${resource.name || ''} ${resource.description || ''} ${resource.tag || ''}`;
-  const resourceTokens = tokenizeText(searchableText);
+  const resourceTokens = new Set(tokenizeText(searchableText));
 
-  if (resourceTokens.length === 0) {
-    return 0;
+  if (resourceTokens.size === 0) {
+    return { score: 0, matchedTokenCount: 0, tagMatched: false };
   }
 
-  let score = 0;
   const matchedTokens = new Set();
 
-  resourceTokens.forEach(token => {
+  resourceTokens.forEach((token) => {
     if (token.length < MIN_TOKEN_LENGTH) {
       return;
     }
-    if (contextTokens.has(token) && !matchedTokens.has(token)) {
+    if (contextTokens.has(token)) {
       matchedTokens.add(token);
-      score += 1;
     }
   });
 
+  let tagMatched = false;
   if (resource.tag) {
-    const tagToken = resource.tag.toLowerCase();
-    if (contextTokens.has(tagToken)) {
-      score += 2;
-    }
+    tokenizeText(resource.tag).forEach((token) => {
+      if (contextTokens.has(token)) {
+        tagMatched = true;
+        matchedTokens.add(token);
+      }
+    });
   }
 
-  return score;
+  const score = matchedTokens.size + (tagMatched ? 2 : 0);
+
+  return {
+    score,
+    matchedTokenCount: matchedTokens.size,
+    tagMatched,
+  };
 }
 
 export function matchAdminResourcesToContext(contextText, adminResources = [], limit = DEFAULT_LIMIT) {
@@ -358,8 +562,15 @@ export function matchAdminResourcesToContext(contextText, adminResources = [], l
         return null;
       }
 
-      const score = scoreAdminResource(resource, contextTokens);
-      if (score === 0) {
+      const { score, matchedTokenCount, tagMatched } = scoreAdminResource(resource, contextTokens);
+      if (matchedTokenCount === 0) {
+        return null;
+      }
+
+      const hasSufficientOverlap =
+        matchedTokenCount >= 2 || (tagMatched && matchedTokenCount >= 1);
+
+      if (!hasSufficientOverlap) {
         return null;
       }
 

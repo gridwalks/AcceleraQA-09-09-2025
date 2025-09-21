@@ -24,18 +24,16 @@ import ConversationList from './ConversationList';
 import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
 import ragService from '../services/ragService';
 
-
 const createInitialViewerState = () => ({
   isOpen: false,
   title: '',
-  url: '',
   filename: '',
   contentType: '',
   allowDownload: false,
+  url: '',
 });
 
 const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [], thirtyDayMessages = [], onConversationSelect }) => {
-
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredResources, setFilteredResources] = useState(currentResources);
   const [conversationSearchTerm, setConversationSearchTerm] = useState('');
@@ -51,6 +49,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const [showToast, setShowToast] = useState(false);
   const [downloadingResourceId, setDownloadingResourceId] = useState(null);
   const toastTimeoutRef = useRef(null);
+
   const [viewerState, setViewerState] = useState(() => createInitialViewerState());
   const [isViewerLoading, setIsViewerLoading] = useState(false);
   const [viewerError, setViewerError] = useState(null);
@@ -63,22 +62,16 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   }, [messages, thirtyDayMessages]);
 
   const filteredConversations = useMemo(() => {
-    if (!conversationSearchTerm.trim()) {
-      return conversations;
-    }
-
+    if (!conversationSearchTerm.trim()) return conversations;
     const term = conversationSearchTerm.trim().toLowerCase();
     return conversations.filter(conv =>
-      (conv.userContent && typeof conv.userContent === 'string' && conv.userContent.toLowerCase().includes(term)) ||
-      (conv.aiContent && typeof conv.aiContent === 'string' && conv.aiContent.toLowerCase().includes(term))
+      (typeof conv.userContent === 'string' && conv.userContent.toLowerCase().includes(term)) ||
+      (typeof conv.aiContent === 'string' && conv.aiContent.toLowerCase().includes(term))
     );
   }, [conversations, conversationSearchTerm]);
 
   const getResourceKey = useCallback((resource, index = 0) => {
-    if (!resource) {
-      return `resource-${index}`;
-    }
-
+    if (!resource) return `resource-${index}`;
     return (
       resource.id ||
       resource?.metadata?.documentId ||
@@ -89,10 +82,8 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     );
   }, []);
 
-  const decodeBase64ToBlob = useCallback((base64, contentType = 'application/octet-stream') => {
-    if (!base64) {
-      return null;
-    }
+  const decodeBase64ToUint8Array = useCallback((base64) => {
+    if (!base64) return null;
 
     const atobFn =
       (typeof window !== 'undefined' && typeof window.atob === 'function')
@@ -112,8 +103,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       for (let i = 0; i < byteCharacters.length; i += 1) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
-      const byteArray = new Uint8Array(byteNumbers);
-      return new Blob([byteArray], { type: contentType || 'application/octet-stream' });
+      return new Uint8Array(byteNumbers);
     } catch (error) {
       console.error('Failed to decode base64 document content:', error);
       return null;
@@ -121,9 +111,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   }, []);
 
   const createObjectUrlFromBlob = useCallback((blob) => {
-    if (!blob) {
-      return null;
-    }
+    if (!blob) return null;
 
     const urlFactory = (() => {
       if (typeof window !== 'undefined' && window.URL && typeof window.URL.createObjectURL === 'function') {
@@ -167,7 +155,6 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       }
     }
     activeObjectUrlRef.current = null;
-
   }, []);
 
   const closeDocumentViewer = useCallback(() => {
@@ -183,13 +170,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   }, [revokeActiveObjectUrl]);
 
   useEffect(() => {
-    if (!viewerState.isOpen) {
-      return undefined;
-    }
-
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
+    if (!viewerState.isOpen || typeof window === 'undefined') return undefined;
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
@@ -199,40 +180,36 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     };
 
     window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewerState.isOpen, closeDocumentViewer]);
 
-  // Load learning suggestions on component mount and user change
+  // Load learning suggestions on mount/user change
   useEffect(() => {
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && user?.sub) {
       loadLearningSuggestions();
     }
   }, [user]);
 
-  // Filter resources based on search term
+  // Filter resources
   useEffect(() => {
     if (!searchTerm.trim()) {
       setFilteredResources(currentResources);
-    } else {
-      const term = searchTerm.trim().toLowerCase();
-      const filtered = currentResources.filter(resource => {
-        if (!resource) return false;
-        const fields = [
-          resource.title,
-          resource.type,
-          resource.description,
-          resource.origin,
-          resource.location,
-          resource.tag,
-        ];
-
-        return fields.some(value => typeof value === 'string' && value.toLowerCase().includes(term));
-      });
-      setFilteredResources(filtered);
+      return;
     }
+    const term = searchTerm.trim().toLowerCase();
+    const filtered = currentResources.filter(resource => {
+      if (!resource) return false;
+      const fields = [
+        resource.title,
+        resource.type,
+        resource.description,
+        resource.origin,
+        resource.location,
+        resource.tag,
+      ];
+      return fields.some(v => typeof v === 'string' && v.toLowerCase().includes(term));
+    });
+    setFilteredResources(filtered);
   }, [currentResources, searchTerm]);
 
   const loadLearningSuggestions = async () => {
@@ -240,14 +217,9 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
     setIsLoadingSuggestions(true);
     try {
-      console.log('Loading learning suggestions for user:', user.sub);
       const suggestions = await learningSuggestionsService.getLearningSuggestions(user.sub);
       setLearningSuggestions(suggestions);
-      
-      // Notify parent component about suggestions
-      if (onSuggestionsUpdate) {
-        onSuggestionsUpdate(suggestions);
-      }
+      onSuggestionsUpdate?.(suggestions);
     } catch (error) {
       console.error('Error loading learning suggestions:', error);
       setLearningSuggestions([]);
@@ -256,18 +228,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     }
   };
 
-  const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value);
-  };
-
-  const toggleSection = (section) => {
-    setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
+  const handleSearchChange = (e) => setSearchTerm(e.target.value);
+  const toggleSection = (section) => setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
 
   const handleResourceClick = useCallback(async (resource, index = 0) => {
-    if (!resource) {
-      return;
-    }
+    if (!resource) return;
 
     const requestId = viewerRequestRef.current + 1;
     viewerRequestRef.current = requestId;
@@ -288,10 +253,10 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       setViewerState({
         isOpen: true,
         title: fallbackTitle,
-        url: resolvedUrl,
         filename: fallbackFilename,
         contentType,
         allowDownload: true,
+        url: resolvedUrl,
       });
       setIsViewerLoading(false);
       return;
@@ -305,10 +270,10 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       setViewerState({
         isOpen: true,
         title: fallbackTitle,
-        url: '',
         filename: fallbackFilename,
         contentType,
         allowDownload: false,
+        url: '',
       });
       setViewerError('This resource does not include a downloadable document.');
       setIsViewerLoading(false);
@@ -319,7 +284,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     if (typeof window !== 'undefined') {
       try {
         pendingWindow = window.open('', '_blank', 'noopener');
-        if (pendingWindow && pendingWindow.document) {
+        if (pendingWindow?.document) {
           pendingWindow.document.write(
             '<!DOCTYPE html><html><head><title>Preparing document...</title></head>' +
               '<body style="font-family: system-ui, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif; padding: 16px;">' +
@@ -347,21 +312,12 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
     try {
       const response = await ragService.downloadDocument({ documentId, fileId });
-      if (viewerRequestRef.current !== requestId) {
-        return;
-      }
-
-      if (!response) {
-        throw new Error('No response received from download request');
-      }
+      if (viewerRequestRef.current !== requestId) return;
+      if (!response) throw new Error('No response received from download request');
 
       const responseUrl = typeof response.downloadUrl === 'string' ? response.downloadUrl.trim() : '';
 
       if (responseUrl) {
-        if (viewerRequestRef.current !== requestId) {
-          return;
-        }
-
         setViewerState({
           isOpen: true,
           title: fallbackTitle,
@@ -374,15 +330,14 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         return;
       }
 
-      const blob = decodeBase64ToBlob(response.content, response.contentType);
-      if (!blob) {
-        throw new Error('Unable to decode document content');
-      }
+      // Fallback: backend returned base64 content; build a blob URL
+      const base64Content = typeof response.content === 'string' ? response.content.trim() : '';
+      const byteArray = decodeBase64ToUint8Array(base64Content);
+      if (!byteArray) throw new Error('Unable to decode document content');
 
+      const blob = new Blob([byteArray], { type: response.contentType || contentType || 'application/octet-stream' });
       const objectUrlResult = createObjectUrlFromBlob(blob);
-      if (!objectUrlResult) {
-        throw new Error('Unable to create object URL for document');
-      }
+      if (!objectUrlResult) throw new Error('Unable to create object URL for document');
 
       if (viewerRequestRef.current !== requestId) {
         objectUrlResult.revoke();
@@ -402,11 +357,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       setIsViewerLoading(false);
     } catch (error) {
       if (pendingWindow && !pendingWindow.closed) {
-        try {
-          pendingWindow.close();
-        } catch (closeError) {
-          console.warn('Failed to close pending window after error:', closeError);
-        }
+        try { pendingWindow.close(); } catch (closeError) { console.warn('Failed to close pending window after error:', closeError); }
       }
       console.error('Failed to open resource document:', error);
       if (viewerRequestRef.current === requestId) {
@@ -414,26 +365,19 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         setIsViewerLoading(false);
       }
     } finally {
-      setDownloadingResourceId(current => (current === resourceKey ? null : current));
+      setDownloadingResourceId((current) => (current === resourceKey ? null : current));
     }
-  }, [createObjectUrlFromBlob, decodeBase64ToBlob, getResourceKey, revokeActiveObjectUrl]);
+  }, [createObjectUrlFromBlob, decodeBase64ToUint8Array, getResourceKey, revokeActiveObjectUrl]);
 
   const handleSuggestionClick = (suggestion) => {
-    // For AI-generated suggestions, we might need to search for actual resources
-    // or provide more detailed information
-    console.log('Learning suggestion clicked:', suggestion);
-    
-    // You could implement a modal with more details or search for related resources
-    if (suggestion.url) {
+    if (suggestion?.url) {
       window.open(suggestion.url, '_blank', 'noopener,noreferrer');
     }
   };
 
   const handleAdd = (item) => {
     if (!item) return;
-    if (onAddResource) {
-      onAddResource(item);
-    }
+    onAddResource?.(item);
     const id = item.url || item.id || item.title;
     setAddedResources(prev => {
       const newSet = new Set(prev);
@@ -441,18 +385,12 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       return newSet;
     });
     setShowToast(true);
-    if (toastTimeoutRef.current) {
-      clearTimeout(toastTimeoutRef.current);
-    }
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     toastTimeoutRef.current = setTimeout(() => setShowToast(false), 2000);
   };
 
   useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-    };
+    return () => { if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current); };
   }, []);
 
   const getDifficultyColor = (difficulty) => {
@@ -715,11 +653,13 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
           )}
         </div>
       </div>
+
       {showToast && (
         <div className="fixed bottom-4 right-4 bg-green-600 text-white text-sm px-3 py-2 rounded shadow-lg z-50">
           Added to Notebook
         </div>
       )}
+
       <DocumentViewer
         isOpen={viewerState.isOpen}
         title={viewerState.title}
@@ -746,9 +686,7 @@ const DocumentViewer = ({
   error,
   allowDownload,
 }) => {
-  if (!isOpen) {
-    return null;
-  }
+  if (!isOpen) return null;
 
   const safeTitle = title || 'Document';
 
@@ -759,7 +697,7 @@ const DocumentViewer = ({
       role="presentation"
     >
       <div
-        className="relative flex h-full max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+        className="relative flex h-full max-h:[85vh] max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -769,9 +707,7 @@ const DocumentViewer = ({
           <div className="pr-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Document Viewer</p>
             <h2 className="text-lg font-semibold text-gray-900">{safeTitle}</h2>
-            {contentType ? (
-              <p className="mt-1 text-xs text-gray-500">{contentType}</p>
-            ) : null}
+            {contentType ? <p className="mt-1 text-xs text-gray-500">{contentType}</p> : null}
           </div>
           <div className="flex items-center space-x-3">
             {allowDownload && url && !isLoading && (
@@ -794,6 +730,7 @@ const DocumentViewer = ({
             </button>
           </div>
         </div>
+
         <div className="flex-1 overflow-hidden bg-gray-50">
           {isLoading ? (
             <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
@@ -816,11 +753,7 @@ const DocumentViewer = ({
               )}
             </div>
           ) : url ? (
-            <iframe
-              title={safeTitle}
-              src={url}
-              className="h-full w-full border-0 bg-white"
-            />
+            <iframe title={safeTitle} src={url} className="h-full w-full border-0 bg-white" />
           ) : (
             <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
               <FileText className="h-10 w-10 text-gray-300" />
@@ -884,17 +817,15 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
               {isAdded ? <Check className="h-4 w-4" /> : <BookmarkPlus className="h-4 w-4" />}
             </button>
             <ChevronRight
-              className={`h-4 w-4 text-gray-400 group-hover:text-purple-600 transition-all flex-shrink-0 ${
-                isHovered ? 'translate-x-1' : ''
-              }`}
+              className={`h-4 w-4 text-gray-400 group-hover:text-purple-600 transition-all flex-shrink-0 ${isHovered ? 'translate-x-1' : ''}`}
             />
           </div>
         </div>
-        
+
         <h4 className="font-semibold text-gray-900 group-hover:text-purple-800 mb-2 leading-snug">
           {suggestion.title}
         </h4>
-        
+
         <p className="text-sm text-gray-600 mb-3 line-clamp-2">
           {suggestion.description}
         </p>
@@ -905,7 +836,7 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
             <p className="text-xs text-gray-600 mt-1">{suggestion.objective}</p>
           </div>
         )}
-        
+
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             {suggestion.difficulty && (
@@ -920,11 +851,7 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
                   {[...Array(5)].map((_, i) => (
                     <div
                       key={i}
-                      className={`w-2 h-2 rounded-full ${
-                        i < Math.round(suggestion.relevanceScore / 2)
-                          ? 'bg-purple-400'
-                          : 'bg-gray-200'
-                      }`}
+                      className={`w-2 h-2 rounded-full ${i < Math.round(suggestion.relevanceScore / 2) ? 'bg-purple-400' : 'bg-gray-200'}`}
                     />
                   ))}
                 </div>
@@ -933,9 +860,7 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
           </div>
 
           {suggestion.isPersonalized && (
-            <span className="text-xs text-purple-600 font-medium">
-              Personalized
-            </span>
+            <span className="text-xs text-purple-600 font-medium">Personalized</span>
           )}
         </div>
 
@@ -952,10 +877,7 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
               <ExternalLink className="h-3 w-3" />
             </a>
             {suggestion.linkedResourceTitle && (
-              <span
-                className="ml-2 text-[11px] text-gray-500 truncate max-w-[150px]"
-                title={suggestion.linkedResourceTitle}
-              >
+              <span className="ml-2 text-[11px] text-gray-500 truncate max-w-[150px]" title={suggestion.linkedResourceTitle}>
                 {suggestion.linkedResourceTitle}
               </span>
             )}
@@ -966,7 +888,7 @@ const SuggestionCard = memo(({ suggestion, onClick, getDifficultyColor, getTypeI
   );
 });
 
-// Individual resource card component (existing)
+// Individual resource card component
 const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDownloading = false }) => {
   const [isHovered, setIsHovered] = useState(false);
   const badgeClass = colorClass || 'bg-gray-100 text-gray-800 border-gray-200';
@@ -983,11 +905,7 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDo
 
   let hostname = '';
   if (directUrl) {
-    try {
-      hostname = new URL(directUrl).hostname;
-    } catch (error) {
-      hostname = directUrl;
-    }
+    try { hostname = new URL(directUrl).hostname; } catch { hostname = directUrl; }
   } else if (hasDownloadReference) {
     hostname = metadata.filename || metadata.documentTitle || resource?.title || 'Open document';
   }
@@ -1004,23 +922,13 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDo
           event.preventDefault();
           return;
         }
-        if (typeof onClick === 'function') {
-          onClick();
-        }
+        onClick?.();
       }}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (isDownloadingActive) {
-          e.preventDefault();
-          return;
-        }
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          if (typeof onClick === 'function') {
-            onClick();
-          }
-        }
+        if (isDownloadingActive) { e.preventDefault(); return; }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); }
       }}
       aria-disabled={isDownloadingActive}
     >
@@ -1028,9 +936,7 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDo
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <div className="flex items-center space-x-2 mb-3">
-              <span
-                className={`text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full border ${badgeClass}`}
-              >
+              <span className={`text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full border ${badgeClass}`}>
                 {resource.type || 'Resource'}
               </span>
             </div>
@@ -1047,21 +953,13 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDo
               <div className="flex items-center space-x-2">
                 {hasUrl ? (
                   <>
-                    {isDownloadingActive ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <ExternalLink className="h-3 w-3" />
-                    )}
-                    <span className="truncate">
-                      {hostname || (hasDownloadReference ? 'Open document' : '')}
-                    </span>
+                    {isDownloadingActive ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />}
+                    <span className="truncate">{hostname || (hasDownloadReference ? 'Open document' : '')}</span>
                   </>
                 ) : (
                   <>
                     <FileText className="h-3 w-3" />
-                    <span className="truncate">
-                      {resource.location || resource.origin || 'Stored in workspace'}
-                    </span>
+                    <span className="truncate">{resource.location || resource.origin || 'Stored in workspace'}</span>
                   </>
                 )}
               </div>
@@ -1083,14 +981,10 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDo
             >
               {isAdded ? <Check className="h-4 w-4" /> : <BookmarkPlus className="h-4 w-4" />}
             </button>
-            <ChevronRight
-              className={`h-4 w-4 text-gray-400 group-hover:text-black transition-all flex-shrink-0 ${
-                isHovered ? 'translate-x-1' : ''
-              }`}
-            />
+            <ChevronRight className={`h-4 w-4 text-gray-400 group-hover:text-black transition-all flex-shrink-0 ${isHovered ? 'translate-x-1' : ''}`} />
           </div>
         </div>
-        
+
         {/* Progress indicator for known long resources */}
         {resource.type === 'Guideline' && (
           <div className="mt-3 pt-2 border-t border-gray-100">

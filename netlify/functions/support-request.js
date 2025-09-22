@@ -9,10 +9,15 @@ const headers = {
 
 const SUPPORT_REQUEST_TO_EMAIL =
   process.env.SUPPORT_REQUEST_TO_EMAIL || 'support@acceleraqa.atlassian.net';
+const SUPPORT_REQUEST_FROM_EMAIL = process.env.SUPPORT_REQUEST_FROM_EMAIL;
+const SUPPORT_REQUEST_FROM_NAME = process.env.SUPPORT_REQUEST_FROM_NAME;
 
 const SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send';
 
-const requiredEnvVars = ['SUPPORT_REQUEST_SENDGRID_API_KEY'];
+const requiredEnvVars = [
+  'SUPPORT_REQUEST_SENDGRID_API_KEY',
+  'SUPPORT_REQUEST_FROM_EMAIL',
+];
 
 const escapeHtml = (value = '') => {
   const stringValue = value == null ? '' : String(value);
@@ -114,7 +119,11 @@ exports.handler = async (event, context) => {
     `;
     const subject = `Support request from ${safeName || normalizedEmail}`;
 
-    const sender = safeName
+    const sender = SUPPORT_REQUEST_FROM_NAME
+      ? { email: SUPPORT_REQUEST_FROM_EMAIL, name: SUPPORT_REQUEST_FROM_NAME }
+      : { email: SUPPORT_REQUEST_FROM_EMAIL };
+    const replyTo = safeName
+
       ? { email: normalizedEmail, name: safeName }
       : { email: normalizedEmail };
 
@@ -131,7 +140,7 @@ exports.handler = async (event, context) => {
           },
         ],
         from: sender,
-        reply_to: sender,
+        reply_to: replyTo,
         subject,
         content: [
           { type: 'text/plain', value: plainText },

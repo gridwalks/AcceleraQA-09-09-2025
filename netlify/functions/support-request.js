@@ -123,6 +123,7 @@ exports.handler = async (event, context) => {
       ? { email: SUPPORT_REQUEST_FROM_EMAIL, name: SUPPORT_REQUEST_FROM_NAME }
       : { email: SUPPORT_REQUEST_FROM_EMAIL };
     const replyTo = safeName
+
       ? { email: normalizedEmail, name: safeName }
       : { email: normalizedEmail };
 
@@ -147,6 +148,10 @@ exports.handler = async (event, context) => {
         ],
       }),
     });
+    
+    if (!sendgridResponse.ok) {
+      const errorText = await sendgridResponse.text();
+      let parsedDetail = errorText;
 
     if (!sendgridResponse.ok) {
       const errorText = await sendgridResponse.text();

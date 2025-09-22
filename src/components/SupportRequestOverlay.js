@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Send } from 'lucide-react';
+import { getToken } from '../services/authService';
 
 const SupportRequestOverlay = ({ user, onClose }) => {
   const [message, setMessage] = useState('');
@@ -14,6 +15,7 @@ const SupportRequestOverlay = ({ user, onClose }) => {
     setSubmitting(true);
 
     try {
+
       const requesterEmail = user?.email || '';
       const requesterName = user?.name || '';
 
@@ -25,6 +27,7 @@ const SupportRequestOverlay = ({ user, onClose }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+
         },
         body: JSON.stringify({
           email: requesterEmail,
@@ -57,10 +60,11 @@ const SupportRequestOverlay = ({ user, onClose }) => {
       }
 
       console.error('Support request failed', errorDetail);
+
       alert(`Failed to send support request: ${errorDetail}`);
     } catch (error) {
       console.error('Support request error:', error);
-      const message = error?.message || 'Failed to send support request email';
+      const message = error?.message || 'Failed to send support request email'
       alert(message);
     } finally {
       setSubmitting(false);

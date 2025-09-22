@@ -12,10 +12,7 @@ const SUPPORT_REQUEST_TO_EMAIL =
 
 const SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send';
 
-const requiredEnvVars = [
-  'SUPPORT_REQUEST_SENDGRID_API_KEY',
-  'SUPPORT_REQUEST_FROM_EMAIL',
-];
+const requiredEnvVars = ['SUPPORT_REQUEST_SENDGRID_API_KEY'];
 
 const escapeHtml = (value = '') => {
   const stringValue = value == null ? '' : String(value);
@@ -117,7 +114,7 @@ exports.handler = async (event, context) => {
     `;
     const subject = `Support request from ${safeName || normalizedEmail}`;
 
-    const replyTo = safeName
+    const sender = safeName
       ? { email: normalizedEmail, name: safeName }
       : { email: normalizedEmail };
 
@@ -133,8 +130,8 @@ exports.handler = async (event, context) => {
             to: [{ email: SUPPORT_REQUEST_TO_EMAIL }],
           },
         ],
-        from: { email: process.env.SUPPORT_REQUEST_FROM_EMAIL },
-        reply_to: replyTo,
+        from: sender,
+        reply_to: sender,
         subject,
         content: [
           { type: 'text/plain', value: plainText },
@@ -143,6 +140,10 @@ exports.handler = async (event, context) => {
       }),
     });
     
+    if (!sendgridResponse.ok) {
+      const errorText = await sendgridResponse.text();
+      let parsedDetail = errorText;
+
     if (!sendgridResponse.ok) {
       const errorText = await sendgridResponse.text();
       let parsedDetail = errorText;

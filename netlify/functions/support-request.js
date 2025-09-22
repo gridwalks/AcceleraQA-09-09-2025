@@ -148,6 +148,7 @@ exports.handler = async (event, context) => {
       payload.reply_to = replyTo;
     }
 
+
     const sendgridResponse = await fetch(SENDGRID_API_URL, {
       method: 'POST',
       headers: {
@@ -156,6 +157,10 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify(payload),
     });
+    
+    if (!sendgridResponse.ok) {
+      const errorText = await sendgridResponse.text();
+      let parsedDetail = errorText;
 
     if (!sendgridResponse.ok) {
       const errorText = await sendgridResponse.text();

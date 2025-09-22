@@ -1,31 +1,76 @@
 import React, { useState } from 'react';
 import { X, Send } from 'lucide-react';
+import { getToken } from '../services/authService';
 
 const SupportRequestOverlay = ({ user, onClose }) => {
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    if (!message.trim()) return;
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage || submitting) {
+      return;
+    }
+
     setSubmitting(true);
+
     try {
+      const token = await getToken();
+
+      if (!token) {
+        throw new Error('Authentication required. Please sign in again.');
+      }
+
+      const userId = user?.sub;
+      const requesterEmail = user?.email || '';
+
+      if (!userId) {
+        throw new Error('Unable to determine user identity. Please sign in again.');
+      }
+
+      if (!requesterEmail) {
+        throw new Error('A valid email address is required to submit a support request.');
+      }
+
       const response = await fetch('/.netlify/functions/support-request', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user?.email, message }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'x-user-id': userId,
+        },
+        body: JSON.stringify({ email: requesterEmail, message: trimmedMessage }),
       });
 
       if (response.ok) {
         alert('Support request submitted');
         setMessage('');
         onClose();
-      } else {
-        console.error('Support request failed', await response.text());
-        alert('Failed to submit support request');
+        return;
       }
+
+      let errorDetail = 'An unknown error occurred.';
+
+      try {
+        const errorData = await response.json();
+        errorDetail =
+          errorData?.details ||
+          errorData?.error ||
+          errorData?.message ||
+          errorDetail;
+      } catch (parseError) {
+        const text = await response.text();
+        if (text) {
+          errorDetail = text;
+        }
+      }
+
+      console.error('Support request failed', errorDetail);
+      alert(`Failed to submit support request: ${errorDetail}`);
     } catch (error) {
       console.error('Support request error:', error);
-      alert('Failed to submit support request');
+      const message = error?.message || 'Failed to submit support request';
+      alert(message);
     } finally {
       setSubmitting(false);
     }

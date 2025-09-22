@@ -139,6 +139,10 @@ exports.handler = async (event, context) => {
         ],
       }),
     });
+    
+    if (!sendgridResponse.ok) {
+      const errorText = await sendgridResponse.text();
+      let parsedDetail = errorText;
 
     if (!sendgridResponse.ok) {
       const errorText = await sendgridResponse.text();

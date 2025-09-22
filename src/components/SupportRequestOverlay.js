@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Send } from 'lucide-react';
+import { getToken } from '../services/authService';
 
 const SupportRequestOverlay = ({ user, onClose }) => {
   const [message, setMessage] = useState('');

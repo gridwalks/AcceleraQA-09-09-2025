@@ -148,7 +148,6 @@ exports.handler = async (event, context) => {
       payload.reply_to = replyTo;
     }
 
-
     const sendgridResponse = await fetch(SENDGRID_API_URL, {
       method: 'POST',
       headers: {

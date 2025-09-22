@@ -1,10 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Send } from 'lucide-react';
 import { getToken } from '../services/authService';
 
 const SupportRequestOverlay = ({ user, onClose }) => {
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
 
   const handleSubmit = async () => {
     const trimmedMessage = message.trim();
@@ -83,6 +90,7 @@ const SupportRequestOverlay = ({ user, onClose }) => {
         </div>
         <div className="p-6">
           <textarea
+            ref={textareaRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Describe your issue..."

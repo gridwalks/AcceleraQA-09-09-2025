@@ -1,4 +1,4 @@
-// netlify/functions/support-request.js - Create Jira Service Desk request
+// netlify/functions/support-request.js - Send support requests via email
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -7,21 +7,25 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-const getHeader = (eventHeaders = {}, name) => {
-  const lower = name.toLowerCase();
-  return (
-    eventHeaders[name] ||
-    eventHeaders[lower] ||
-    eventHeaders[name.toUpperCase()]
-  );
-};
+const SUPPORT_REQUEST_TO_EMAIL =
+  process.env.SUPPORT_REQUEST_TO_EMAIL || 'support@acceleraqa.atlassian.net';
+
+const SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send';
 
 const requiredEnvVars = [
-  'JIRA_API_EMAIL',
-  'JIRA_API_TOKEN',
-  'JIRA_SERVICE_DESK_ID',
-  'JIRA_REQUEST_TYPE_ID',
+  'SUPPORT_REQUEST_SENDGRID_API_KEY',
+  'SUPPORT_REQUEST_FROM_EMAIL',
 ];
+
+const escapeHtml = (value = '') => {
+  const stringValue = value == null ? '' : String(value);
+  return stringValue
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
 
 exports.handler = async (event, context) => {
   console.log('Support request function called', { method: event.httpMethod });
@@ -40,30 +44,6 @@ exports.handler = async (event, context) => {
       statusCode: 405,
       headers,
       body: JSON.stringify({ error: 'Method not allowed' }),
-    };
-  }
-
-  const authHeader = getHeader(event.headers, 'authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({
-        error: 'Authentication required',
-        details: 'Missing or invalid bearer token',
-      }),
-    };
-  }
-
-  const userId = getHeader(event.headers, 'x-user-id') || getHeader(event.headers, 'x-userid');
-  if (!userId || userId === 'anonymous') {
-    return {
-      statusCode: 400,
-      headers,
-      body: JSON.stringify({
-        error: 'User identification required',
-        details: 'User ID header is missing',
-      }),
     };
   }
 
@@ -92,9 +72,9 @@ exports.handler = async (event, context) => {
     };
   }
 
-  const { email, message } = bodyData;
+  const { email, message, name } = bodyData;
 
-  if (!email || !message) {
+  if (!email || typeof email !== 'string' || !message || typeof message !== 'string') {
     return {
       statusCode: 400,
       headers,
@@ -102,54 +82,95 @@ exports.handler = async (event, context) => {
     };
   }
 
-  try {
-    const jiraAuth = Buffer.from(
-      `${process.env.JIRA_API_EMAIL}:${process.env.JIRA_API_TOKEN}`
-    ).toString('base64');
+  const normalizedEmail = email.trim();
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    const jiraResponse = await fetch('https://acceleraqa.atlassian.net/rest/servicedeskapi/request', {
+  if (!emailPattern.test(normalizedEmail)) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: 'Invalid email address' }),
+    };
+  }
+
+  try {
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: 'Message cannot be empty' }),
+      };
+    }
+
+    const safeName = typeof name === 'string' ? name.trim() : '';
+    const requesterLabel = safeName
+      ? `${safeName} <${normalizedEmail}>`
+      : normalizedEmail;
+
+    const plainText = `Support request from ${requesterLabel}\n\n${trimmedMessage}`;
+    const htmlBody = `
+      <p><strong>From:</strong> ${escapeHtml(requesterLabel)}</p>
+      <p><strong>Email:</strong> ${escapeHtml(normalizedEmail)}</p>
+      <hr />
+      <p>${escapeHtml(trimmedMessage).replace(/\n/g, '<br />')}</p>
+    `;
+    const subject = `Support request from ${safeName || normalizedEmail}`;
+
+    const replyTo = safeName
+      ? { email: normalizedEmail, name: safeName }
+      : { email: normalizedEmail };
+
+    const sendgridResponse = await fetch(SENDGRID_API_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Basic ${jiraAuth}`,
-        Accept: 'application/json',
+        Authorization: `Bearer ${process.env.SUPPORT_REQUEST_SENDGRID_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        serviceDeskId: process.env.JIRA_SERVICE_DESK_ID,
-        requestTypeId: process.env.JIRA_REQUEST_TYPE_ID,
-        requestFieldValues: {
-          summary: `Support request from ${email}`,
-          description: message,
-        },
-        raiseOnBehalfOf: email,
+        personalizations: [
+          {
+            to: [{ email: SUPPORT_REQUEST_TO_EMAIL }],
+          },
+        ],
+        from: { email: process.env.SUPPORT_REQUEST_FROM_EMAIL },
+        reply_to: replyTo,
+        subject,
+        content: [
+          { type: 'text/plain', value: plainText },
+          { type: 'text/html', value: htmlBody },
+        ],
       }),
     });
+    
+    if (!sendgridResponse.ok) {
+      const errorText = await sendgridResponse.text();
+      let parsedDetail = errorText;
 
-    const text = await jiraResponse.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = text;
-    }
+      try {
+        const parsed = JSON.parse(errorText);
+        const messages =
+          parsed?.errors?.map((err) => err?.message).filter(Boolean) || [];
+        if (messages.length > 0) {
+          parsedDetail = messages.join('; ');
+        } else if (parsed?.message) {
+          parsedDetail = parsed.message;
+        }
+      } catch (parseError) {
+        // ignore JSON parse errors, we'll use the raw text instead
+      }
 
-    if (!jiraResponse.ok) {
-      const detail =
-        typeof data === 'string'
-          ? data
-          : data?.errorMessage || data?.message || JSON.stringify(data);
-
-      console.error('Jira API error', { status: jiraResponse.status, detail });
+      console.error('SendGrid API error', {
+        status: sendgridResponse.status,
+        body: errorText,
+      });
 
       return {
-        statusCode: jiraResponse.status,
+        statusCode: 502,
         headers,
         body: JSON.stringify({
-          error: 'Failed to create support request',
-          details:
-            jiraResponse.status === 401
-              ? 'Support system authentication failed. Please contact an administrator.'
-              : detail,
+          error: 'Failed to send support email',
+          details: parsedDetail || 'Unexpected response from email provider',
         }),
       };
     }
@@ -157,14 +178,18 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ message: 'Support request created', key: data.key }),
+      body: JSON.stringify({ message: 'Support request email sent' }),
     };
   } catch (error) {
     console.error('Support request error:', error);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: 'Internal server error', message: error.message }),
+      body: JSON.stringify({
+        error: 'Internal server error',
+        message: 'Failed to send support email',
+        details: error.message,
+      }),
     };
   }
 };

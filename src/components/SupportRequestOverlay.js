@@ -15,18 +15,9 @@ const SupportRequestOverlay = ({ user, onClose }) => {
     setSubmitting(true);
 
     try {
-      const token = await getToken();
 
-      if (!token) {
-        throw new Error('Authentication required. Please sign in again.');
-      }
-
-      const userId = user?.sub;
       const requesterEmail = user?.email || '';
-
-      if (!userId) {
-        throw new Error('Unable to determine user identity. Please sign in again.');
-      }
+      const requesterName = user?.name || '';
 
       if (!requesterEmail) {
         throw new Error('A valid email address is required to submit a support request.');
@@ -36,14 +27,17 @@ const SupportRequestOverlay = ({ user, onClose }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          'x-user-id': userId,
+
         },
-        body: JSON.stringify({ email: requesterEmail, message: trimmedMessage }),
+        body: JSON.stringify({
+          email: requesterEmail,
+          name: requesterName,
+          message: trimmedMessage,
+        }),
       });
 
       if (response.ok) {
-        alert('Support request submitted');
+        alert('Support request email sent to AcceleraQA support.');
         setMessage('');
         onClose();
         return;
@@ -66,10 +60,11 @@ const SupportRequestOverlay = ({ user, onClose }) => {
       }
 
       console.error('Support request failed', errorDetail);
-      alert(`Failed to submit support request: ${errorDetail}`);
+
+      alert(`Failed to send support request: ${errorDetail}`);
     } catch (error) {
       console.error('Support request error:', error);
-      const message = error?.message || 'Failed to submit support request';
+      const message = error?.message || 'Failed to send support request email'
       alert(message);
     } finally {
       setSubmitting(false);
@@ -99,7 +94,7 @@ const SupportRequestOverlay = ({ user, onClose }) => {
           <div className="mt-4 flex justify-end">
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || !message.trim()}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             >
               <Send className="h-4 w-4" />

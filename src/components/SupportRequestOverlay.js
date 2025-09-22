@@ -1,31 +1,74 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Send } from 'lucide-react';
 
 const SupportRequestOverlay = ({ user, onClose }) => {
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
 
   const handleSubmit = async () => {
-    if (!message.trim()) return;
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage || submitting) {
+      return;
+    }
+
     setSubmitting(true);
+
     try {
+      const requesterEmail = user?.email || '';
+      const requesterName = user?.name || '';
+
+      if (!requesterEmail) {
+        throw new Error('A valid email address is required to submit a support request.');
+      }
+
       const response = await fetch('/.netlify/functions/support-request', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user?.email, message }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: requesterEmail,
+          name: requesterName,
+          message: trimmedMessage,
+        }),
       });
 
       if (response.ok) {
-        alert('Support request submitted');
+        alert('Support request email sent to AcceleraQA support.');
         setMessage('');
         onClose();
-      } else {
-        console.error('Support request failed', await response.text());
-        alert('Failed to submit support request');
+        return;
       }
+
+      let errorDetail = 'An unknown error occurred.';
+
+      try {
+        const errorData = await response.json();
+        errorDetail =
+          errorData?.details ||
+          errorData?.error ||
+          errorData?.message ||
+          errorDetail;
+      } catch (parseError) {
+        const text = await response.text();
+        if (text) {
+          errorDetail = text;
+        }
+      }
+
+      console.error('Support request failed', errorDetail);
+      alert(`Failed to send support request: ${errorDetail}`);
     } catch (error) {
       console.error('Support request error:', error);
-      alert('Failed to submit support request');
+      const message = error?.message || 'Failed to send support request email';
+      alert(message);
     } finally {
       setSubmitting(false);
     }
@@ -46,6 +89,7 @@ const SupportRequestOverlay = ({ user, onClose }) => {
         </div>
         <div className="p-6">
           <textarea
+            ref={textareaRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Describe your issue..."
@@ -54,7 +98,7 @@ const SupportRequestOverlay = ({ user, onClose }) => {
           <div className="mt-4 flex justify-end">
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || !message.trim()}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             >
               <Send className="h-4 w-4" />

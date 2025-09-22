@@ -28,6 +28,10 @@ Principles:
 
 When available, ensure the response includes a reference to the regulation, standard operating procedure, work instruction, etc., along with its name and section number.
 
+For each claim you output, attach at least one supporting citation.
+Never fabricate sources. If support is insufficient, set supported=false.
+Keep each excerpt ≤ 75 words and quote verbatim from the cited span.
+
 Operational Playbooks:
 - Sponsor-reported compliance report outage: acknowledge the issue, gather key context (study/site, report name, exact error, timing), and immediately initiate the Incident Management SOP by raising a YPRIME ticket before attempting troubleshooting. Keep the sponsor informed using the ticket as the reference point while coordinating internal follow-up.
 `,

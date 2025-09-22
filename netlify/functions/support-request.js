@@ -14,10 +14,7 @@ const SUPPORT_REQUEST_FROM_NAME = process.env.SUPPORT_REQUEST_FROM_NAME;
 
 const SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send';
 
-const requiredEnvVars = [
-  'SUPPORT_REQUEST_SENDGRID_API_KEY',
-  'SUPPORT_REQUEST_FROM_EMAIL',
-];
+const requiredEnvVars = ['SUPPORT_REQUEST_SENDGRID_API_KEY'];
 
 const escapeHtml = (value = '') => {
   const stringValue = value == null ? '' : String(value);
@@ -119,13 +116,38 @@ exports.handler = async (event, context) => {
     `;
     const subject = `Support request from ${safeName || normalizedEmail}`;
 
-    const sender = SUPPORT_REQUEST_FROM_NAME
-      ? { email: SUPPORT_REQUEST_FROM_EMAIL, name: SUPPORT_REQUEST_FROM_NAME }
-      : { email: SUPPORT_REQUEST_FROM_EMAIL };
-    const replyTo = safeName
-
+    const hasVerifiedSender = Boolean(SUPPORT_REQUEST_FROM_EMAIL);
+    const sender = hasVerifiedSender
+      ? SUPPORT_REQUEST_FROM_NAME
+        ? { email: SUPPORT_REQUEST_FROM_EMAIL, name: SUPPORT_REQUEST_FROM_NAME }
+        : { email: SUPPORT_REQUEST_FROM_EMAIL }
+      : safeName
       ? { email: normalizedEmail, name: safeName }
       : { email: normalizedEmail };
+    const replyTo = hasVerifiedSender
+      ? safeName
+        ? { email: normalizedEmail, name: safeName }
+        : { email: normalizedEmail }
+      : undefined;
+
+    const payload = {
+      personalizations: [
+        {
+          to: [{ email: SUPPORT_REQUEST_TO_EMAIL }],
+        },
+      ],
+      from: sender,
+      subject,
+      content: [
+        { type: 'text/plain', value: plainText },
+        { type: 'text/html', value: htmlBody },
+      ],
+    };
+
+    if (replyTo) {
+      payload.reply_to = replyTo;
+    }
+
 
     const sendgridResponse = await fetch(SENDGRID_API_URL, {
       method: 'POST',
@@ -133,20 +155,7 @@ exports.handler = async (event, context) => {
         Authorization: `Bearer ${process.env.SUPPORT_REQUEST_SENDGRID_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        personalizations: [
-          {
-            to: [{ email: SUPPORT_REQUEST_TO_EMAIL }],
-          },
-        ],
-        from: sender,
-        reply_to: replyTo,
-        subject,
-        content: [
-          { type: 'text/plain', value: plainText },
-          { type: 'text/html', value: htmlBody },
-        ],
-      }),
+      body: JSON.stringify(payload),
     });
     
     if (!sendgridResponse.ok) {
@@ -180,7 +189,10 @@ exports.handler = async (event, context) => {
         headers,
         body: JSON.stringify({
           error: 'Failed to send support email',
-          details: parsedDetail || 'Unexpected response from email provider',
+          details:
+            parsedDetail?.trim() ||
+            sendgridResponse.statusText ||
+            `Email provider error (status ${sendgridResponse.status})`,
         }),
       };
     }

@@ -94,8 +94,8 @@ REACT_APP_RAG_DOCS_FUNCTION=/.netlify/functions/rag-documents # optional overrid
 
 # Support Requests (Email via SendGrid)
 SUPPORT_REQUEST_SENDGRID_API_KEY=your_sendgrid_api_key
-SUPPORT_REQUEST_FROM_EMAIL=verified_sender@example.com
-SUPPORT_REQUEST_FROM_NAME="AcceleraQA Support" # optional display name
+SUPPORT_REQUEST_FROM_EMAIL=verified_sender@example.com # optional verified sender override
+SUPPORT_REQUEST_FROM_NAME="AcceleraQA Support" # optional display name when using a verified sender
 SUPPORT_REQUEST_TO_EMAIL=support@acceleraqa.atlassian.net # optional override
 
 # Feature Flags (Optional)

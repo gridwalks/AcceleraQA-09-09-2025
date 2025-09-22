@@ -156,6 +156,10 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify(payload),
     });
+    
+    if (!sendgridResponse.ok) {
+      const errorText = await sendgridResponse.text();
+      let parsedDetail = errorText;
 
     if (!sendgridResponse.ok) {
       const errorText = await sendgridResponse.text();

@@ -92,11 +92,16 @@ REACT_APP_AUTH0_ORG_CLAIM=https://your-domain.com/org
 NEON_DATABASE_URL=postgres://user:password@host:port/dbname
 REACT_APP_RAG_DOCS_FUNCTION=/.netlify/functions/rag-documents # optional override
 
-# Jira Service Desk (Optional)
-JIRA_API_EMAIL=your_atlassian_email
-JIRA_API_TOKEN=your_atlassian_api_token
-JIRA_SERVICE_DESK_ID=your_service_desk_id
-JIRA_REQUEST_TYPE_ID=your_request_type_id
+# Support Requests (Email via SendGrid)
+SUPPORT_REQUEST_SENDGRID_API_KEY=your_sendgrid_api_key
+SUPPORT_REQUEST_FROM_EMAIL=verified_sender@example.com # optional verified sender override
+SUPPORT_REQUEST_FROM_NAME="AcceleraQA Support" # optional display name when using a verified sender
+SUPPORT_REQUEST_TO_EMAIL=support@acceleraqa.atlassian.net # optional override
+
+# Tip: Configure a verified sender in SendGrid (domain or single sender) for the
+# `SUPPORT_REQUEST_FROM_EMAIL`. When SendGrid rejects an unverified from address,
+# the support request function will automatically retry with the verified sender
+# and set the requester as the reply-to contact so conversations stay threaded.
 
 # Feature Flags (Optional)
 REACT_APP_ENABLE_AI_SUGGESTIONS=true # set to 'false' to disable AI suggestions

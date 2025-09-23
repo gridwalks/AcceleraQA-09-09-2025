@@ -15,7 +15,6 @@ const SUPPORT_REQUEST_FROM_NAME = process.env.SUPPORT_REQUEST_FROM_NAME;
 const SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send';
 
 const requiredEnvVars = ['SUPPORT_REQUEST_SENDGRID_API_KEY'];
-
 const parseSendGridError = async (response) => {
   const rawBody = await response.text();
   let detail = rawBody?.trim() || '';
@@ -256,6 +255,7 @@ exports.handler = async (event, context) => {
         statusCode: 200,
         headers,
         body: JSON.stringify({ message: 'Support request email sent' }),
+
       };
     }
 

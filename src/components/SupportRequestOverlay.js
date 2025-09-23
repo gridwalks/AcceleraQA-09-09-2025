@@ -49,6 +49,8 @@ const SupportRequestOverlay = ({ user, onClose }) => {
       }
 
       let errorDetail = 'An unknown error occurred.';
+      let providerStatus;
+      let providerStatusText;
 
       try {
         const errorData = await response.json();
@@ -57,6 +59,8 @@ const SupportRequestOverlay = ({ user, onClose }) => {
           errorData?.error ||
           errorData?.message ||
           errorDetail;
+        providerStatus = errorData?.providerStatus;
+        providerStatusText = errorData?.providerStatusText;
       } catch (parseError) {
         const text = await response.text();
         if (text) {
@@ -64,8 +68,19 @@ const SupportRequestOverlay = ({ user, onClose }) => {
         }
       }
 
-      console.error('Support request failed', errorDetail);
-      alert(`Failed to send support request: ${errorDetail}`);
+      const diagnosticParts = [errorDetail];
+
+      if (providerStatus) {
+        const statusDescriptor = providerStatusText
+          ? `${providerStatus} ${providerStatusText}`
+          : providerStatus;
+        diagnosticParts.push(`(provider status: ${statusDescriptor})`);
+      }
+
+      const diagnosticMessage = diagnosticParts.filter(Boolean).join(' ');
+
+      console.error('Support request failed', diagnosticMessage);
+      alert(`Failed to send support request: ${diagnosticMessage}`);
     } catch (error) {
       console.error('Support request error:', error);
       const message = error?.message || 'Failed to send support request email';

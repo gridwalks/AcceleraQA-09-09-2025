@@ -23,6 +23,191 @@ const getFirstNonEmptyString = (...values) => {
   return '';
 };
 
+const toFiniteNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+const extractAnnotationIndex = (annotation, key) => {
+  if (!annotation || typeof annotation !== 'object') {
+    return null;
+  }
+
+  const keyVariants = new Set([key]);
+
+  if (key.includes('_')) {
+    keyVariants.add(key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()));
+  } else {
+    keyVariants.add(key.replace(/([A-Z])/g, '_$1').toLowerCase());
+  }
+
+  if (key.startsWith('start')) {
+    keyVariants.add('start');
+    keyVariants.add('offset');
+  }
+
+  if (key.startsWith('end')) {
+    keyVariants.add('end');
+    keyVariants.add('stop');
+  }
+
+  const candidateObjects = [
+    annotation,
+    typeof annotation.text === 'object' ? annotation.text : null,
+    typeof annotation.file_citation === 'object' ? annotation.file_citation : null,
+    typeof annotation.metadata === 'object' ? annotation.metadata : null,
+  ].filter(Boolean);
+
+  for (const candidate of candidateObjects) {
+    for (const variant of keyVariants) {
+      const candidateValue = candidate[variant];
+      const numberValue = toFiniteNumber(candidateValue);
+      if (numberValue != null) {
+        return numberValue;
+      }
+    }
+  }
+
+  return null;
+};
+
+const getTextFromContentItem = (item) => {
+  if (!item) {
+    return '';
+  }
+
+  if (typeof item === 'string') {
+    return item;
+  }
+
+  if (typeof item.text === 'string') {
+    return item.text;
+  }
+
+  if (typeof item.text?.value === 'string') {
+    return item.text.value;
+  }
+
+  if (Array.isArray(item.text)) {
+    return item.text
+      .map(part => getTextFromContentItem(part))
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return '';
+};
+
+const insertCitationsIntoText = (text, annotations, annotationMetadataMap) => {
+  if (typeof text !== 'string' || !text.trim()) {
+    return text;
+  }
+
+  const validAnnotations = Array.isArray(annotations) ? annotations : [];
+  const insertionMap = new Map();
+
+  validAnnotations.forEach(annotation => {
+    const metadata = annotationMetadataMap.get(annotation);
+    if (!metadata || typeof metadata.citationNumber !== 'number') {
+      return;
+    }
+
+    const startIndex = toFiniteNumber(metadata.startIndex);
+    const endIndex = toFiniteNumber(metadata.endIndex);
+    let insertionPoint = endIndex != null ? endIndex : startIndex != null ? startIndex : text.length;
+
+    if (!Number.isFinite(insertionPoint)) {
+      insertionPoint = text.length;
+    }
+
+    const clampedPoint = Math.max(0, Math.min(text.length, insertionPoint));
+
+    if (!insertionMap.has(clampedPoint)) {
+      insertionMap.set(clampedPoint, new Set());
+    }
+
+    insertionMap.get(clampedPoint).add(metadata.citationNumber);
+  });
+
+  if (insertionMap.size === 0) {
+    return text;
+  }
+
+  const sortedPositions = Array.from(insertionMap.keys()).sort((a, b) => a - b);
+  let result = '';
+  let cursor = 0;
+
+  sortedPositions.forEach(position => {
+    const normalizedPosition = Math.max(0, Math.min(text.length, position));
+    const targetPosition = normalizedPosition < cursor ? cursor : normalizedPosition;
+
+    if (targetPosition > cursor) {
+      result += text.slice(cursor, targetPosition);
+      cursor = targetPosition;
+    }
+
+    const citations = Array.from(insertionMap.get(position)).sort((a, b) => a - b);
+    const citationMarkers = citations.map(number => `[${number}]`).join('');
+    result += citationMarkers;
+  });
+
+  if (cursor < text.length) {
+    result += text.slice(cursor);
+  }
+
+  return result;
+};
+
+const appendReferencesSection = (answerText, sources) => {
+  if (typeof answerText !== 'string') {
+    return answerText;
+  }
+
+  const normalizedSources = Array.isArray(sources) ? sources : [];
+  if (normalizedSources.length === 0) {
+    return answerText;
+  }
+
+  const referenceEntries = [];
+  const seenNumbers = new Set();
+
+  normalizedSources.forEach((source, index) => {
+    const citationNumber = typeof source?.citationNumber === 'number'
+      ? source.citationNumber
+      : typeof source?.metadata?.citationNumber === 'number'
+        ? source.metadata.citationNumber
+        : index + 1;
+
+    if (seenNumbers.has(citationNumber)) {
+      return;
+    }
+
+    seenNumbers.add(citationNumber);
+
+    const title = getFirstNonEmptyString(
+      source?.title,
+      source?.documentTitle,
+      source?.metadata?.documentTitle,
+      source?.filename,
+      `Document ${citationNumber}`
+    );
+
+    referenceEntries.push({ citationNumber, title });
+  });
+
+  if (referenceEntries.length === 0) {
+    return answerText;
+  }
+
+  referenceEntries.sort((a, b) => a.citationNumber - b.citationNumber);
+
+  const hasExistingSection = /(?:References|Sources)\s*:/i.test(answerText);
+  if (hasExistingSection) {
+    return answerText;
+  }
+
+  const referenceLines = referenceEntries.map(entry => `[${entry.citationNumber}] ${entry.title}`);
+
+  return `${answerText.trim()}\n\nReferences:\n${referenceLines.join('\n')}`.trim();
+};
+
 class RAGService {
   constructor() {
     this.apiUrl = openaiService.baseUrl;
@@ -794,35 +979,36 @@ class RAGService {
     const outputMessages = Array.isArray(data.output) ? data.output : [];
     const contentItems = outputMessages.flatMap(message => message.content || []);
 
-    const answerFromContent = contentItems
-      .map(item => {
-        if (typeof item?.text?.value === 'string') {
-          return item.text.value;
-        }
-        if (typeof item?.text === 'string') {
-          return item.text;
-        }
-        return '';
-      })
+    const contentSegments = [];
+    const annotations = [];
+
+    contentItems.forEach(item => {
+      const textValue = getTextFromContentItem(item);
+      const textAnnotations = Array.isArray(item?.text?.annotations) ? item.text.annotations : [];
+      const additionalAnnotations = Array.isArray(item?.annotations) ? item.annotations : [];
+
+      contentSegments.push({ text: textValue, annotations: textAnnotations });
+
+      if (textAnnotations.length > 0) {
+        annotations.push(...textAnnotations);
+      }
+
+      if (additionalAnnotations.length > 0) {
+        annotations.push(...additionalAnnotations);
+      }
+    });
+
+    const plainAnswerFromContent = contentSegments
+      .map(segment => segment.text)
       .filter(Boolean)
       .join('\n')
       .trim();
 
-    const rawAnswer =
-      (typeof data.output_text === 'string' && data.output_text.trim()) ||
-      answerFromContent ||
-      '';
-
-    const answer = rawAnswer.trim() || 'The document search returned no results.';
-
-    const annotations = [];
-    contentItems.forEach(item => {
-      if (Array.isArray(item?.text?.annotations)) annotations.push(...item.text.annotations);
-      if (Array.isArray(item?.annotations)) annotations.push(...item.annotations);
-    });
+    const outputTextFallback = typeof data.output_text === 'string' ? data.output_text.trim() : '';
+    const normalizedAnnotations = annotations.filter(Boolean);
 
     const uniqueDocumentKeys = new Set();
-    annotations.forEach(annotation => {
+    normalizedAnnotations.forEach(annotation => {
       const docKeys = [
         annotation?.metadata?.documentId,
         annotation?.file_citation?.file_id,
@@ -846,164 +1032,233 @@ class RAGService {
       }
     }
 
-    const sources = annotations
-      .filter(Boolean)
-      .map((annotation, index) => {
-        const textSnippet = typeof annotation.text === 'string'
-          ? annotation.text
-          : typeof annotation?.file_citation?.quote === 'string'
-            ? annotation.file_citation.quote
-            : typeof annotation?.quote === 'string'
-              ? annotation.quote
-              : '';
+    const annotationMetadataMap = new WeakMap();
+    const uniqueSources = new Map();
+    let nextCitationNumber = 1;
 
-        const docKeyCandidates = [
-          annotation?.metadata?.documentId,
-          annotation?.file_citation?.file_id,
-          annotation?.document?.id,
-          annotation?.document?.file_id,
-          annotation?.file_id,
-          annotation?.document_id,
-        ]
-          .map(value => (typeof value === 'string' ? value.trim() : ''))
-          .filter(Boolean);
+    normalizedAnnotations.forEach((annotation, index) => {
+      const textSnippet = typeof annotation.text === 'string'
+        ? annotation.text
+        : typeof annotation?.file_citation?.quote === 'string'
+          ? annotation.file_citation.quote
+          : typeof annotation?.quote === 'string'
+            ? annotation.quote
+            : '';
 
-        let metadataEntry = null;
-        if (documentLookup) {
-          for (const key of docKeyCandidates) {
+      const docKeyCandidates = [
+        annotation?.metadata?.documentId,
+        annotation?.file_citation?.file_id,
+        annotation?.document?.id,
+        annotation?.document?.file_id,
+        annotation?.file_id,
+        annotation?.document_id,
+      ]
+        .map(value => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean);
+
+      let metadataEntry = null;
+      if (documentLookup) {
+        for (const key of docKeyCandidates) {
+          const entry = documentLookup.get(key);
+          if (entry) {
+            metadataEntry = entry;
+            break;
+          }
+        }
+
+        if (!metadataEntry) {
+          const fallbackKeys = [
+            annotation.filename,
+            annotation.file_name,
+            annotation?.document?.filename,
+            annotation?.document?.file_name,
+          ]
+            .map(value => (typeof value === 'string' ? value.trim() : ''))
+            .filter(Boolean);
+
+          for (const key of fallbackKeys) {
             const entry = documentLookup.get(key);
             if (entry) {
               metadataEntry = entry;
               break;
             }
           }
+        }
+      }
 
-          if (!metadataEntry) {
-            const fallbackKeys = [
-              annotation.filename,
-              annotation.file_name,
-              annotation?.document?.filename,
-              annotation?.document?.file_name,
-            ]
-              .map(value => (typeof value === 'string' ? value.trim() : ''))
-              .filter(Boolean);
+      const metadataFilename = metadataEntry?.filename || '';
+      const fallbackFilename =
+        getFirstNonEmptyString(
+          annotation.filename,
+          annotation.file_name,
+          annotation?.document?.filename,
+          annotation?.document?.file_name,
+          annotation?.file_citation?.filename,
+          annotation?.file_citation?.file_name,
+          metadataFilename,
+          annotation?.file_citation?.file_id
+        ) || `Document ${index + 1}`;
 
-            for (const key of fallbackKeys) {
-              const entry = documentLookup.get(key);
-              if (entry) {
-                metadataEntry = entry;
-                break;
-              }
-            }
+      const metadataTitleCandidate = getFirstNonEmptyString(
+        metadataEntry?.title,
+        metadataEntry?.displayTitle,
+        metadataEntry?.document?.metadata?.title
+      );
+
+      const displayTitle =
+        getFirstNonEmptyString(
+          annotation.title,
+          annotation?.document?.title,
+          annotation?.file_citation?.title,
+          annotation?.document?.metadata?.title,
+          annotation.documentTitle,
+          metadataTitleCandidate,
+          fallbackFilename
+        ) || fallbackFilename;
+
+      const documentTitle =
+        getFirstNonEmptyString(
+          annotation.documentTitle,
+          annotation?.document?.title,
+          annotation?.document?.metadata?.title,
+          metadataTitleCandidate,
+          displayTitle
+        ) || displayTitle;
+
+      const sourceId =
+        getFirstNonEmptyString(
+          annotation.id,
+          annotation?.file_citation?.file_id,
+          annotation?.file_path,
+          docKeyCandidates[0]
+        ) || `source-${index}`;
+
+      const chunkIndex =
+        toFiniteNumber(annotation.chunkIndex) ??
+        toFiniteNumber(annotation.chunk_index) ??
+        toFiniteNumber(annotation?.file_citation?.chunkIndex) ??
+        toFiniteNumber(annotation?.file_citation?.chunk_index);
+
+      const baseMetadata =
+        annotation.metadata && typeof annotation.metadata === 'object'
+          ? { ...annotation.metadata }
+          : {};
+
+      const metadata = { ...baseMetadata };
+      const metadataDocumentId =
+        metadataEntry?.document?.id || docKeyCandidates[0] || metadata.documentId || null;
+
+      if (metadataDocumentId) {
+        metadata.documentId = metadataDocumentId;
+      }
+
+      if (typeof chunkIndex === 'number') {
+        metadata.chunkIndex = chunkIndex;
+      }
+
+      const filenameForMetadata = metadataFilename || fallbackFilename;
+      if (filenameForMetadata) {
+        metadata.filename = filenameForMetadata;
+      }
+
+      if (!metadata.documentTitle && documentTitle) {
+        metadata.documentTitle = documentTitle;
+      }
+
+      if (!metadata.fileId && metadataEntry?.document?.fileId) {
+        metadata.fileId = metadataEntry.document.fileId;
+      }
+
+      if (!metadata.vectorStoreId && metadataEntry?.document?.vectorStoreId) {
+        metadata.vectorStoreId = metadataEntry.document.vectorStoreId;
+      }
+
+      if (!metadata.documentMetadata && metadataEntry?.document?.metadata && typeof metadataEntry.document.metadata === 'object') {
+        metadata.documentMetadata = { ...metadataEntry.document.metadata };
+      }
+
+      const normalizedSource = {
+        ...annotation,
+        id: sourceId,
+        filename: fallbackFilename,
+        title: displayTitle,
+        documentTitle,
+        text: textSnippet,
+        metadata,
+      };
+
+      let sourceEntry = uniqueSources.get(sourceId);
+      if (!sourceEntry) {
+        const citationNumber = nextCitationNumber++;
+        const metadataWithCitation = { ...metadata, citationNumber };
+        sourceEntry = {
+          ...normalizedSource,
+          metadata: metadataWithCitation,
+          citationNumber,
+          snippets: textSnippet ? [textSnippet] : [],
+        };
+        uniqueSources.set(sourceId, sourceEntry);
+      } else {
+        if (textSnippet) {
+          const snippetSet = new Set(sourceEntry.snippets || []);
+          if (!snippetSet.has(textSnippet)) {
+            snippetSet.add(textSnippet);
+            sourceEntry.snippets = Array.from(snippetSet);
+          }
+          if (!sourceEntry.text) {
+            sourceEntry.text = textSnippet;
           }
         }
 
-        const metadataFilename = metadataEntry?.filename || '';
-        const fallbackFilename =
-          getFirstNonEmptyString(
-            annotation.filename,
-            annotation.file_name,
-            annotation?.document?.filename,
-            annotation?.document?.file_name,
-            annotation?.file_citation?.filename,
-            annotation?.file_citation?.file_name,
-            metadataFilename,
-            annotation?.file_citation?.file_id
-          ) || `Document ${index + 1}`;
-
-        const metadataTitleCandidate = getFirstNonEmptyString(
-          metadataEntry?.title,
-          metadataEntry?.displayTitle,
-          metadataEntry?.document?.metadata?.title
-        );
-
-        const displayTitle =
-          getFirstNonEmptyString(
-            annotation.title,
-            annotation?.document?.title,
-            annotation?.file_citation?.title,
-            annotation?.document?.metadata?.title,
-            annotation.documentTitle,
-            metadataTitleCandidate,
-            fallbackFilename
-          ) || fallbackFilename;
-
-        const documentTitle =
-          getFirstNonEmptyString(
-            annotation.documentTitle,
-            annotation?.document?.title,
-            annotation?.document?.metadata?.title,
-            metadataTitleCandidate,
-            displayTitle
-          ) || displayTitle;
-
-        const sourceId =
-          getFirstNonEmptyString(
-            annotation.id,
-            annotation?.file_citation?.file_id,
-            annotation?.file_path,
-            docKeyCandidates[0]
-          ) || `source-${index}`;
-
-        const chunkIndex =
-          typeof annotation.chunkIndex === 'number'
-            ? annotation.chunkIndex
-            : typeof annotation.chunk_index === 'number'
-              ? annotation.chunk_index
-              : typeof annotation?.file_citation?.chunkIndex === 'number'
-                ? annotation.file_citation.chunkIndex
-                : typeof annotation?.file_citation?.chunk_index === 'number'
-                  ? annotation.file_citation.chunk_index
-                  : null;
-
-        const baseMetadata =
-          annotation.metadata && typeof annotation.metadata === 'object'
-            ? { ...annotation.metadata }
-            : {};
-
-        const metadata = { ...baseMetadata };
-        const metadataDocumentId =
-          metadataEntry?.document?.id || docKeyCandidates[0] || metadata.documentId || null;
-
-        if (metadataDocumentId) {
-          metadata.documentId = metadataDocumentId;
-        }
-
-        if (typeof chunkIndex === 'number') {
-          metadata.chunkIndex = chunkIndex;
-        }
-
-        const filenameForMetadata = metadataFilename || fallbackFilename;
-        if (filenameForMetadata) {
-          metadata.filename = filenameForMetadata;
-        }
-
-        if (!metadata.documentTitle && documentTitle) {
-          metadata.documentTitle = documentTitle;
-        }
-
-        if (!metadata.fileId && metadataEntry?.document?.fileId) {
-          metadata.fileId = metadataEntry.document.fileId;
-        }
-
-        if (!metadata.vectorStoreId && metadataEntry?.document?.vectorStoreId) {
-          metadata.vectorStoreId = metadataEntry.document.vectorStoreId;
-        }
-
-        if (!metadata.documentMetadata && metadataEntry?.document?.metadata && typeof metadataEntry.document.metadata === 'object') {
-          metadata.documentMetadata = { ...metadataEntry.document.metadata };
-        }
-
-        return {
-          ...annotation,
-          id: sourceId,
-          filename: fallbackFilename,
-          title: displayTitle,
-          documentTitle,
-          text: textSnippet,
-          metadata,
+        sourceEntry.metadata = {
+          ...(sourceEntry.metadata || {}),
+          ...(metadata || {}),
         };
+
+        if (!sourceEntry.metadata.citationNumber) {
+          sourceEntry.metadata.citationNumber = sourceEntry.citationNumber;
+        }
+      }
+
+      const startIndex = extractAnnotationIndex(annotation, 'start_index');
+      const endIndex = extractAnnotationIndex(annotation, 'end_index');
+
+      annotationMetadataMap.set(annotation, {
+        sourceId,
+        citationNumber: sourceEntry.citationNumber,
+        startIndex,
+        endIndex,
       });
+    });
+
+    const sources = Array.from(uniqueSources.values()).map(sourceEntry => {
+      const { snippets = [], metadata = {}, ...rest } = sourceEntry;
+      const normalizedSnippets = Array.isArray(snippets)
+        ? Array.from(new Set(snippets.filter(Boolean)))
+        : [];
+      const metadataWithSnippets = { ...(metadata || {}) };
+      if (normalizedSnippets.length > 0 && !metadataWithSnippets.snippets) {
+        metadataWithSnippets.snippets = normalizedSnippets;
+      }
+      return {
+        ...rest,
+        metadata: metadataWithSnippets,
+      };
+    });
+
+    const answerWithCitations = contentSegments
+      .map(segment => {
+        if (!segment.text) {
+          return null;
+        }
+        return insertCitationsIntoText(segment.text, segment.annotations, annotationMetadataMap);
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+
+    let answer = answerWithCitations || plainAnswerFromContent || outputTextFallback || 'The document search returned no results.';
+    answer = appendReferencesSection(answer, sources);
 
     return {
       answer,
@@ -1071,14 +1326,38 @@ class RAGService {
     ].join('\n');
 
     const aiResult = await openaiService.getChatResponse(prompt);
-    const answer = aiResult?.answer || '';
+    const rawAnswer = typeof aiResult?.answer === 'string' ? aiResult.answer : '';
     const resources = aiResult?.resources || [];
 
-    const sources = results.map((result, index) => ({
-      ...result,
-      sourceId: `${result.documentId}:${result.chunkIndex}`,
-      index,
-    }));
+    const sources = results.map((result, index) => {
+      const citationNumber = index + 1;
+      const baseMetadata = result.metadata && typeof result.metadata === 'object' ? { ...result.metadata } : {};
+
+      if (!baseMetadata.documentTitle && result.documentTitle) {
+        baseMetadata.documentTitle = result.documentTitle;
+      }
+
+      if (!baseMetadata.filename && result.filename) {
+        baseMetadata.filename = result.filename;
+      }
+
+      if (typeof result.chunkIndex === 'number') {
+        baseMetadata.chunkIndex = result.chunkIndex;
+      }
+
+      baseMetadata.citationNumber = citationNumber;
+
+      return {
+        ...result,
+        sourceId: `${result.documentId}:${result.chunkIndex}`,
+        index,
+        citationNumber,
+        metadata: baseMetadata,
+      };
+    });
+
+    let answer = rawAnswer.trim() || 'No relevant guidance was generated from the provided excerpts.';
+    answer = appendReferencesSection(answer, sources);
 
     return {
       answer,

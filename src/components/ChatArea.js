@@ -894,6 +894,16 @@ const ChatArea = ({
                                       .trimEnd()}…`
                                   : resolvedSnippet;
 
+                              const citationNumber = typeof source?.citationNumber === 'number'
+                                ? source.citationNumber
+                                : typeof source?.metadata?.citationNumber === 'number'
+                                  ? source.metadata.citationNumber
+                                  : null;
+
+                              const displayTitle = citationNumber
+                                ? `[${citationNumber}] ${resolvedSourceTitle}`
+                                : resolvedSourceTitle;
+
                               const baseClasses = 'text-xs bg-white bg-opacity-50 p-2 rounded border transition-colors';
                               const interactiveClasses = sourceUrl
                                 ? 'block group hover:border-blue-400 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:ring-offset-1'
@@ -907,9 +917,9 @@ const ChatArea = ({
                                 >
                                   <div
                                     className={`font-medium truncate ${sourceUrl ? 'text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700' : ''}`.trim()}
-                                    title={resolvedSourceTitle}
+                                    title={displayTitle}
                                   >
-                                    {resolvedSourceTitle}
+                                    {displayTitle}
                                   </div>
                                   <div
                                     className="text-gray-600 line-clamp-2"

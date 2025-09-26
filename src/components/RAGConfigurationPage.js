@@ -23,6 +23,7 @@ import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 import trainingResourceService from '../services/trainingResourceService';
+import SummaryRequestPanel from './SummaryRequestPanel';
 
 const describeConversionSource = (conversion) => {
   if (!conversion) {
@@ -1057,6 +1058,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                   </button>
                 </div>
               </div>
+
+              <SummaryRequestPanel documents={documents} user={user} />
 
               {/* Documents List */}
               <div>

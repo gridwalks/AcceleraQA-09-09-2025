@@ -152,6 +152,7 @@ npm run build
 ## 🧭 Architecture References
 
 - [AcceleraQA Summary-Generation Pipeline Architecture](docs/summary-generation-pipeline.md): end-to-end design for the role-aware, citation-backed summarization service that powers Ask Summarize, focus lenses, and downstream integrations.
+- [Front-end integration for the summary pipeline](docs/summary-pipeline-frontend.md): explains how the React client invokes the Netlify function, decodes document content, and renders summaries with guardrail diagnostics.
 
 ## 🧪 Key Features
 

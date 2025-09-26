@@ -144,10 +144,14 @@ npm run build
 ## 📊 Performance Optimizations
 
 - **React.memo**: Prevent unnecessary re-renders
-- **useMemo**: Cache expensive calculations  
+- **useMemo**: Cache expensive calculations
 - **Lazy Loading**: Components loaded on demand
 - **Tree Shaking**: Optimized bundle size
 - **Service Workers**: Built-in with Create React App
+
+## 🧭 Architecture References
+
+- [AcceleraQA Summary-Generation Pipeline Architecture](docs/summary-generation-pipeline.md): end-to-end design for the role-aware, citation-backed summarization service that powers Ask Summarize, focus lenses, and downstream integrations.
 
 ## 🧪 Key Features
 

@@ -103,6 +103,80 @@ const sniffBytesAsText = (bytes) => {
   }
 };
 
+const decodeUtf8 = (bytes) => {
+  if (!bytes || bytes.length === 0) return '';
+
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true });
+    return decoder.decode(bytes);
+  } catch (error) {
+    console.warn('Failed to decode bytes as UTF-8 text.', error);
+    return '';
+  }
+};
+
+const collectTextCandidates = (value, collector) => {
+  if (!value) return;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) collector.add(trimmed);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectTextCandidates(item, collector));
+    return;
+  }
+
+  if (typeof value === 'object') {
+    collectTextCandidates(value.text, collector);
+    collectTextCandidates(value.value, collector);
+    collectTextCandidates(value.content, collector);
+    collectTextCandidates(value.string, collector);
+  }
+};
+
+const extractVectorStoreText = (decodedText) => {
+  if (!decodedText) return '';
+
+  try {
+    const payload = JSON.parse(decodedText);
+    const candidates = new Set();
+
+    if (payload && typeof payload === 'object') {
+      if (payload.object && /vector_store/i.test(payload.object)) {
+        collectTextCandidates(payload.data, candidates);
+      }
+
+      collectTextCandidates(payload.text, candidates);
+      collectTextCandidates(payload.content, candidates);
+    }
+
+    if (candidates.size > 0) {
+      return Array.from(candidates).join('\n\n');
+    }
+  } catch (error) {
+    // Not JSON – ignore and fall back to printable detection
+  }
+
+  return '';
+};
+
+const extractPrintableText = (decodedText) => {
+  if (!decodedText) return '';
+
+  const trimmed = decodedText.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const printableCharacters = trimmed.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '');
+  const ratio = printableCharacters.length / trimmed.length;
+
+  return ratio >= 0.6 ? trimmed : '';
+};
+
 const ensureValidPdfBytes = async (bytes) => {
   if (!bytes) return bytes;
 
@@ -113,7 +187,25 @@ const ensureValidPdfBytes = async (bytes) => {
   }
 
   if (!hasPdfHeader(normalizedBytes)) {
+    const decodedText = decodeUtf8(normalizedBytes);
+    const vectorStoreText = extractVectorStoreText(decodedText);
+    const printableText = vectorStoreText || extractPrintableText(decodedText);
     const sniff = sniffBytesAsText(normalizedBytes);
+
+    if (printableText) {
+      const maxInlineLength = 200000;
+      const isTruncated = printableText.length > maxInlineLength;
+      const truncatedText = isTruncated ? `${printableText.slice(0, maxInlineLength).trimEnd()}\n\n[Preview truncated]` : printableText;
+
+      const error = new Error('Document bytes contain readable text but not a valid PDF.');
+      error.name = 'TextDocumentFallbackError';
+      error.textContent = truncatedText;
+      error.isTruncated = isTruncated;
+      error.sniff = sniff || truncatedText.slice(0, 512);
+      error.source = vectorStoreText ? 'vector_store' : 'plain_text';
+      throw error;
+    }
+
     const error = new Error('PDF bytes invalid or corrupted.');
     error.name = 'InvalidPdfBytesError';
     if (sniff) {
@@ -814,7 +906,11 @@ const isBlobLikeUrl = (candidate) => typeof candidate === 'string' && (candidate
 
 export const PdfBlobViewer = memo(({ url, title, blobData }) => {
   const containerRef = useRef(null);
-  const [{ isRendering, error }, setRenderState] = useState({ isRendering: true, error: null });
+  const [{ isRendering, error, fallback }, setRenderState] = useState({
+    isRendering: true,
+    error: null,
+    fallback: null,
+  });
 
   useEffect(() => {
     let isCancelled = false;
@@ -822,12 +918,17 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
     const container = containerRef.current;
 
     if (!container || (!url && !blobData)) {
-      setRenderState((prev) => ({ ...prev, isRendering: false, error: 'PDF preview is unavailable.' }));
+      setRenderState((prev) => ({
+        ...prev,
+        isRendering: false,
+        error: 'PDF preview is unavailable.',
+        fallback: null,
+      }));
       return () => {};
     }
 
     container.innerHTML = '';
-    setRenderState({ isRendering: true, error: null });
+    setRenderState({ isRendering: true, error: null, fallback: null });
 
     const renderDocument = async () => {
       try {
@@ -950,7 +1051,7 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
         }
 
         if (!isCancelled) {
-          setRenderState({ isRendering: false, error: null });
+          setRenderState({ isRendering: false, error: null, fallback: null });
         }
 
         cleanupTasks.push(() => {
@@ -963,6 +1064,24 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
         });
       } catch (renderError) {
         console.error('Failed to render PDF blob preview:', renderError);
+        if (
+          !isCancelled &&
+          renderError?.name === 'TextDocumentFallbackError' &&
+          renderError.textContent
+        ) {
+          setRenderState({
+            isRendering: false,
+            error: null,
+            fallback: {
+              type: 'text',
+              content: renderError.textContent,
+              truncated: Boolean(renderError.isTruncated),
+              source: renderError.source || 'plain_text',
+            },
+          });
+          return;
+        }
+
         if (renderError?.name === 'InvalidPdfBytesError' && renderError.sniff) {
           console.error('Non-PDF payload preview snippet:', renderError.sniff);
         }
@@ -976,6 +1095,7 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
           setRenderState({
             isRendering: false,
             error: message,
+            fallback: null,
           });
         }
       }
@@ -998,6 +1118,29 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
       }
     };
   }, [url, blobData]);
+
+  if (fallback?.type === 'text') {
+    return (
+      <div className="relative h-full w-full bg-white" data-testid="pdf-blob-viewer-text-fallback">
+        <div className="h-full w-full overflow-y-auto px-6 py-6">
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <p className="font-medium">This document was returned as extracted text.</p>
+            <p className="mt-1 text-amber-800/90">
+              We’re showing the readable text content because a valid PDF file was not available.
+            </p>
+            {fallback.truncated ? (
+              <p className="mt-1 text-amber-800/90">
+                The preview has been truncated for performance. Use the download option to retrieve the full document.
+              </p>
+            ) : null}
+          </div>
+          <pre className="whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 px-4 py-4 text-sm leading-relaxed text-gray-800">
+            {fallback.content}
+          </pre>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative h-full w-full bg-white" data-testid="pdf-blob-viewer">

@@ -86,7 +86,7 @@ const Header = memo(({
               width="180"
               height="20"
             />
-            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">|beta</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">| Beta</span>
           </div>
 
           <div className="relative flex items-center space-x-4 ml-auto">

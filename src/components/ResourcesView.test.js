@@ -26,7 +26,21 @@ jest.mock('../services/ragService', () => ({
 }));
 
 // eslint-disable-next-line import/first
-import { DocumentViewer } from './ResourcesView';
+import { gzipSync, gunzipSync } from 'zlib';
+// eslint-disable-next-line import/first
+import { DocumentViewer, decodeBase64ToUint8Array } from './ResourcesView';
+
+if (typeof global.TextEncoder === 'undefined') {
+  // eslint-disable-next-line global-require
+  const { TextEncoder: PolyfillTextEncoder } = require('util');
+  global.TextEncoder = PolyfillTextEncoder;
+}
+
+if (typeof global.TextDecoder === 'undefined') {
+  // eslint-disable-next-line global-require
+  const { TextDecoder: PolyfillTextDecoder } = require('util');
+  global.TextDecoder = PolyfillTextDecoder;
+}
 
 describe('DocumentViewer', () => {
   beforeEach(() => {
@@ -46,14 +60,30 @@ describe('DocumentViewer', () => {
     }));
   });
 
-  it('uses the PdfBlobViewer when rendering blob-based PDFs', async () => {
+  it('inflates gzipped PDFs and feeds expanded bytes to pdf.js', async () => {
     const originalFetch = global.fetch;
     const fetchMock = jest.fn();
     global.fetch = fetchMock;
+    const originalPako = global.pako;
+    global.pako = {
+      ungzip: (input) => {
+        const buffer = input instanceof Uint8Array ? Buffer.from(input) : input;
+        const result = gunzipSync(buffer);
+        return new Uint8Array(result.buffer, result.byteOffset, result.byteLength);
+      },
+    };
 
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
+
+    const pdfSource = '%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n';
+    const encodedPdf = new TextEncoder().encode(pdfSource);
+    const gzippedPdf = gzipSync(Buffer.from(encodedPdf));
+    const base64Payload = Buffer.from(gzippedPdf).toString('base64');
+    const decodedBytes = await decodeBase64ToUint8Array(base64Payload);
+
+    expect(Array.from(decodedBytes)).toEqual(Array.from(encodedPdf));
 
     try {
       await act(async () => {
@@ -62,7 +92,7 @@ describe('DocumentViewer', () => {
             isOpen
             title="Test PDF"
             url="blob:https://example.com/test"
-            blobData={new Uint8Array([1, 2, 3])}
+            blobData={decodedBytes}
             contentType="application/pdf"
             filename="test.pdf"
             isLoading={false}
@@ -80,6 +110,9 @@ describe('DocumentViewer', () => {
       const pdfViewer = container.querySelector('[data-testid="pdf-blob-viewer"]');
       expect(pdfViewer).not.toBeNull();
       expect(mockGetDocument).toHaveBeenCalledWith(expect.objectContaining({ data: expect.any(Uint8Array) }));
+      const [{ data }] = mockGetDocument.mock.calls[0];
+      const header = new TextDecoder().decode(data.subarray(0, 5));
+      expect(header).toBe('%PDF-');
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       await act(async () => {
@@ -87,6 +120,7 @@ describe('DocumentViewer', () => {
       });
       document.body.removeChild(container);
       global.fetch = originalFetch;
+      global.pako = originalPako;
     }
   });
 });

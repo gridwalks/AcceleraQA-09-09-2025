@@ -24,6 +24,126 @@ import ConversationList from './ConversationList';
 import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
 import ragService from '../services/ragService';
 
+const isGzipCompressed = (bytes) =>
+  bytes && bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+
+let cachedUngzipImplementation = null;
+
+const getUngzipImplementation = () => {
+  if (cachedUngzipImplementation) return cachedUngzipImplementation;
+
+  const globalScope = typeof globalThis !== 'undefined' ? globalThis : {};
+  const candidates = [globalScope.pako, globalScope.Pako, globalScope.PAKO];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const ungzipFn = typeof candidate.ungzip === 'function'
+      ? candidate.ungzip.bind(candidate)
+      : typeof candidate.inflate === 'function'
+        ? candidate.inflate.bind(candidate)
+        : null;
+    if (ungzipFn) {
+      cachedUngzipImplementation = (input) => {
+        const result = ungzipFn(input);
+        return result instanceof Uint8Array ? result : new Uint8Array(result);
+      };
+      return cachedUngzipImplementation;
+    }
+  }
+
+  return null;
+};
+
+const inflateGzipBytes = async (gzipBytes) => {
+  if (!isGzipCompressed(gzipBytes)) {
+    return gzipBytes;
+  }
+
+  if (typeof DecompressionStream === 'function' && typeof Response === 'function') {
+    try {
+      const sourceStream = new Response(gzipBytes).body;
+      if (sourceStream) {
+        const decompressedStream = sourceStream.pipeThrough(new DecompressionStream('gzip'));
+        const arrayBuffer = await new Response(decompressedStream).arrayBuffer();
+        return new Uint8Array(arrayBuffer);
+      }
+    } catch (error) {
+      console.warn('Failed to inflate gzip payload with DecompressionStream; falling back to pako.', error);
+    }
+  }
+
+  const ungzipImplementation = getUngzipImplementation();
+  if (ungzipImplementation) {
+    try {
+      return ungzipImplementation(gzipBytes);
+    } catch (error) {
+      console.error('Failed to inflate gzip payload via pako fallback.', error);
+    }
+  }
+
+  console.warn('No gzip decompression fallback is available; returning original bytes.');
+  return gzipBytes;
+};
+
+export const decodeBase64ToUint8Array = async (base64) => {
+  if (!base64) return null;
+
+  const normalizeBase64 = (value) => {
+    if (!value) return '';
+    let sanitized = value.trim();
+
+    const dataUrlMatch = sanitized.match(/^data:([^;,]+);base64,(.*)$/i);
+    if (dataUrlMatch) {
+      sanitized = dataUrlMatch[2];
+    }
+
+    sanitized = sanitized.replace(/\s+/g, '');
+    sanitized = sanitized.replace(/-/g, '+').replace(/_/g, '/');
+
+    const padding = sanitized.length % 4;
+    if (padding === 2) sanitized += '==';
+    if (padding === 3) sanitized += '=';
+    if (padding === 1) {
+      console.error('Invalid base64 string length.');
+      return null;
+    }
+
+    return sanitized;
+  };
+
+  const normalized = normalizeBase64(base64);
+  if (!normalized) return null;
+
+  const atobFn =
+    (typeof window !== 'undefined' && typeof window.atob === 'function')
+      ? window.atob
+      : (typeof globalThis !== 'undefined' && typeof globalThis.atob === 'function')
+        ? globalThis.atob
+        : null;
+
+  if (!atobFn) {
+    console.error('Base64 decoding is not supported in this environment.');
+    return null;
+  }
+
+  try {
+    const byteCharacters = atobFn(normalized);
+    const byteArray = new Uint8Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i += 1) {
+      byteArray[i] = byteCharacters.charCodeAt(i);
+    }
+
+    if (isGzipCompressed(byteArray)) {
+      return inflateGzipBytes(byteArray);
+    }
+
+    return byteArray;
+  } catch (error) {
+    console.error('Failed to decode base64 document content:', error);
+    return null;
+  }
+};
+
 const createInitialViewerState = () => ({
   isOpen: false,
   title: '',
@@ -82,60 +202,6 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       resource.title ||
       `resource-${index}`
     );
-  }, []);
-
-  const decodeBase64ToUint8Array = useCallback((base64) => {
-    if (!base64) return null;
-
-    const normalizeBase64 = (value) => {
-      if (!value) return '';
-      let sanitized = value.trim();
-
-      const dataUrlMatch = sanitized.match(/^data:([^;,]+);base64,(.*)$/i);
-      if (dataUrlMatch) {
-        sanitized = dataUrlMatch[2];
-      }
-
-      sanitized = sanitized.replace(/\s+/g, '');
-      sanitized = sanitized.replace(/-/g, '+').replace(/_/g, '/');
-
-      const padding = sanitized.length % 4;
-      if (padding === 2) sanitized += '==';
-      if (padding === 3) sanitized += '=';
-      if (padding === 1) {
-        console.error('Invalid base64 string length.');
-        return null;
-      }
-
-      return sanitized;
-    };
-
-    const normalized = normalizeBase64(base64);
-    if (!normalized) return null;
-
-    const atobFn =
-      (typeof window !== 'undefined' && typeof window.atob === 'function')
-        ? window.atob
-        : (typeof globalThis !== 'undefined' && typeof globalThis.atob === 'function')
-          ? globalThis.atob
-          : null;
-
-    if (!atobFn) {
-      console.error('Base64 decoding is not supported in this environment.');
-      return null;
-    }
-
-    try {
-      const byteCharacters = atobFn(normalized);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i += 1) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      return new Uint8Array(byteNumbers);
-    } catch (error) {
-      console.error('Failed to decode base64 document content:', error);
-      return null;
-    }
   }, []);
 
   const createObjectUrlFromBlob = useCallback((blob) => {
@@ -353,7 +419,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
       // Fallback: backend returned base64 content; build a blob URL
       const base64Content = typeof response.content === 'string' ? response.content.trim() : '';
-      const byteArray = decodeBase64ToUint8Array(base64Content);
+      const byteArray = await decodeBase64ToUint8Array(base64Content);
       if (!byteArray) throw new Error('Unable to decode document content');
 
       const blob = new Blob([byteArray], { type: response.contentType || contentType || 'application/octet-stream' });

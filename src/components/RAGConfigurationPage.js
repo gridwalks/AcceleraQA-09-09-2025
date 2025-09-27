@@ -1408,7 +1408,21 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                           >
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
-                                <h4 className="text-base font-semibold text-gray-900">{name}</h4>
+                                <h4 className="text-base font-semibold text-gray-900">
+                                  {url ? (
+                                    <a
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-purple-700 hover:text-purple-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 rounded"
+                                      title={url}
+                                    >
+                                      {name}
+                                    </a>
+                                  ) : (
+                                    name
+                                  )}
+                                </h4>
                                 {tag && (
                                   <span className="mt-2 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
                                     #{tag}

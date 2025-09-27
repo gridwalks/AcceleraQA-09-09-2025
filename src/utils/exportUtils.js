@@ -126,7 +126,7 @@ export function exportNotebook(messages) {
     }
 
     // CSV headers
-    const headers = ['Timestamp', 'Type', 'Message', 'Resources', 'Study Notes'];
+    const headers = ['Timestamp', 'Type', 'Message', 'Resources', 'Notes'];
     
     // Convert messages to CSV rows
     const rows = recentMessages.map(msg => [
@@ -154,13 +154,13 @@ export function exportNotebook(messages) {
 }
 
 /**
- * Exports study notes as Word document
- * @param {Object} studyNotesMessage - Study notes message object
+ * Exports notes as Word document
+ * @param {Object} studyNotesMessage - Notes message object
  */
 export function exportToWord(studyNotesMessage) {
   try {
     if (!studyNotesMessage) {
-      throw new Error('Invalid study notes message');
+      throw new Error('Invalid notes message');
     }
 
     const resources = Array.isArray(studyNotesMessage.resources)
@@ -172,7 +172,7 @@ export function exportToWord(studyNotesMessage) {
       createFallbackStudyNotesData(studyNotesMessage, resources);
 
     if (!studyData || !studyData.content) {
-      throw new Error('Invalid study notes data');
+      throw new Error('Invalid notes data');
     }
 
     // Create Word document content
@@ -184,7 +184,7 @@ export function exportToWord(studyNotesMessage) {
     });
 
     const timestamp = new Date().toISOString().split('T')[0];
-    const filename = `${APP_CONFIG.NAME}-Study-Notes-${timestamp}.doc`;
+    const filename = `${APP_CONFIG.NAME}-Notes-${timestamp}.doc`;
 
     downloadFile(blob, filename);
   } catch (error) {
@@ -195,7 +195,7 @@ export function exportToWord(studyNotesMessage) {
 
 /**
  * Creates formatted content for Word document
- * @param {Object} studyData - Study notes data
+ * @param {Object} studyData - Notes data
  * @param {Object[]} resources - Array of resources
  * @returns {string} - Formatted document content
  */
@@ -203,7 +203,7 @@ function createWordDocumentContent(studyData, resources) {
   const safeResources = Array.isArray(resources) ? resources : [];
   const generatedDate = studyData.generatedDate || new Date().toLocaleString();
   const selectedTopics =
-    studyData.selectedTopics || 'Study notes generated from your selected conversations.';
+    studyData.selectedTopics || 'Notes generated from your selected conversations.';
   const bodyContent = studyData.content || '';
   const resourceCount =
     typeof studyData.resourceCount === 'number' ? studyData.resourceCount : safeResources.length;
@@ -220,7 +220,7 @@ function createWordDocumentContent(studyData, resources) {
     : 'No additional resources provided.';
 
   const content = [
-    `${APP_CONFIG.NAME.toUpperCase()} - PHARMACEUTICAL QUALITY & COMPLIANCE STUDY NOTES`,
+    `${APP_CONFIG.NAME.toUpperCase()} - PHARMACEUTICAL QUALITY & COMPLIANCE NOTES`,
     '',
     `Generated: ${generatedDate}`,
     `Topics Covered: ${selectedTopics}`,
@@ -278,7 +278,7 @@ function createFallbackStudyNotesData(studyNotesMessage, resources) {
     generatedDate: generatedDateValue.toLocaleString(),
     selectedConversationCount: selectedConversationIds.length,
     selectedConversationIds,
-    selectedTopics: 'Study notes generated from your selected conversations.',
+    selectedTopics: 'Notes generated from your selected conversations.',
     selectedTopicsList: [],
     content,
     resourceCount: Array.isArray(resources) ? resources.length : 0,
@@ -330,7 +330,7 @@ export function exportMessagesToWord(messages, { title } = {}) {
           <div class="meta">Timestamp: ${escapeHtml(timestampLabel)}</div>
           <div class="content">${contentHtml}</div>
           ${resourcesHtml}
-          ${msg.isStudyNotes ? '<div class="study-note">Study Notes Entry</div>' : ''}
+          ${msg.isStudyNotes ? '<div class="study-note">Notes Entry</div>' : ''}
         </section>
       `;
     }).join('');
@@ -435,7 +435,7 @@ export function exportMessagesToExcel(messages, { title } = {}) {
                 <th>Type</th>
                 <th>Message</th>
                 <th>Resources</th>
-                <th>Study Notes</th>
+                <th>Notes</th>
               </tr>
             </thead>
             <tbody>
@@ -568,7 +568,7 @@ export function exportAsText(messages) {
       }
       
       if (msg.isStudyNotes) {
-        textContent += '[Study Notes Generated]\n\n';
+        textContent += '[Notes Generated]\n\n';
       }
       
       textContent += '='.repeat(80) + '\n\n';

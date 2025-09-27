@@ -217,7 +217,7 @@ const NotebookView = memo(({
                     ? 'bg-black text-white hover:bg-gray-800 focus:ring-gray-600'
                     : 'bg-gray-100 text-gray-400 cursor-not-allowed focus:ring-gray-300'
                 }`}
-                aria-label="Generate study notes from selected conversations"
+                aria-label="Generate notes from selected conversations"
               >
                 {isGeneratingNotes ? (
                   <span className="flex items-center space-x-2">
@@ -225,7 +225,7 @@ const NotebookView = memo(({
                     <span>Generating...</span>
                   </span>
                 ) : (
-                  'Study Notes'
+                  'Notes'
                 )}
               </button>
             </div>
@@ -490,7 +490,7 @@ const ConversationCard = memo(({
           {conversation.isStudyNotes && (
             <div className="mt-3 pt-2 border-t border-gray-200">
               <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
-                📚 Study Notes
+                📚 Notes
               </span>
             </div>
           )}

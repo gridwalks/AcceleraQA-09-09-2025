@@ -609,6 +609,7 @@ async function persistSummary(document, mode, orchestration, guardrails, request
     citations: orchestration.citations,
     confidence,
     created_at: nowIso,
+    updated_at: nowIso,
     request_id: requestId,
     summary: orchestration.summaryText,
     guardrails,
@@ -664,6 +665,7 @@ async function persistSummary(document, mode, orchestration, guardrails, request
         guardrails = EXCLUDED.guardrails,
         updated_at = NOW();
     `;
+    record.updated_at = new Date().toISOString();
   } catch (error) {
     console.error('Failed to persist summary to Neon database', error);
   }
@@ -758,15 +760,16 @@ async function fetchSummaryFromDatabase(summaryId) {
       summary_id: row.summary_id,
       doc_id: row.doc_id,
       title: row.title,
-      mode: row.mode,
+      mode: deserializeJsonColumn(row.mode),
       model: row.model,
       prompt_hash: row.prompt_hash,
-      citations: row.citations,
-      confidence: typeof row.confidence === 'number' ? Number(row.confidence.toFixed(2)) : row.confidence,
-      created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+      citations: deserializeJsonColumn(row.citations),
+      confidence: normalizeNumeric(row.confidence),
+      created_at: normalizeTimestamp(row.created_at),
+      updated_at: normalizeTimestamp(row.updated_at),
       request_id: row.request_id,
       summary: row.summary,
-      guardrails: row.guardrails,
+      guardrails: deserializeJsonColumn(row.guardrails),
     };
 
     summaryStore.set(summaryId, record);
@@ -781,4 +784,51 @@ function calculateConfidence(citations, violations) {
   const base = citations.length > 0 ? 0.6 + Math.min(0.3, citations.length * 0.05) : 0.4;
   const penalty = Math.min(0.3, (violations?.length || 0) * 0.1);
   return Number(Math.max(0, base - penalty).toFixed(2));
+}
+
+function deserializeJsonColumn(value) {
+  if (value == null) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      console.warn('Failed to parse JSON column value, returning raw string', error);
+      return value;
+    }
+  }
+
+  return value;
+}
+
+function normalizeTimestamp(value) {
+  if (!value) {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toISOString();
+}
+
+function normalizeNumeric(value) {
+  if (value == null) {
+    return value;
+  }
+
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(numberValue)) {
+    return value;
+  }
+
+  return Number(numberValue.toFixed(2));
 }

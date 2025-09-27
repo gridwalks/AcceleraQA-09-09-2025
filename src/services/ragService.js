@@ -981,7 +981,7 @@ class RAGService {
               role,
               content: [
                 {
-                  type: 'input_text',
+                  type: role === 'assistant' ? 'output_text' : 'input_text',
                   text: trimmedText,
                 },
               ],

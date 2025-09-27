@@ -372,7 +372,7 @@ describe('document persistence with Neon metadata store', () => {
       role: 'assistant',
       content: [
         {
-          type: 'input_text',
+          type: 'output_text',
           text: 'GMP stands for Good Manufacturing Practice.',
         },
       ],

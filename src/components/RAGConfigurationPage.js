@@ -1070,8 +1070,6 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                 </div>
               </div>
 
-              <SummaryRequestPanel documents={documents} user={user} />
-
               {/* Documents List */}
               <div>
                 <div className="flex items-center justify-between mb-4">

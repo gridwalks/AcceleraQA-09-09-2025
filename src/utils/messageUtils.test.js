@@ -26,4 +26,18 @@ describe('buildChatHistory', () => {
     expect(buildChatHistory(undefined)).toEqual([]);
     expect(buildChatHistory([{ id: '1', type: 'ai', content: '   ' }])).toEqual([]);
   });
+
+  it('omits empty or unsupported entries and trims retained content', () => {
+    const messages = [
+      { id: '7', role: 'system', content: 'Ignore me', timestamp: 7 },
+      { id: '8', role: 'user', content: '  Prior question?  ', timestamp: 8 },
+      { id: '9', role: 'assistant', content: ['Prior answer.  ', '   '], timestamp: 9 },
+      { id: '10', role: 'assistant', content: '   ', timestamp: 10 },
+    ];
+
+    expect(buildChatHistory(messages)).toEqual([
+      { role: 'user', content: 'Prior question?' },
+      { role: 'assistant', content: 'Prior answer.' },
+    ]);
+  });
 });

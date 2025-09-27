@@ -322,6 +322,71 @@ describe('document persistence with Neon metadata store', () => {
     expect(tools).toHaveLength(1);
     expect(tools[0].vector_store_ids).toEqual(['vs_default_user', additionalVectorStore]);
   });
+
+  test('generateRAGResponse includes prior conversation turns when provided', async () => {
+    const uploadOptions = { documentApiMock, uploadFileId: 'file_rag_history', vectorStoreId: 'vs_history_user' };
+    const { ragService, mocks } = await loadRagService(uploadOptions);
+
+    const capturedBodies = [];
+    mocks.openai.makeRequest.mockImplementation(async (endpoint, options = {}) => {
+      if (endpoint === '/responses') {
+        const parsedBody = options?.body ? JSON.parse(options.body) : {};
+        capturedBodies.push(parsedBody);
+        return {
+          output: [],
+          output_text: 'History aware answer',
+          usage: {},
+        };
+      }
+
+      if (endpoint === '/files') {
+        return { data: [] };
+      }
+
+      return { success: true };
+    });
+
+    const conversationHistory = [
+      { role: 'user', content: 'What is GMP?' },
+      { role: 'assistant', content: 'GMP stands for Good Manufacturing Practice.' },
+      { role: 'assistant', content: '   ' },
+      { role: 'system', content: 'ignored' },
+    ];
+
+    await ragService.generateRAGResponse('And what does it ensure?', 'user-history-1', {}, conversationHistory);
+
+    expect(capturedBodies).toHaveLength(1);
+    const { input } = capturedBodies[0];
+    expect(Array.isArray(input)).toBe(true);
+    expect(input).toHaveLength(3);
+    expect(input[0]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'input_text',
+          text: 'What is GMP?',
+        },
+      ],
+    });
+    expect(input[1]).toEqual({
+      role: 'assistant',
+      content: [
+        {
+          type: 'output_text',
+          text: 'GMP stands for Good Manufacturing Practice.',
+        },
+      ],
+    });
+    expect(input[2]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'input_text',
+          text: 'And what does it ensure?',
+        },
+      ],
+    });
+  });
 });
 
 describe('downloadDocument', () => {

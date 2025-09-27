@@ -239,7 +239,7 @@ export function buildChatHistory(messages) {
         return null;
       }
 
-      return { role, content };
+      return { role, content: trimmed };
     })
     .filter(Boolean);
 }

@@ -908,9 +908,9 @@ class RAGService {
     return result;
   }
 
-  async generateRAGResponse(query, userId, options = {}) {
+  async generateRAGResponse(query, userId, options = {}, conversationHistory = []) {
     if (this.isNeonBackend()) {
-      return this.generateNeonRagResponse(query, userId, options);
+      return this.generateNeonRagResponse(query, userId, options, conversationHistory);
     }
 
 
@@ -918,6 +918,77 @@ class RAGService {
     if (!trimmedQuery) {
       throw new Error('Query is required to generate a response');
     }
+
+    const normalizedHistory = Array.isArray(conversationHistory)
+      ? conversationHistory
+          .map(item => {
+            if (!item || typeof item !== 'object') {
+              return null;
+            }
+
+            const role = item.role === 'assistant' || item.role === 'user'
+              ? item.role
+              : item.type === 'ai'
+                ? 'assistant'
+                : item.type === 'user'
+                  ? 'user'
+                  : null;
+
+            if (role !== 'assistant' && role !== 'user') {
+              return null;
+            }
+
+            let textContent = '';
+
+            if (typeof item.content === 'string') {
+              textContent = item.content;
+            } else if (Array.isArray(item.content)) {
+              textContent = item.content
+                .map(part => {
+                  if (typeof part === 'string') {
+                    return part;
+                  }
+
+                  if (part && typeof part === 'object') {
+                    if (typeof part.text === 'string') {
+                      return part.text;
+                    }
+
+                    if (typeof part.value === 'string') {
+                      return part.value;
+                    }
+                  }
+
+                  return '';
+                })
+                .filter(Boolean)
+                .join(' ');
+            } else if (item.content && typeof item.content === 'object') {
+              if (typeof item.content.text === 'string') {
+                textContent = item.content.text;
+              } else if (typeof item.content.value === 'string') {
+                textContent = item.content.value;
+              }
+            }
+
+            const trimmedText = typeof textContent === 'string' ? textContent.trim() : '';
+
+            if (!trimmedText) {
+              return null;
+            }
+
+            return {
+              role,
+              content: [
+                {
+                  type: role === 'assistant' ? 'output_text' : 'input_text',
+                  text: trimmedText,
+                },
+              ],
+            };
+          })
+          .filter(Boolean)
+      : [];
 
     const includeDefaultVectorStore = options?.includeDefaultVectorStore !== false;
     let defaultVectorStoreId = null;
@@ -958,13 +1029,13 @@ class RAGService {
     const body = {
       model: getCurrentModel(),
       input: [
+        ...normalizedHistory,
         {
           role: 'user',
           content: [
             {
               type: 'input_text',
               text: trimmedQuery,
-
             },
           ],
         },
@@ -1270,7 +1341,7 @@ class RAGService {
     };
   }
 
-  async generateNeonRagResponse(query, userId, options = {}) {
+  async generateNeonRagResponse(query, userId, options = {}, conversationHistory = []) {
     if (!userId) {
       throw new Error('User ID is required for Neon RAG responses');
     }
@@ -1278,6 +1349,11 @@ class RAGService {
     const trimmedQuery = (query || '').trim();
     if (!trimmedQuery) {
       throw new Error('Search query is required');
+    }
+
+    if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+      // Neon backend currently builds prompts without multi-turn context.
+      // The parameter is accepted to keep parity with the OpenAI search implementation.
     }
 
     const searchOptions = {
@@ -1370,9 +1446,9 @@ class RAGService {
     };
   }
 
-  async search(query, userId, options = {}) {
+  async search(query, userId, options = {}, conversationHistory = []) {
     try {
-      const response = await this.generateRAGResponse(query, userId, options);
+      const response = await this.generateRAGResponse(query, userId, options, conversationHistory);
       return {
         answer: response.answer,
         sources: response.sources || [],
@@ -1619,12 +1695,14 @@ const ragService = new RAGService();
 export default ragService;
 
 export const uploadDocument = (file, metadata, userId) => ragService.uploadDocument(file, metadata, userId);
-export const search = (query, userId, options = {}) => ragService.search(query, userId, options);
+export const search = (query, userId, options = {}, conversationHistory = []) =>
+  ragService.search(query, userId, options, conversationHistory);
 export const searchDocuments = (query, options = {}, userId) => ragService.searchDocuments(query, options, userId);
 export const getDocuments = (userId) => ragService.getDocuments(userId);
 export const deleteDocument = (documentId, userId) => ragService.deleteDocument(documentId, userId);
 export const downloadDocument = (documentReference, userId) => ragService.downloadDocument(documentReference, userId);
-export const generateRAGResponse = (query, userId, options = {}) => ragService.generateRAGResponse(query, userId, options);
+export const generateRAGResponse = (query, userId, options = {}, conversationHistory = []) =>
+  ragService.generateRAGResponse(query, userId, options, conversationHistory);
 export const testConnection = (userId) => ragService.testConnection(userId);
 export const getStats = (userId) => ragService.getStats(userId);
 export const runDiagnostics = (userId) => ragService.runDiagnostics(userId);

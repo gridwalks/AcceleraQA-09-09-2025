@@ -67,7 +67,6 @@ describe('DocumentViewer', () => {
         />
       );
     });
-
     await act(async () => {
       await Promise.resolve();
     });

@@ -186,7 +186,7 @@ const SummaryRequestPanel = ({ documents, user }) => {
         <div>
           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-blue-600" />
-            Generate QA Summary
+            Generate Summary
           </h3>
           <p className="text-sm text-gray-600">
             Select a document, tailor role and lens, and AcceleraQA will orchestrate the multi-pass summarization pipeline with

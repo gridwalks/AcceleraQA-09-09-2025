@@ -367,6 +367,14 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
       activeObjectUrlRef.current = objectUrlResult;
 
+      let transportableBytes = null;
+      try {
+        const { buffer, byteOffset, byteLength } = byteArray;
+        transportableBytes = buffer.slice(byteOffset, byteOffset + byteLength);
+      } catch (sliceError) {
+        console.warn('Unable to create ArrayBuffer copy for viewer state:', sliceError);
+      }
+
       setViewerState({
         isOpen: true,
         title: fallbackTitle,
@@ -374,7 +382,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         filename: response.filename || fallbackFilename,
         contentType: response.contentType || contentType,
         allowDownload: true,
-        blobData: byteArray,
+        blobData: transportableBytes || byteArray,
       });
       logDocumentUrl(objectUrlResult.url, 'generated object URL');
       setIsViewerLoading(false);
@@ -730,28 +738,45 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
         }
 
         const ensurePdfBytes = async () => {
-          if (blobData instanceof Uint8Array) {
-            return blobData;
-          }
+          if (blobData) {
+            if (ArrayBuffer.isView(blobData)) {
+              const view = blobData;
+              const { buffer, byteOffset = 0, byteLength = view.byteLength } = view;
+              return new Uint8Array(buffer.slice(byteOffset, byteOffset + byteLength));
+            }
 
-          if (blobData instanceof ArrayBuffer) {
-            return new Uint8Array(blobData);
+            if (blobData instanceof ArrayBuffer) {
+              return new Uint8Array(blobData.slice(0));
+            }
+
+            const BlobConstructor = typeof Blob !== 'undefined' ? Blob : null;
+            if (BlobConstructor && blobData instanceof BlobConstructor) {
+              const arrayBuffer = await blobData.arrayBuffer();
+              return new Uint8Array(arrayBuffer);
+            }
           }
 
           if (!url) {
             throw new Error('No PDF URL available for preview.');
           }
 
-          if (typeof fetch === 'function') {
-            const response = await fetch(url);
-            if (!response.ok) {
-              throw new Error(`Unexpected response (${response.status}) while retrieving PDF.`);
-            }
-            const arrayBuffer = await response.arrayBuffer();
-            return new Uint8Array(arrayBuffer);
+          const normalizedUrl = `${url}`;
+          const isHttpUrl = /^https?:/i.test(normalizedUrl);
+
+          if (!isHttpUrl) {
+            throw new Error('Unable to resolve PDF bytes for non-HTTP URL without embedded data.');
           }
 
-          throw new Error('This browser does not support fetching PDF blobs for preview.');
+          if (typeof fetch !== 'function') {
+            throw new Error('This browser does not support fetching PDF blobs for preview.');
+          }
+
+          const response = await fetch(normalizedUrl);
+          if (!response.ok) {
+            throw new Error(`Unexpected response (${response.status}) while retrieving PDF.`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          return new Uint8Array(arrayBuffer);
         };
 
         const pdfBytes = await ensurePdfBytes();

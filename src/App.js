@@ -16,7 +16,7 @@ import StorageNotification, { useStorageNotifications } from './components/Stora
 
 // Utility
 import { v4 as uuidv4 } from 'uuid';
-import authService, { initializeAuth } from './services/authService';
+import authService, { initializeAuth, handleLogout } from './services/authService';
 import { search as ragSearch } from './services/ragService';
 import openaiService from './services/openaiService';
 
@@ -47,6 +47,7 @@ import {
 } from './utils/internalResourceUtils';
 
 const COOLDOWN_SECONDS = 10;
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 const normalizeValue = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
@@ -176,6 +177,70 @@ function App() {
     messages.length
   );
   const adminResourcesLoadedRef = useRef(false);
+  const inactivityTimerRef = useRef(null);
+
+  const handleLogoutComplete = useCallback(() => {
+    setIsAuthenticated(false);
+    setUser(null);
+    setLearningSuggestions([]);
+    setShowRAGConfig(false);
+    setShowAdmin(false);
+    setShowNotebook(false);
+    setShowSupport(false);
+  }, []);
+
+  const handleAutoLogout = useCallback(async () => {
+    console.log('User inactive for 15 minutes - logging out');
+    try {
+      await handleLogout();
+    } catch (error) {
+      console.error('Auto logout failed:', error);
+    } finally {
+      handleLogoutComplete();
+    }
+  }, [handleLogoutComplete]);
+
+  const resetInactivityTimer = useCallback(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+    }
+
+    inactivityTimerRef.current = setTimeout(() => {
+      handleAutoLogout();
+    }, INACTIVITY_TIMEOUT_MS);
+  }, [handleAutoLogout, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+      return;
+    }
+
+    const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+
+    const handleActivity = () => {
+      resetInactivityTimer();
+    };
+
+    activityEvents.forEach((event) => window.addEventListener(event, handleActivity));
+
+    resetInactivityTimer();
+
+    return () => {
+      activityEvents.forEach((event) => window.removeEventListener(event, handleActivity));
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+    };
+  }, [isAuthenticated, resetInactivityTimer]);
 
   const refreshAdminResources = useCallback(async () => {
     try {
@@ -957,12 +1022,6 @@ function App() {
   }, [refreshAdminResources]);
   const handleShowAdmin = useCallback(() => setShowAdmin(true), []);
   const handleCloseAdmin = useCallback(() => setShowAdmin(false), []);
-
-  const handleLogoutComplete = useCallback(() => {
-    setIsAuthenticated(false);
-    setUser(null);
-    setLearningSuggestions([]); // Clear suggestions on logout
-  }, []);
 
   return (
     <ErrorBoundary>

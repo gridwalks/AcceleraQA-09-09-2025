@@ -170,8 +170,8 @@ npm run build
 ### AI Integration
 - OpenAI GPT-4 integration
 - Pharmaceutical-specific prompts
-- File uploads via Files API with in-message file references
-- Document metadata and vector store IDs persisted in Neon PostgreSQL for cross-device access while files remain in OpenAI's File Assistant
+- Document ingestion and retrieval via Netlify functions backed by Neon PostgreSQL full-text search
+- Secure document metadata persistence in Neon for cross-device access
 - Error handling and rate limiting
 - Usage tracking
 
@@ -194,7 +194,9 @@ npm run build
 2. Set environment variables in Netlify dashboard
    - `OPENAI_API_KEY` for serverless calls to OpenAI
    - `REACT_APP_OPENAI_API_KEY` for client-side features
-3. Deploy with automatic builds. Netlify will expose the `openai-file-search` function at `/api/rag/*` to proxy requests to OpenAI's file-search API.
+   - `NEON_DATABASE_URL` for the Neon PostgreSQL document store
+   - `REACT_APP_RAG_BACKEND=neon` if you need to override the default locally
+3. Deploy with automatic builds. Netlify will execute the Neon-backed RAG functions to serve document search and storage.
 
 ### Environment Variables in Netlify:
 ```bash
@@ -208,13 +210,7 @@ JIRA_API_TOKEN=your_atlassian_api_token
 JIRA_SERVICE_DESK_ID=your_service_desk_id
 JIRA_REQUEST_TYPE_ID=your_request_type_id
 ```
-### Vector Store Preparation
-
-Run the OpenAI vector store setup script to create a store for RAG document search:
-
-```bash
-npm run setup:vectorstore
-```
+> **Note:** The RAG workflow now uses the Neon-backed Netlify functions (`neon-rag-fixed`, `neon-db`, and `rag-documents`) instead of the OpenAI File Assistant. Ensure your Neon connection string has permission to create the required tables on first run.
 ## 🔍 Troubleshooting
 
 ### Common Issues

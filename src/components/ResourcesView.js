@@ -31,6 +31,7 @@ const createInitialViewerState = () => ({
   contentType: '',
   allowDownload: false,
   url: '',
+  blobData: null,
 });
 
 const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [], thirtyDayMessages = [], onConversationSelect }) => {
@@ -86,6 +87,32 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const decodeBase64ToUint8Array = useCallback((base64) => {
     if (!base64) return null;
 
+    const normalizeBase64 = (value) => {
+      if (!value) return '';
+      let sanitized = value.trim();
+
+      const dataUrlMatch = sanitized.match(/^data:([^;,]+);base64,(.*)$/i);
+      if (dataUrlMatch) {
+        sanitized = dataUrlMatch[2];
+      }
+
+      sanitized = sanitized.replace(/\s+/g, '');
+      sanitized = sanitized.replace(/-/g, '+').replace(/_/g, '/');
+
+      const padding = sanitized.length % 4;
+      if (padding === 2) sanitized += '==';
+      if (padding === 3) sanitized += '=';
+      if (padding === 1) {
+        console.error('Invalid base64 string length.');
+        return null;
+      }
+
+      return sanitized;
+    };
+
+    const normalized = normalizeBase64(base64);
+    if (!normalized) return null;
+
     const atobFn =
       (typeof window !== 'undefined' && typeof window.atob === 'function')
         ? window.atob
@@ -99,7 +126,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     }
 
     try {
-      const byteCharacters = atobFn(base64);
+      const byteCharacters = atobFn(normalized);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i += 1) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
@@ -263,6 +290,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         contentType,
         allowDownload: true,
         url: resolvedUrl,
+        blobData: null,
       });
       logDocumentUrl(resolvedUrl, 'resource metadata');
       setIsViewerLoading(false);
@@ -281,6 +309,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         contentType,
         allowDownload: false,
         url: '',
+        blobData: null,
       });
       setViewerError('This resource does not include a downloadable document.');
       setIsViewerLoading(false);
@@ -297,6 +326,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       filename: fallbackFilename,
       contentType,
       allowDownload: false,
+      blobData: null,
     });
 
     try {
@@ -314,6 +344,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
           filename: response.filename || fallbackFilename,
           contentType: response.contentType || contentType,
           allowDownload: true,
+          blobData: null,
         });
         logDocumentUrl(responseUrl, 'backend download URL');
         setIsViewerLoading(false);
@@ -343,6 +374,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         filename: response.filename || fallbackFilename,
         contentType: response.contentType || contentType,
         allowDownload: true,
+        blobData: byteArray,
       });
       logDocumentUrl(objectUrlResult.url, 'generated object URL');
       setIsViewerLoading(false);
@@ -652,6 +684,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         isOpen={viewerState.isOpen}
         title={viewerState.title}
         url={viewerState.url}
+        blobData={viewerState.blobData}
         contentType={viewerState.contentType}
         filename={viewerState.filename}
         isLoading={isViewerLoading}
@@ -665,20 +698,193 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
 const isBlobLikeUrl = (candidate) => typeof candidate === 'string' && (candidate.startsWith('blob:') || candidate.startsWith('data:'));
 
-const buildPdfSrcDoc = (url) => {
-  if (!url) return '';
-  const escapedUrl = url
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><style>html,body{margin:0;padding:0;height:100%;background:#f9fafb;}body{margin:0;height:100%;}embed{width:100%;height:100%;border:0;}</style></head><body><embed src="${escapedUrl}" type="application/pdf" /></body></html>`;
-};
+export const PdfBlobViewer = memo(({ url, title, blobData }) => {
+  const containerRef = useRef(null);
+  const [{ isRendering, error }, setRenderState] = useState({ isRendering: true, error: null });
 
-const DocumentViewer = ({
+  useEffect(() => {
+    let isCancelled = false;
+    let cleanupTasks = [];
+    const container = containerRef.current;
+
+    if (!container || (!url && !blobData)) {
+      setRenderState((prev) => ({ ...prev, isRendering: false, error: 'PDF preview is unavailable.' }));
+      return () => {};
+    }
+
+    container.innerHTML = '';
+    setRenderState({ isRendering: true, error: null });
+
+    const renderDocument = async () => {
+      try {
+        const [pdfCore, workerModule] = await Promise.all([
+          import('pdfjs-dist/build/pdf'),
+          import('pdfjs-dist/build/pdf.worker.entry'),
+        ]);
+
+        const { GlobalWorkerOptions, getDocument } = pdfCore;
+        const workerSrc = workerModule?.default || workerModule;
+
+        if (GlobalWorkerOptions && workerSrc) {
+          GlobalWorkerOptions.workerSrc = workerSrc;
+        }
+
+        const ensurePdfBytes = async () => {
+          if (blobData instanceof Uint8Array) {
+            return blobData;
+          }
+
+          if (blobData instanceof ArrayBuffer) {
+            return new Uint8Array(blobData);
+          }
+
+          if (!url) {
+            throw new Error('No PDF URL available for preview.');
+          }
+
+          if (typeof fetch === 'function') {
+            const response = await fetch(url);
+            if (!response.ok) {
+              throw new Error(`Unexpected response (${response.status}) while retrieving PDF.`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            return new Uint8Array(arrayBuffer);
+          }
+
+          throw new Error('This browser does not support fetching PDF blobs for preview.');
+        };
+
+        const pdfBytes = await ensurePdfBytes();
+
+        if (!pdfBytes || pdfBytes.length === 0) {
+          throw new Error('The PDF file is empty.');
+        }
+
+        const loadingTask = getDocument({ data: pdfBytes });
+        if (!loadingTask || typeof loadingTask.promise?.then !== 'function') {
+          throw new Error('PDF.js did not return a loading task.');
+        }
+        cleanupTasks.push(() => {
+          try {
+            loadingTask.destroy?.();
+          } catch (destroyError) {
+            console.warn('Failed to destroy PDF loading task:', destroyError);
+          }
+        });
+
+        const pdfDocument = await loadingTask.promise;
+
+        if (isCancelled) {
+          pdfDocument.destroy?.();
+          return;
+        }
+
+        const renderPage = async (pageNumber) => {
+          const page = await pdfDocument.getPage(pageNumber);
+          const baseViewport = page.getViewport({ scale: 1 });
+          const containerWidth = container.clientWidth || baseViewport.width;
+          const computedScale = containerWidth / baseViewport.width || 1;
+          const scale = Math.min(Math.max(computedScale, 0.5), 2.5);
+          const viewport = page.getViewport({ scale });
+
+          const pageWrapper = document.createElement('div');
+          pageWrapper.className = 'mb-6 flex justify-center';
+
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
+          canvas.className = 'shadow-sm border border-gray-200 rounded';
+          pageWrapper.appendChild(canvas);
+          container.appendChild(pageWrapper);
+
+          const canvasContext = canvas.getContext('2d');
+          await page.render({ canvasContext, viewport }).promise;
+          page.cleanup();
+        };
+
+        for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+          if (isCancelled) break;
+          // eslint-disable-next-line no-await-in-loop
+          await renderPage(pageNumber);
+        }
+
+        if (!isCancelled) {
+          setRenderState({ isRendering: false, error: null });
+        }
+
+        cleanupTasks.push(() => {
+          try {
+            pdfDocument.cleanup?.();
+            pdfDocument.destroy?.();
+          } catch (cleanupError) {
+            console.warn('Failed to clean up PDF document:', cleanupError);
+          }
+        });
+      } catch (renderError) {
+        console.error('Failed to render PDF blob preview:', renderError);
+        if (!isCancelled) {
+          const message =
+            renderError?.name === 'UnexpectedResponseException' ||
+            /Unexpected response/i.test(renderError?.message || '') ||
+            /Failed to fetch/i.test(renderError?.message || '')
+              ? 'Browser security settings prevented the PDF preview. Please download the file to view it.'
+              : 'Unable to display this PDF document in the preview.';
+          setRenderState({
+            isRendering: false,
+            error: message,
+          });
+        }
+      }
+    };
+
+    renderDocument();
+
+    return () => {
+      isCancelled = true;
+      cleanupTasks.forEach((task) => {
+        try {
+          task();
+        } catch (cleanupError) {
+          console.warn('Failed to execute PDF cleanup task:', cleanupError);
+        }
+      });
+      cleanupTasks = [];
+      if (container) {
+        container.innerHTML = '';
+      }
+    };
+  }, [url, blobData]);
+
+  return (
+    <div className="relative h-full w-full bg-white" data-testid="pdf-blob-viewer">
+      <div
+        ref={containerRef}
+        className="h-full w-full overflow-y-auto px-6 py-6"
+        role="document"
+        aria-label={`${title || 'PDF document'} preview`}
+      />
+      {isRendering && !error ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center space-y-3 bg-white/80">
+          <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+          <p className="text-sm text-gray-600">Rendering PDF...</p>
+        </div>
+      ) : null}
+      {error ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-white px-6 text-center">
+          <p className="text-sm text-gray-600">{error}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+export const DocumentViewer = ({
   isOpen,
   title,
   url,
+  blobData,
   contentType,
   isLoading,
   onClose,
@@ -715,11 +921,7 @@ const DocumentViewer = ({
       );
     } else if (isPdfDocument && blobUrl) {
       viewerContent = (
-        <iframe
-          title={safeTitle}
-          srcDoc={buildPdfSrcDoc(url)}
-          className="h-full w-full border-0 bg-white"
-        />
+        <PdfBlobViewer url={url} title={safeTitle} blobData={blobData} />
       );
     } else if (isPdfDocument) {
       viewerContent = (
@@ -1054,5 +1256,7 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDo
 SuggestionCard.displayName = 'SuggestionCard';
 ResourceCard.displayName = 'ResourceCard';
 ResourcesView.displayName = 'ResourcesView';
+PdfBlobViewer.displayName = 'PdfBlobViewer';
+DocumentViewer.displayName = 'DocumentViewer';
 
 export default ResourcesView;

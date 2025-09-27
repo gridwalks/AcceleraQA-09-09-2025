@@ -761,6 +761,10 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
           }
 
           const normalizedUrl = `${url}`;
+          const isObjectOrDataUrl = isBlobLikeUrl(normalizedUrl);
+          if (isObjectOrDataUrl) {
+            throw new Error('Failed to fetch PDF bytes due to browser security settings.');
+          }
           const isHttpUrl = /^https?:/i.test(normalizedUrl);
 
           if (!isHttpUrl) {

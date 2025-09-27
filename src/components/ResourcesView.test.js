@@ -89,4 +89,51 @@ describe('DocumentViewer', () => {
       global.fetch = originalFetch;
     }
   });
+
+  it('shows a friendly CSP warning when blob URLs lack blobData', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () => {
+        root.render(
+          <DocumentViewer
+            isOpen
+            title="Test PDF"
+            url="blob:https://example.com/test"
+            blobData={null}
+            contentType="application/pdf"
+            filename="test.pdf"
+            isLoading={false}
+            error={null}
+            onClose={() => {}}
+            allowDownload
+          />
+        );
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const pdfViewer = container.querySelector('[data-testid="pdf-blob-viewer"]');
+      expect(pdfViewer).not.toBeNull();
+      expect(pdfViewer.textContent).toContain(
+        'Browser security settings prevented the PDF preview. Please download the file to view it.'
+      );
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      document.body.removeChild(container);
+      global.fetch = originalFetch;
+    }
+  });
 });

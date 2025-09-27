@@ -17,7 +17,7 @@ import StorageNotification, { useStorageNotifications } from './components/Stora
 // Utility
 import { v4 as uuidv4 } from 'uuid';
 import authService, { initializeAuth, handleLogout } from './services/authService';
-import { search as ragSearch } from './services/ragService';
+import ragService, { search as ragSearch } from './services/ragService';
 import openaiService from './services/openaiService';
 
 import {

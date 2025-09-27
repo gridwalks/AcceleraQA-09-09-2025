@@ -554,7 +554,7 @@ function App() {
         : undefined;
 
       const response = ragEnabled && !preparedFile
-        ? await ragSearch(rawInput, user?.sub, ragSearchOptions)
+        ? await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory)
         : await openaiService.getChatResponse(
             rawInput,
             preparedFile,

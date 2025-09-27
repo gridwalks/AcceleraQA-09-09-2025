@@ -87,6 +87,32 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const decodeBase64ToUint8Array = useCallback((base64) => {
     if (!base64) return null;
 
+    const normalizeBase64 = (value) => {
+      if (!value) return '';
+      let sanitized = value.trim();
+
+      const dataUrlMatch = sanitized.match(/^data:([^;,]+);base64,(.*)$/i);
+      if (dataUrlMatch) {
+        sanitized = dataUrlMatch[2];
+      }
+
+      sanitized = sanitized.replace(/\s+/g, '');
+      sanitized = sanitized.replace(/-/g, '+').replace(/_/g, '/');
+
+      const padding = sanitized.length % 4;
+      if (padding === 2) sanitized += '==';
+      if (padding === 3) sanitized += '=';
+      if (padding === 1) {
+        console.error('Invalid base64 string length.');
+        return null;
+      }
+
+      return sanitized;
+    };
+
+    const normalized = normalizeBase64(base64);
+    if (!normalized) return null;
+
     const atobFn =
       (typeof window !== 'undefined' && typeof window.atob === 'function')
         ? window.atob
@@ -100,7 +126,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     }
 
     try {
-      const byteCharacters = atobFn(base64);
+      const byteCharacters = atobFn(normalized);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i += 1) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);

@@ -85,6 +85,46 @@ const inflateGzipBytes = async (gzipBytes) => {
   return gzipBytes;
 };
 
+const PDF_HEADER_BYTES = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+
+const hasPdfHeader = (bytes) =>
+  bytes && bytes.length >= PDF_HEADER_BYTES.length && PDF_HEADER_BYTES.every((value, index) => bytes[index] === value);
+
+const sniffBytesAsText = (bytes) => {
+  if (!bytes || bytes.length === 0) return '';
+
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true });
+    const slice = bytes.length > 512 ? bytes.subarray(0, 512) : bytes;
+    return decoder.decode(slice).trim();
+  } catch (error) {
+    console.warn('Failed to decode sniff bytes as text.', error);
+    return '';
+  }
+};
+
+const ensureValidPdfBytes = async (bytes) => {
+  if (!bytes) return bytes;
+
+  const normalizedBytes = await inflateGzipBytes(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+
+  if (!normalizedBytes || normalizedBytes.length === 0) {
+    throw new Error('The PDF file is empty.');
+  }
+
+  if (!hasPdfHeader(normalizedBytes)) {
+    const sniff = sniffBytesAsText(normalizedBytes);
+    const error = new Error('PDF bytes invalid or corrupted.');
+    error.name = 'InvalidPdfBytesError';
+    if (sniff) {
+      error.sniff = sniff;
+    }
+    throw error;
+  }
+
+  return normalizedBytes;
+};
+
 export const decodeBase64ToUint8Array = async (base64) => {
   if (!base64) return null;
 
@@ -808,17 +848,19 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
             if (ArrayBuffer.isView(blobData)) {
               const view = blobData;
               const { buffer, byteOffset = 0, byteLength = view.byteLength } = view;
-              return new Uint8Array(buffer.slice(byteOffset, byteOffset + byteLength));
+              return ensureValidPdfBytes(
+                new Uint8Array(buffer.slice(byteOffset, byteOffset + byteLength))
+              );
             }
 
             if (blobData instanceof ArrayBuffer) {
-              return new Uint8Array(blobData.slice(0));
+              return ensureValidPdfBytes(new Uint8Array(blobData.slice(0)));
             }
 
             const BlobConstructor = typeof Blob !== 'undefined' ? Blob : null;
             if (BlobConstructor && blobData instanceof BlobConstructor) {
               const arrayBuffer = await blobData.arrayBuffer();
-              return new Uint8Array(arrayBuffer);
+              return ensureValidPdfBytes(new Uint8Array(arrayBuffer));
             }
           }
 
@@ -841,19 +883,21 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
             throw new Error('This browser does not support fetching PDF blobs for preview.');
           }
 
-          const response = await fetch(normalizedUrl);
+          const response = await fetch(normalizedUrl, {
+            credentials: 'include',
+            headers: {
+              Accept: 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8',
+            },
+          });
           if (!response.ok) {
             throw new Error(`Unexpected response (${response.status}) while retrieving PDF.`);
           }
           const arrayBuffer = await response.arrayBuffer();
-          return new Uint8Array(arrayBuffer);
+          const pdfBytes = new Uint8Array(arrayBuffer);
+          return ensureValidPdfBytes(pdfBytes);
         };
 
         const pdfBytes = await ensurePdfBytes();
-
-        if (!pdfBytes || pdfBytes.length === 0) {
-          throw new Error('The PDF file is empty.');
-        }
 
         const loadingTask = getDocument({ data: pdfBytes });
         if (!loadingTask || typeof loadingTask.promise?.then !== 'function') {
@@ -919,6 +963,9 @@ export const PdfBlobViewer = memo(({ url, title, blobData }) => {
         });
       } catch (renderError) {
         console.error('Failed to render PDF blob preview:', renderError);
+        if (renderError?.name === 'InvalidPdfBytesError' && renderError.sniff) {
+          console.error('Non-PDF payload preview snippet:', renderError.sniff);
+        }
         if (!isCancelled) {
           const message =
             renderError?.name === 'UnexpectedResponseException' ||

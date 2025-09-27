@@ -61,7 +61,7 @@ exports.handler = async (event) => {
 
   try {
     if (event.httpMethod === 'GET') {
-      return handleGet(event);
+      return await handleGet(event);
     }
 
     if (event.httpMethod !== 'POST') {
@@ -82,7 +82,7 @@ exports.handler = async (event) => {
     }
 
     const requestId = getRequestId(event.headers);
-    const response = processSummarizationRequest(body, requestId);
+    const response = await processSummarizationRequest(body, requestId);
 
     return {
       statusCode: 202,
@@ -102,7 +102,7 @@ exports.handler = async (event) => {
   }
 };
 
-function handleGet(event) {
+async function handleGet(event) {
   const params = event.queryStringParameters || {};
   const summaryId = params.summary_id || params.id || params.summaryId;
 
@@ -114,7 +114,10 @@ function handleGet(event) {
     };
   }
 
-  const record = summaryStore.get(summaryId);
+  let record = summaryStore.get(summaryId);
+  if (!record) {
+    record = await fetchSummaryFromDatabase(summaryId);
+  }
   if (!record) {
     return {
       statusCode: 404,
@@ -152,7 +155,7 @@ function getRequestId(headers = {}) {
   return `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function processSummarizationRequest(body, requestId) {
+async function processSummarizationRequest(body, requestId) {
   const diagnostics = [];
   const startedAt = Date.now();
 
@@ -183,7 +186,7 @@ function processSummarizationRequest(body, requestId) {
   const guardrails = runGuardrails(orchestration.summaryText, orchestration.citations, mode);
   diagnostics.push({ stage: 'guardrails', message: 'Guardrails evaluated', metadata: guardrails });
 
-  const record = persistSummary(document, mode, orchestration, guardrails, requestId);
+  const record = await persistSummary(document, mode, orchestration, guardrails, requestId);
   diagnostics.push({ stage: 'persist', message: 'Summary persisted', metadata: { summaryId: record.summary_id } });
 
   const latencyMs = Date.now() - startedAt;
@@ -591,7 +594,7 @@ function runGuardrails(summaryText, citations, mode) {
   };
 }
 
-function persistSummary(document, mode, orchestration, guardrails, requestId) {
+async function persistSummary(document, mode, orchestration, guardrails, requestId) {
   const summaryId = `sum_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   const nowIso = new Date().toISOString();
   const confidence = calculateConfidence(orchestration.citations, guardrails.violations);
@@ -612,7 +615,166 @@ function persistSummary(document, mode, orchestration, guardrails, requestId) {
   };
 
   summaryStore.set(summaryId, record);
+  const sql = await getSqlClient();
+  if (!sql) {
+    console.warn('Neon database not configured; summary stored in memory only.');
+    return record;
+  }
+
+  try {
+    await ensureSummariesTable(sql);
+    await sql`
+      INSERT INTO summaries (
+        summary_id,
+        doc_id,
+        title,
+        mode,
+        model,
+        prompt_hash,
+        citations,
+        confidence,
+        created_at,
+        request_id,
+        summary,
+        guardrails
+      ) VALUES (
+        ${record.summary_id},
+        ${record.doc_id},
+        ${record.title},
+        ${sql.json(record.mode)},
+        ${record.model},
+        ${record.prompt_hash},
+        ${sql.json(record.citations)},
+        ${record.confidence},
+        ${record.created_at},
+        ${record.request_id},
+        ${record.summary},
+        ${sql.json(record.guardrails)}
+      )
+      ON CONFLICT (summary_id) DO UPDATE SET
+        doc_id = EXCLUDED.doc_id,
+        title = EXCLUDED.title,
+        mode = EXCLUDED.mode,
+        model = EXCLUDED.model,
+        prompt_hash = EXCLUDED.prompt_hash,
+        citations = EXCLUDED.citations,
+        confidence = EXCLUDED.confidence,
+        request_id = EXCLUDED.request_id,
+        summary = EXCLUDED.summary,
+        guardrails = EXCLUDED.guardrails,
+        updated_at = NOW();
+    `;
+  } catch (error) {
+    console.error('Failed to persist summary to Neon database', error);
+  }
+
   return record;
+}
+
+let cachedSqlClient = null;
+let hasEnsuredSummariesTable = false;
+
+async function getSqlClient() {
+  if (cachedSqlClient) {
+    return cachedSqlClient;
+  }
+
+  const connectionString = process.env.NEON_DATABASE_URL;
+  if (!connectionString) {
+    return null;
+  }
+
+  try {
+    const { neon } = await import('@neondatabase/serverless');
+    cachedSqlClient = neon(connectionString);
+    return cachedSqlClient;
+  } catch (error) {
+    console.error('Failed to initialize Neon client', error);
+    return null;
+  }
+}
+
+async function ensureSummariesTable(sql) {
+  if (hasEnsuredSummariesTable) {
+    return;
+  }
+
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS summaries (
+        summary_id TEXT PRIMARY KEY,
+        doc_id TEXT NOT NULL,
+        title TEXT,
+        mode JSONB NOT NULL,
+        model TEXT NOT NULL,
+        prompt_hash TEXT NOT NULL,
+        citations JSONB NOT NULL,
+        confidence DOUBLE PRECISION,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        request_id TEXT,
+        summary TEXT NOT NULL,
+        guardrails JSONB NOT NULL
+      );
+    `;
+    hasEnsuredSummariesTable = true;
+  } catch (error) {
+    console.error('Failed to ensure summaries table exists', error);
+  }
+}
+
+async function fetchSummaryFromDatabase(summaryId) {
+  const sql = await getSqlClient();
+  if (!sql) {
+    return null;
+  }
+
+  try {
+    const rows = await sql`
+      SELECT
+        summary_id,
+        doc_id,
+        title,
+        mode,
+        model,
+        prompt_hash,
+        citations,
+        confidence,
+        created_at,
+        request_id,
+        summary,
+        guardrails
+      FROM summaries
+      WHERE summary_id = ${summaryId}
+      LIMIT 1;
+    `;
+
+    if (!rows || rows.length === 0) {
+      return null;
+    }
+
+    const row = rows[0];
+    const record = {
+      summary_id: row.summary_id,
+      doc_id: row.doc_id,
+      title: row.title,
+      mode: row.mode,
+      model: row.model,
+      prompt_hash: row.prompt_hash,
+      citations: row.citations,
+      confidence: typeof row.confidence === 'number' ? Number(row.confidence.toFixed(2)) : row.confidence,
+      created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+      request_id: row.request_id,
+      summary: row.summary,
+      guardrails: row.guardrails,
+    };
+
+    summaryStore.set(summaryId, record);
+    return record;
+  } catch (error) {
+    console.error('Failed to load summary from Neon database', error);
+    return null;
+  }
 }
 
 function calculateConfidence(citations, violations) {

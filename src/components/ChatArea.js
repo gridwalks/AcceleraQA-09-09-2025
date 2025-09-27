@@ -710,7 +710,7 @@ const ChatArea = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
-              AcceleraQA Assistant
+              Document Assistant
             </h2>
             {isSaving && (
               <div className="flex items-center space-x-2 text-sm text-blue-600">

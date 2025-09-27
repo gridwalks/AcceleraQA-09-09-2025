@@ -7,8 +7,8 @@ export const APP_CONFIG = {
 
 // OpenAI Configuration
 export const OPENAI_CONFIG = {
-  MODEL: 'gpt-4o-mini',
-  SUGGESTIONS_MODEL: 'gpt-4o-mini',
+  MODEL: 'chatgpt-4.1',
+  SUGGESTIONS_MODEL: 'gpt-4.1-mini',
   MAX_TOKENS: 1200,
   TEMPERATURE: 0.7,
   SYSTEM_PROMPT: `You are AcceleraQA, an AI assistant for pharmaceutical quality, compliance, and clinical trial integrity.

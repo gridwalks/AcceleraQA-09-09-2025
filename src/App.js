@@ -764,7 +764,7 @@ function App() {
       const notesContent = typeof notesResult?.answer === 'string' ? notesResult.answer.trim() : '';
 
       if (!notesContent) {
-        throw new Error('The assistant did not return any study notes.');
+        throw new Error('The assistant did not return any notes.');
       }
 
 
@@ -806,7 +806,7 @@ function App() {
           selectedConversationIds: selectedConversations.map((conversation) => conversation.id),
           selectedTopics: topTopics.length
             ? topTopics.join('\n')
-            : 'Study notes generated from your selected conversations.',
+            : 'Notes generated from your selected conversations.',
           selectedTopicsList: topTopics,
           content: notesContent,
           resourceCount: resources.length,
@@ -821,14 +821,14 @@ function App() {
       setMessages((prev) => [...prev, studyNotesMessage]);
       setSelectedMessages(new Set());
     } catch (error) {
-      console.error('Error generating study notes:', error);
+      console.error('Error generating notes:', error);
       setMessages((prev) => [
         ...prev,
         {
           id: uuidv4(),
           role: 'assistant',
           type: 'ai',
-          content: `I couldn't generate study notes: ${error.message || 'Unknown error occurred.'}`,
+          content: `I couldn't generate notes: ${error.message || 'Unknown error occurred.'}`,
           timestamp: Date.now(),
           resources: [],
           sources: [],

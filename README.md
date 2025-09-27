@@ -154,6 +154,11 @@ npm run build
 - [AcceleraQA Summary-Generation Pipeline Architecture](docs/summary-generation-pipeline.md): end-to-end design for the role-aware, citation-backed summarization service that powers Ask Summarize, focus lenses, and downstream integrations.
 - [Front-end integration for the summary pipeline](docs/summary-pipeline-frontend.md): explains how the React client invokes the Netlify function, decodes document content, and renders summaries with guardrail diagnostics.
 
+### Document Retrieval Flow
+
+- **Download Source**: All document downloads are issued through `ragService.downloadDocument`, which posts to the Netlify function configured by `REACT_APP_RAG_DOCS_FUNCTION` (defaults to `/.netlify/functions/rag-documents`). The request includes the authenticated user's bearer token and user ID so the function can authorize access before streaming the file back to the browser.
+- **Viewer Handling**: `ResourcesView` consumes the response metadata, creates an object URL for the returned blob, and injects the URL into the in-app document viewer. If a direct download link is provided in the metadata, the component exposes it as a fallback download option.
+
 ## 🧪 Key Features
 
 ### Authentication

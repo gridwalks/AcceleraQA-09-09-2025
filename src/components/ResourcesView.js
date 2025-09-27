@@ -55,6 +55,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const [viewerError, setViewerError] = useState(null);
   const activeObjectUrlRef = useRef(null);
   const viewerRequestRef = useRef(0);
+  const userId = user?.sub || null;
 
   const conversations = useMemo(() => {
     const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
@@ -155,6 +156,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       }
     }
     activeObjectUrlRef.current = null;
+  }, []);
+
+  const logDocumentUrl = useCallback((url, sourceLabel) => {
+    if (!url) return;
+    console.log(`Document viewer URL (${sourceLabel}):`, url);
   }, []);
 
   const closeDocumentViewer = useCallback(() => {
@@ -258,6 +264,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         allowDownload: true,
         url: resolvedUrl,
       });
+      logDocumentUrl(resolvedUrl, 'resource metadata');
       setIsViewerLoading(false);
       return;
     }
@@ -293,7 +300,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     });
 
     try {
-      const response = await ragService.downloadDocument({ documentId, fileId });
+      const response = await ragService.downloadDocument({ documentId, fileId }, userId);
       if (viewerRequestRef.current !== requestId) return;
       if (!response) throw new Error('No response received from download request');
 
@@ -308,6 +315,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
           contentType: response.contentType || contentType,
           allowDownload: true,
         });
+        logDocumentUrl(responseUrl, 'backend download URL');
         setIsViewerLoading(false);
         return;
       }
@@ -336,6 +344,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         contentType: response.contentType || contentType,
         allowDownload: true,
       });
+      logDocumentUrl(objectUrlResult.url, 'generated object URL');
       setIsViewerLoading(false);
     } catch (error) {
       console.error('Failed to open resource document:', error);
@@ -346,7 +355,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     } finally {
       setDownloadingResourceId((current) => (current === resourceKey ? null : current));
     }
-  }, [createObjectUrlFromBlob, decodeBase64ToUint8Array, getResourceKey, revokeActiveObjectUrl]);
+  }, [createObjectUrlFromBlob, decodeBase64ToUint8Array, getResourceKey, revokeActiveObjectUrl, userId]);
 
   const handleSuggestionClick = (suggestion) => {
     if (suggestion?.url) {
@@ -654,6 +663,18 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   );
 });
 
+const isBlobLikeUrl = (candidate) => typeof candidate === 'string' && (candidate.startsWith('blob:') || candidate.startsWith('data:'));
+
+const buildPdfSrcDoc = (url) => {
+  if (!url) return '';
+  const escapedUrl = url
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><style>html,body{margin:0;padding:0;height:100%;background:#f9fafb;}body{margin:0;height:100%;}embed{width:100%;height:100%;border:0;}</style></head><body><embed src="${escapedUrl}" type="application/pdf" /></body></html>`;
+};
+
 const DocumentViewer = ({
   isOpen,
   title,
@@ -668,6 +689,58 @@ const DocumentViewer = ({
   if (!isOpen) return null;
 
   const safeTitle = title || 'Document';
+  const normalizedContentType = (contentType || '').toLowerCase();
+  const normalizedFilename = (filename || '').toLowerCase();
+  const hasUrl = typeof url === 'string' && url.length > 0;
+  const blobUrl = hasUrl && isBlobLikeUrl(url);
+  const isPdfDocument =
+    normalizedContentType.includes('pdf') ||
+    normalizedFilename.endsWith('.pdf');
+  const isImageDocument =
+    normalizedContentType.startsWith('image/') ||
+    /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(normalizedFilename);
+
+  let viewerContent = null;
+
+  if (hasUrl) {
+    if (isImageDocument) {
+      viewerContent = (
+        <div className="flex h-full items-center justify-center bg-white">
+          <img
+            src={url}
+            alt={safeTitle}
+            className="max-h-full max-w-full object-contain"
+          />
+        </div>
+      );
+    } else if (isPdfDocument && blobUrl) {
+      viewerContent = (
+        <iframe
+          title={safeTitle}
+          srcDoc={buildPdfSrcDoc(url)}
+          className="h-full w-full border-0 bg-white"
+        />
+      );
+    } else if (isPdfDocument) {
+      viewerContent = (
+        <iframe title={safeTitle} src={url} className="h-full w-full border-0 bg-white" />
+      );
+    } else if (!blobUrl) {
+      viewerContent = (
+        <iframe title={safeTitle} src={url} className="h-full w-full border-0 bg-white" />
+      );
+    } else {
+      viewerContent = (
+        <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
+          <FileText className="h-10 w-10 text-gray-300" />
+          <p className="text-sm">This document format cannot be previewed securely.</p>
+          {allowDownload ? (
+            <p className="text-xs text-gray-400">Use the download button to view it in a new tab.</p>
+          ) : null}
+        </div>
+      );
+    }
+  }
 
   return (
     <div
@@ -731,8 +804,8 @@ const DocumentViewer = ({
                 </a>
               )}
             </div>
-          ) : url ? (
-            <iframe title={safeTitle} src={url} className="h-full w-full border-0 bg-white" />
+          ) : viewerContent ? (
+            viewerContent
           ) : (
             <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
               <FileText className="h-10 w-10 text-gray-300" />

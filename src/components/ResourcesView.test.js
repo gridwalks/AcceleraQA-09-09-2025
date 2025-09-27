@@ -124,6 +124,52 @@ describe('DocumentViewer', () => {
     }
   });
 
+  it('accepts PDF bytes when the %PDF- header has a BOM or leading whitespace', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+      const encoder = new TextEncoder();
+      const pdfBody = '%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n';
+      const encoded = encoder.encode(pdfBody);
+      const bomPrefixed = new Uint8Array(encoded.length + 4);
+      bomPrefixed.set([0xef, 0xbb, 0xbf, 0x0a]);
+      bomPrefixed.set(encoded, 4);
+
+      await act(async () => {
+        root.render(
+          <DocumentViewer
+            isOpen
+            title="Test PDF"
+            url="blob:https://example.com/test"
+            blobData={bomPrefixed}
+            contentType="application/pdf"
+            filename="test.pdf"
+            isLoading={false}
+            error={null}
+            onClose={() => {}}
+            allowDownload
+          />
+        );
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockGetDocument).toHaveBeenCalledWith(expect.objectContaining({ data: expect.any(Uint8Array) }));
+      const [{ data }] = mockGetDocument.mock.calls[0];
+      const header = new TextDecoder().decode(data.subarray(0, 5));
+      expect(header).toBe('%PDF-');
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      document.body.removeChild(container);
+    }
+  });
+
   it('shows a friendly CSP warning when blob URLs lack blobData', async () => {
     const originalFetch = global.fetch;
     const fetchMock = jest.fn();

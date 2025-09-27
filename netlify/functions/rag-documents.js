@@ -284,6 +284,37 @@ const handleSaveDocument = async (sql, userId, payload) => {
   });
 };
 
+const isJsonLikeContentType = (contentType = '') => {
+  const lower = contentType.toLowerCase();
+  return lower.includes('application/json') || lower.includes('+json') || lower.includes('text/json');
+};
+
+const payloadContainsVectorStoreDescriptor = (payload) => {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const objectValue = typeof payload.object === 'string' ? payload.object.toLowerCase() : '';
+  if (objectValue.includes('vector_store')) {
+    return true;
+  }
+
+  const typeValue = typeof payload.type === 'string' ? payload.type.toLowerCase() : '';
+  if (typeValue.includes('vector_store')) {
+    return true;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'vector_store') || Object.prototype.hasOwnProperty.call(payload, 'vector_store_id')) {
+    return true;
+  }
+
+  if (Array.isArray(payload.data)) {
+    return payload.data.some(item => payloadContainsVectorStoreDescriptor(item));
+  }
+
+  return false;
+};
+
 const downloadDocumentContentFromOpenAI = async ({ apiKey, fileId, vectorStoreId }) => {
   if (!fileId) {
     return { error: 'File identifier is required to download document content', statusCode: 400 };
@@ -315,9 +346,37 @@ const downloadDocumentContentFromOpenAI = async ({ apiKey, fileId, vectorStoreId
       const response = await fetch(attempt.url, { method: 'GET', headers });
 
       if (response.ok) {
+        const contentType = response.headers.get('content-type');
+        let shouldSkipResponse = false;
+
+        if (isJsonLikeContentType(contentType) || (!contentType && attempt.type === 'vector-store')) {
+          try {
+            const rawText = await response.clone().text();
+            const parsed = JSON.parse(rawText);
+
+            if (payloadContainsVectorStoreDescriptor(parsed)) {
+              console.warn(
+                `Received vector store JSON payload while retrieving document content via ${attempt.type} endpoint. Falling back to next endpoint.`
+              );
+              shouldSkipResponse = true;
+              lastError = {
+                statusCode: 502,
+                message: 'Received vector store JSON payload instead of document bytes',
+              };
+            }
+          } catch (jsonInspectionError) {
+            if (isJsonLikeContentType(contentType)) {
+              console.warn('Unable to inspect JSON response while downloading document content:', jsonInspectionError);
+            }
+          }
+        }
+
+        if (shouldSkipResponse) {
+          continue;
+        }
+
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        const contentType = response.headers.get('content-type');
 
         return { buffer, contentType };
       }
@@ -538,4 +597,10 @@ export const handler = async (event, context) => {
       timestamp: new Date().toISOString(),
     });
   }
+};
+
+export const __testHelpers = {
+  downloadDocumentContentFromOpenAI,
+  isJsonLikeContentType,
+  payloadContainsVectorStoreDescriptor,
 };

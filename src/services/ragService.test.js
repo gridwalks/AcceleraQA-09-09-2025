@@ -288,6 +288,29 @@ describe('document persistence with Neon metadata store', () => {
     expect(docs[0].metadata.version).toBe('Rev 2');
   });
 
+  test('captures base64 document content when file size is within persistence limit', async () => {
+    const uploadOptions = { documentApiMock, uploadFileId: 'file_content_1', vectorStoreId: 'vs_content_1' };
+    const { ragService } = await loadRagService(uploadOptions);
+
+    const buffer = Buffer.from('document payload for persistence test', 'utf8');
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+
+    const file = {
+      name: 'Content.pdf',
+      type: 'application/pdf',
+      size: buffer.length,
+      arrayBuffer: async () => arrayBuffer,
+    };
+
+    await ragService.uploadDocument(file, {}, 'user-content');
+
+    const saveCall = documentApiMock.calls.find(([action]) => action === 'save_document');
+    expect(saveCall).toBeTruthy();
+    const savedDoc = saveCall[2].document;
+    expect(savedDoc.encoding).toBe('base64');
+    expect(savedDoc.content).toBe(buffer.toString('base64'));
+  });
+
   test('generateRAGResponse merges user upload vector stores into search', async () => {
     const uploadOptions = { documentApiMock, uploadFileId: 'file_rag_1', vectorStoreId: 'vs_default_user' };
     const { ragService, mocks } = await loadRagService(uploadOptions);

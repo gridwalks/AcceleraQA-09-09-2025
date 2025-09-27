@@ -5,6 +5,8 @@ import { getCurrentModel } from '../config/modelConfig';
 import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION, RAG_DOCS_FUNCTION } from '../config/ragConfig';
 import { convertDocxToPdfIfNeeded } from '../utils/fileConversion';
 
+const MAX_PERSISTED_CONTENT_BYTES = 6 * 1024 * 1024; // 6 MB raw capture limit
+
 const DEFAULT_NEON_ENDPOINTS = Array.from(new Set([
   NEON_RAG_FUNCTION,
   '/.netlify/functions/neon-rag-fixed',
@@ -328,6 +330,48 @@ class RAGService {
     return { sanitizedMetadata, clearFields: Array.from(clearFields) };
   }
 
+  async captureBlobContent(blob) {
+    if (!blob || typeof blob.arrayBuffer !== 'function') {
+      return null;
+    }
+
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const byteLength = arrayBuffer?.byteLength ?? 0;
+
+      if (byteLength === 0) {
+        return { base64: '', byteLength: 0 };
+      }
+
+      if (byteLength > MAX_PERSISTED_CONTENT_BYTES) {
+        console.warn('Skipping inline document content persistence because the file exceeds the capture size limit.');
+        return null;
+      }
+
+      if (typeof Buffer !== 'undefined') {
+        return { base64: Buffer.from(arrayBuffer).toString('base64'), byteLength };
+      }
+
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        const chunk = bytes.subarray(offset, offset + chunkSize);
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+
+      if (typeof btoa === 'function') {
+        return { base64: btoa(binary), byteLength };
+      }
+
+      console.warn('Unable to encode blob content because no Base64 encoder is available in this environment.');
+      return null;
+    } catch (error) {
+      console.warn('Failed to capture uploaded document content for persistence:', error);
+      return null;
+    }
+  }
+
   clearDocumentMetadataCache(userId) {
     if (!userId) {
       return;
@@ -644,6 +688,8 @@ class RAGService {
     const vectorStoreId = await this.getVectorStoreId(userId);
     await openaiService.attachFileToVectorStore(vectorStoreId, fileId);
 
+    const capturedContent = await this.captureBlobContent(uploadableFile);
+
     const docInfo = {
       id: fileId,
       fileId,
@@ -665,6 +711,15 @@ class RAGService {
       },
       vectorStoreId,
     };
+
+    if (capturedContent && typeof capturedContent.base64 === 'string') {
+      docInfo.content = capturedContent.base64;
+      docInfo.encoding = 'base64';
+
+      if (!Number.isFinite(Number(docInfo.size)) && typeof capturedContent.byteLength === 'number') {
+        docInfo.size = capturedContent.byteLength;
+      }
+    }
 
     let savedDocument = docInfo;
     try {

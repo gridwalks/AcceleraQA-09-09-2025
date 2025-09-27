@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
-import { Cloud, Smartphone, Trash2 } from 'lucide-react';
+import { Cloud, Smartphone, Trash2, ExternalLink } from 'lucide-react';
 
 const normalizeResourceValue = (value) =>
   typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -233,12 +233,12 @@ const NotebookView = memo(({
         </div>
       ) : (
         <div className="mb-6">
-          <h3 className="text-lg font-bold text-gray-900">Learning Resources</h3>
+          <h3 className="text-lg font-bold text-gray-900">External Resources</h3>
           <p className="text-sm text-gray-500">
             {allResources.length} {allResources.length === 1 ? 'resource' : 'resources'} collected from your recent conversations
           </p>
           <p className="text-xs text-gray-500 mt-2">
-            Explore saved links and materials recommended during chats.
+            Explore saved links and references recommended during chats.
           </p>
         </div>
       )}
@@ -346,7 +346,7 @@ const NotebookView = memo(({
           >
             {allResources.length === 0 ? (
               <div className="h-full flex items-center justify-center text-center text-sm text-gray-500 px-6">
-                No resources available yet. Add learning materials from your conversations to see them here.
+                No resources available yet. Add external references from your conversations to see them here.
               </div>
             ) : (
               <div className="space-y-3 pb-4">
@@ -541,23 +541,34 @@ const ResourceCard = memo(({ resource, onDeleteResource }) => {
       }`
     : null;
 
+  const hasLink = Boolean(resource.url);
+
   return (
-    <div className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors space-y-2">
+    <div
+      className={`p-3 rounded-lg border border-gray-200 transition-colors space-y-2 ${
+        hasLink ? 'hover:border-blue-300 hover:shadow-sm' : 'hover:border-gray-300'
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
-        {resource.url ? (
-          <a
-            href={resource.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm font-medium text-blue-600 hover:text-blue-800 block truncate"
-          >
-            {resource.title}
-          </a>
-        ) : (
-          <span className="text-sm font-medium text-gray-900 block truncate">
-            {resource.title}
-          </span>
-        )}
+        <div className="flex-1 min-w-0 space-y-1">
+          {hasLink ? (
+            <a
+              href={resource.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-blue-600 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+            >
+              <span className="block truncate">{resource.title}</span>
+            </a>
+          ) : (
+            <span className="text-sm font-medium text-gray-900 block truncate">
+              {resource.title}
+            </span>
+          )}
+          {resource.description && (
+            <p className="text-xs text-gray-500 line-clamp-2">{resource.description}</p>
+          )}
+        </div>
         {typeof onDeleteResource === 'function' && (
           <button
             type="button"
@@ -581,8 +592,18 @@ const ResourceCard = memo(({ resource, onDeleteResource }) => {
           </span>
         )}
       </div>
-      {resource.description && (
-        <p className="text-xs text-gray-500 line-clamp-2">{resource.description}</p>
+      {hasLink && (
+        <div>
+          <a
+            href={resource.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-xs font-medium text-blue-600 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+          >
+            <span>Open resource</span>
+            <ExternalLink className="ml-1 h-3 w-3" aria-hidden="true" />
+          </a>
+        </div>
       )}
     </div>
   );

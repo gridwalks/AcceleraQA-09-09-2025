@@ -560,7 +560,7 @@ export function exportAsText(messages) {
       textContent += `${msg.content}\n\n`;
       
       if (msg.resources && msg.resources.length > 0) {
-        textContent += 'Learning Resources:\n';
+        textContent += 'External Resources:\n';
         msg.resources.forEach(resource => {
           textContent += `• ${resource.title} (${resource.type}): ${resource.url}\n`;
         });

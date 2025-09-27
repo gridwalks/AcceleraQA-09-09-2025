@@ -86,9 +86,58 @@ const inflateGzipBytes = async (gzipBytes) => {
 };
 
 const PDF_HEADER_BYTES = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+const PDF_HEADER_MAX_SCAN_BYTES = 1024;
+const BOM_SEQUENCES = [
+  [0xef, 0xbb, 0xbf], // UTF-8
+  [0xff, 0xfe], // UTF-16 LE
+  [0xfe, 0xff], // UTF-16 BE
+];
 
-const hasPdfHeader = (bytes) =>
-  bytes && bytes.length >= PDF_HEADER_BYTES.length && PDF_HEADER_BYTES.every((value, index) => bytes[index] === value);
+const matchesByteSequence = (bytes, offset, sequence) => {
+  if (!bytes || !sequence || offset + sequence.length > bytes.length) {
+    return false;
+  }
+
+  for (let index = 0; index < sequence.length; index += 1) {
+    if (bytes[offset + index] !== sequence[index]) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const findPdfHeaderIndex = (bytes) => {
+  if (!bytes || bytes.length < PDF_HEADER_BYTES.length) {
+    return -1;
+  }
+
+  const maxOffset = Math.min(bytes.length - PDF_HEADER_BYTES.length, PDF_HEADER_MAX_SCAN_BYTES);
+
+  for (let offset = 0; offset <= maxOffset; offset += 1) {
+    if (offset === 0) {
+      const bomMatch = BOM_SEQUENCES.find((sequence) => matchesByteSequence(bytes, offset, sequence));
+      if (bomMatch) {
+        offset += bomMatch.length - 1;
+        continue;
+      }
+    }
+
+    let matches = true;
+    for (let headerIndex = 0; headerIndex < PDF_HEADER_BYTES.length; headerIndex += 1) {
+      if (bytes[offset + headerIndex] !== PDF_HEADER_BYTES[headerIndex]) {
+        matches = false;
+        break;
+      }
+    }
+
+    if (matches) {
+      return offset;
+    }
+  }
+
+  return -1;
+};
 
 const sniffBytesAsText = (bytes) => {
   if (!bytes || bytes.length === 0) return '';
@@ -186,7 +235,9 @@ const ensureValidPdfBytes = async (bytes) => {
     throw new Error('The PDF file is empty.');
   }
 
-  if (!hasPdfHeader(normalizedBytes)) {
+  const headerIndex = findPdfHeaderIndex(normalizedBytes);
+
+  if (headerIndex === -1) {
     const decodedText = decodeUtf8(normalizedBytes);
     const vectorStoreText = extractVectorStoreText(decodedText);
     const printableText = vectorStoreText || extractPrintableText(decodedText);
@@ -212,6 +263,10 @@ const ensureValidPdfBytes = async (bytes) => {
       error.sniff = sniff;
     }
     throw error;
+  }
+
+  if (headerIndex > 0) {
+    return normalizedBytes.subarray(headerIndex);
   }
 
   return normalizedBytes;

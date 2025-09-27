@@ -158,6 +158,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     activeObjectUrlRef.current = null;
   }, []);
 
+  const logDocumentUrl = useCallback((url, sourceLabel) => {
+    if (!url) return;
+    console.log(`Document viewer URL (${sourceLabel}):`, url);
+  }, []);
+
   const closeDocumentViewer = useCallback(() => {
     viewerRequestRef.current += 1;
     revokeActiveObjectUrl();
@@ -259,6 +264,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         allowDownload: true,
         url: resolvedUrl,
       });
+      logDocumentUrl(resolvedUrl, 'resource metadata');
       setIsViewerLoading(false);
       return;
     }
@@ -309,6 +315,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
           contentType: response.contentType || contentType,
           allowDownload: true,
         });
+        logDocumentUrl(responseUrl, 'backend download URL');
         setIsViewerLoading(false);
         return;
       }
@@ -337,6 +344,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         contentType: response.contentType || contentType,
         allowDownload: true,
       });
+      logDocumentUrl(objectUrlResult.url, 'generated object URL');
       setIsViewerLoading(false);
     } catch (error) {
       console.error('Failed to open resource document:', error);

@@ -55,6 +55,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const [viewerError, setViewerError] = useState(null);
   const activeObjectUrlRef = useRef(null);
   const viewerRequestRef = useRef(0);
+  const userId = user?.sub || null;
 
   const conversations = useMemo(() => {
     const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
@@ -293,7 +294,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     });
 
     try {
-      const response = await ragService.downloadDocument({ documentId, fileId });
+      const response = await ragService.downloadDocument({ documentId, fileId }, userId);
       if (viewerRequestRef.current !== requestId) return;
       if (!response) throw new Error('No response received from download request');
 
@@ -346,7 +347,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     } finally {
       setDownloadingResourceId((current) => (current === resourceKey ? null : current));
     }
-  }, [createObjectUrlFromBlob, decodeBase64ToUint8Array, getResourceKey, revokeActiveObjectUrl]);
+  }, [createObjectUrlFromBlob, decodeBase64ToUint8Array, getResourceKey, revokeActiveObjectUrl, userId]);
 
   const handleSuggestionClick = (suggestion) => {
     if (suggestion?.url) {

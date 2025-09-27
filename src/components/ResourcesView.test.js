@@ -47,38 +47,46 @@ describe('DocumentViewer', () => {
   });
 
   it('uses the PdfBlobViewer when rendering blob-based PDFs', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    await act(async () => {
-      root.render(
-        <DocumentViewer
-          isOpen
-          title="Test PDF"
-          url="blob:https://example.com/test"
-          blobData={new Uint8Array([1, 2, 3])}
-          contentType="application/pdf"
-          filename="test.pdf"
-          isLoading={false}
-          error={null}
-          onClose={() => {}}
-          allowDownload
-        />
-      );
-    });
+    try {
+      await act(async () => {
+        root.render(
+          <DocumentViewer
+            isOpen
+            title="Test PDF"
+            url="blob:https://example.com/test"
+            blobData={new Uint8Array([1, 2, 3])}
+            contentType="application/pdf"
+            filename="test.pdf"
+            isLoading={false}
+            error={null}
+            onClose={() => {}}
+            allowDownload
+          />
+        );
+      });
 
-    await act(async () => {
-      await Promise.resolve();
-    });
+      await act(async () => {
+        await Promise.resolve();
+      });
 
-    const pdfViewer = container.querySelector('[data-testid="pdf-blob-viewer"]');
-    expect(pdfViewer).not.toBeNull();
-    expect(mockGetDocument).toHaveBeenCalledWith(expect.objectContaining({ data: expect.any(Uint8Array) }));
-
-    await act(async () => {
-      root.unmount();
-    });
-    document.body.removeChild(container);
+      const pdfViewer = container.querySelector('[data-testid="pdf-blob-viewer"]');
+      expect(pdfViewer).not.toBeNull();
+      expect(mockGetDocument).toHaveBeenCalledWith(expect.objectContaining({ data: expect.any(Uint8Array) }));
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      document.body.removeChild(container);
+      global.fetch = originalFetch;
+    }
   });
 });

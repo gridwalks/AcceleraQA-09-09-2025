@@ -11,6 +11,11 @@ const headers = {
 let sqlClient = null;
 let schemaPromise = null;
 
+const MAX_BASE64_LENGTH = 12 * 1024 * 1024; // ~9 MB binary payload
+const BASE64_CLEANUP_REGEX = /\s+/g;
+const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+const DEFAULT_CONTENT_ENCODING = 'base64';
+
 const getOpenAIApiKey = () => process.env.OPENAI_API_KEY || process.env.REACT_APP_OPENAI_API_KEY || null;
 
 const getSqlClient = () => {
@@ -48,6 +53,8 @@ const ensureSchema = async (sql) => {
           metadata JSONB DEFAULT '{}'::jsonb,
           chunks INTEGER DEFAULT 0,
           vector_store_id TEXT,
+          content_base64 TEXT,
+          content_encoding TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -56,6 +63,16 @@ const ensureSchema = async (sql) => {
       await sql`
         CREATE INDEX IF NOT EXISTS idx_rag_user_documents_user_id
         ON rag_user_documents(user_id)
+      `;
+
+      await sql`
+        ALTER TABLE rag_user_documents
+        ADD COLUMN IF NOT EXISTS content_base64 TEXT
+      `;
+
+      await sql`
+        ALTER TABLE rag_user_documents
+        ADD COLUMN IF NOT EXISTS content_encoding TEXT
       `;
     })();
   }
@@ -117,6 +134,55 @@ const mapDocumentRow = (row) => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
+
+const estimateBinarySizeFromBase64 = (base64 = '') => {
+  if (!base64) return 0;
+
+  const sanitized = base64.replace(BASE64_CLEANUP_REGEX, '');
+  const padding = sanitized.endsWith('==') ? 2 : sanitized.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((sanitized.length * 3) / 4) - padding);
+};
+
+const normalizeDocumentContent = (document = {}) => {
+  if (!document || typeof document !== 'object') {
+    return { base64: null, encoding: null, truncated: false };
+  }
+
+  const rawContent = typeof document.content === 'string' ? document.content.trim() : '';
+  if (!rawContent) {
+    return { base64: null, encoding: null, truncated: false };
+  }
+
+  const declaredEncoding = typeof document.encoding === 'string' ? document.encoding.trim().toLowerCase() : '';
+  const normalizedEncoding = declaredEncoding || DEFAULT_CONTENT_ENCODING;
+
+  if (normalizedEncoding === 'base64') {
+    const sanitized = rawContent.replace(BASE64_CLEANUP_REGEX, '');
+    if (!BASE64_PATTERN.test(sanitized)) {
+      throw new Error('Invalid base64 document content');
+    }
+
+    if (sanitized.length > MAX_BASE64_LENGTH) {
+      return { base64: null, encoding: null, truncated: true };
+    }
+
+    return { base64: sanitized, encoding: DEFAULT_CONTENT_ENCODING, truncated: false };
+  }
+
+  if (normalizedEncoding === 'utf8' || normalizedEncoding === 'text') {
+    const buffer = Buffer.from(rawContent, 'utf8');
+    let base64 = buffer.toString('base64');
+    let truncated = false;
+
+    if (base64.length > MAX_BASE64_LENGTH) {
+      return { base64: null, encoding: null, truncated: true };
+    }
+
+    return { base64, encoding: DEFAULT_CONTENT_ENCODING, truncated };
+  }
+
+  throw new Error(`Unsupported document encoding: ${declaredEncoding || 'unknown'}`);
+};
 
 const sanitizeDocumentMetadata = (metadata = {}) => {
   if (!metadata || typeof metadata !== 'object') {
@@ -244,6 +310,22 @@ const handleSaveDocument = async (sql, userId, payload) => {
     document.metadata && typeof document.metadata === 'object' ? document.metadata : {}
   );
 
+  let contentBase64 = null;
+  let contentEncoding = null;
+  try {
+    const normalizedContent = normalizeDocumentContent(document);
+    contentBase64 = normalizedContent.base64;
+    contentEncoding = normalizedContent.encoding;
+    if (normalizedContent.truncated) {
+      console.warn(`Document content for ${documentId} exceeded persistence limit and will not be persisted locally.`);
+    }
+  } catch (contentError) {
+    console.warn('Unable to normalize document content for persistence:', contentError);
+  }
+
+  const numericSize = Number.isFinite(Number(document.size)) ? Number(document.size) : null;
+  const resolvedSize = numericSize ?? (contentBase64 ? estimateBinarySizeFromBase64(contentBase64) : 0);
+
   const rows = await sql`
     INSERT INTO rag_user_documents (
       document_id,
@@ -254,17 +336,21 @@ const handleSaveDocument = async (sql, userId, payload) => {
       size,
       metadata,
       chunks,
-      vector_store_id
+      vector_store_id,
+      content_base64,
+      content_encoding
     ) VALUES (
       ${documentId},
       ${userId},
       ${document.fileId || documentId},
       ${document.filename || document.name || 'Uploaded Document'},
       ${document.type || document.contentType || null},
-      ${document.size ?? 0},
+      ${resolvedSize},
       ${normalizedMetadata},
       ${document.chunks ?? 0},
-      ${vectorStoreId}
+      ${vectorStoreId},
+      ${contentBase64},
+      ${contentEncoding}
     )
     ON CONFLICT (document_id) DO UPDATE
     SET user_id = EXCLUDED.user_id,
@@ -275,6 +361,8 @@ const handleSaveDocument = async (sql, userId, payload) => {
         metadata = EXCLUDED.metadata,
         chunks = EXCLUDED.chunks,
         vector_store_id = EXCLUDED.vector_store_id,
+        content_base64 = COALESCE(EXCLUDED.content_base64, rag_user_documents.content_base64),
+        content_encoding = COALESCE(EXCLUDED.content_encoding, rag_user_documents.content_encoding),
         updated_at = CURRENT_TIMESTAMP
     RETURNING document_id, file_id, filename, content_type, size, metadata, chunks, vector_store_id, created_at, updated_at
   `;
@@ -412,7 +500,7 @@ const handleDownloadDocument = async (sql, userId, payload) => {
   }
 
   const rows = await sql`
-    SELECT document_id, file_id, filename, content_type, size, metadata, vector_store_id
+    SELECT document_id, file_id, filename, content_type, size, metadata, vector_store_id, content_base64, content_encoding
     FROM rag_user_documents
     WHERE user_id = ${userId}
       AND (document_id = ${documentId} OR file_id = ${fileId})
@@ -422,6 +510,22 @@ const handleDownloadDocument = async (sql, userId, payload) => {
   const record = rows[0];
   if (!record) {
     return createResponse(404, { error: 'Document not found for this user' });
+  }
+
+  if (record.content_base64) {
+    const encoding = record.content_encoding || DEFAULT_CONTENT_ENCODING;
+    const derivedSize = estimateBinarySizeFromBase64(record.content_base64);
+
+    return createResponse(200, {
+      documentId: record.document_id,
+      fileId: record.file_id,
+      filename: record.filename,
+      contentType: record.content_type || 'application/octet-stream',
+      size: record.size == null ? derivedSize : Number(record.size),
+      encoding,
+      content: record.content_base64,
+      metadata: record.metadata || {},
+    });
   }
 
   const apiKey = getOpenAIApiKey();
@@ -439,18 +543,46 @@ const handleDownloadDocument = async (sql, userId, payload) => {
   });
 
   if (downloadResult.error) {
+    const lowered = (downloadResult.error || '').toLowerCase();
+    if (/purpose\s*:\s*assistants/.test(lowered)) {
+      return createResponse(downloadResult.statusCode === 400 ? 403 : downloadResult.statusCode, {
+        error:
+          'OpenAI does not permit downloading assistant-ingested files directly. Re-upload the original source document or contact support to recover the content.',
+        details: downloadResult.error,
+      });
+    }
+
     return createResponse(downloadResult.statusCode, { error: downloadResult.error });
   }
 
   const base64Content = downloadResult.buffer.toString('base64');
+  const computedSize = downloadResult.buffer.length;
+
+  if (base64Content.length <= MAX_BASE64_LENGTH) {
+    try {
+      await sql`
+        UPDATE rag_user_documents
+        SET content_base64 = ${base64Content},
+            content_encoding = ${DEFAULT_CONTENT_ENCODING},
+            size = COALESCE(rag_user_documents.size, ${computedSize}),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ${userId}
+          AND document_id = ${record.document_id}
+      `;
+    } catch (persistError) {
+      console.warn('Failed to persist downloaded document content:', persistError);
+    }
+  } else {
+    console.warn('Downloaded document content exceeds local persistence limit. Serving response without caching.');
+  }
 
   return createResponse(200, {
     documentId: record.document_id,
     fileId: record.file_id,
     filename: record.filename,
     contentType: record.content_type || downloadResult.contentType || 'application/octet-stream',
-    size: record.size == null ? downloadResult.buffer.length : Number(record.size),
-    encoding: 'base64',
+    size: record.size == null ? computedSize : Number(record.size),
+    encoding: DEFAULT_CONTENT_ENCODING,
     content: base64Content,
     metadata: record.metadata || {},
   });

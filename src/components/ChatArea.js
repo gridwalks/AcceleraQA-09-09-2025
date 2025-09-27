@@ -699,7 +699,7 @@ const ChatArea = ({
     try {
       exportToWord(studyNotesMessage);
     } catch (error) {
-      console.error('Failed to export study notes to Word:', error);
+      console.error('Failed to export notes to Word:', error);
     }
   }, []);
 
@@ -950,7 +950,7 @@ const ChatArea = ({
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
                               <BookOpen className="h-4 w-4" />
-                              <span>Study notes ready</span>
+                              <span>Notes ready</span>
                             </div>
                             <button
                               type="button"
@@ -961,11 +961,11 @@ const ChatArea = ({
                                   ? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
                                   : 'bg-blue-100 text-blue-300 cursor-not-allowed focus:ring-blue-200'
                               }`}
-                              aria-label="Export study notes to Word"
+                              aria-label="Export notes to Word"
                               title={
                                 canExportStudyNotes
-                                  ? 'Download a Word copy of these study notes.'
-                                  : 'Study notes are not ready to export yet.'
+                                  ? 'Download a Word copy of these notes.'
+                                  : 'Notes are not ready to export yet.'
                               }
                             >
                               <FileDown className="h-4 w-4" />

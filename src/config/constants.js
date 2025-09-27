@@ -76,7 +76,7 @@ export const ERROR_MESSAGES = {
 
   AUTH_ERROR: 'Authentication error occurred.\n\nTROUBLESHOOTING STEPS:\n1. Check that all Auth0 environment variables are set correctly\n2. Verify your Auth0 application configuration\n3. Try signing out and signing in again\n4. Contact support if the problem persists',
 
-  STUDY_NOTES_GENERATION_FAILED: 'Failed to generate study notes. Please check your API configuration and try again.'
+  STUDY_NOTES_GENERATION_FAILED: 'Failed to generate notes. Please check your API configuration and try again.'
 };
 
 // Enhanced environment variable validation with detailed feedback

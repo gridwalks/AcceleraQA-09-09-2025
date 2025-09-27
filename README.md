@@ -1,6 +1,6 @@
 # AcceleraQA - Fixed and Production Ready
 
-AI-powered learning assistant for pharmaceutical quality and compliance professionals with enterprise-grade Auth0 authentication.
+AI-powered assistant for pharmaceutical quality and compliance professionals.
 
 ## 🔧 Critical Fixes Applied
 

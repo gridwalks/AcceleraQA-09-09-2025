@@ -654,10 +654,10 @@ class OpenAIService {
 
   async generateStudyNotes(selectedMessages) {
     if (!selectedMessages || selectedMessages.length === 0) {
-      throw new Error('No messages selected for study notes generation');
+      throw new Error('No messages selected for notes generation');
     }
 
-    console.log('Generating study notes for messages:', selectedMessages);
+    console.log('Generating notes for messages:', selectedMessages);
 
     // Group messages by conversation pairs (user question + AI response)
     const conversationPairs = [];
@@ -682,7 +682,7 @@ class OpenAIService {
     }
 
     if (conversationPairs.length === 0) {
-      throw new Error('No valid conversation pairs found for study notes generation');
+      throw new Error('No valid conversation pairs found for notes generation');
     }
 
     const studyContent = conversationPairs
@@ -699,7 +699,7 @@ class OpenAIService {
       })
       .join('\n');
 
-    const studyPrompt = `Create comprehensive study notes for pharmaceutical quality and compliance based on the following conversation topics. 
+    const notesPrompt = `Create comprehensive notes for pharmaceutical quality and compliance based on the following conversation topics.
 
 Format as organized study material with:
 1. **Executive Summary** - Key takeaways from all conversations
@@ -718,7 +718,7 @@ Number of conversations analyzed: ${conversationPairs.length}
 Conversation content:
 ${studyContent}`;
 
-    return await this.getChatResponse(studyPrompt);
+    return await this.getChatResponse(notesPrompt);
   }
 }
 

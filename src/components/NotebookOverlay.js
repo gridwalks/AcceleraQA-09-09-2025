@@ -4,7 +4,7 @@ import NotebookView from './NotebookView';
 
 const NOTEBOOK_TABS = [
   { id: 'conversations', label: 'Conversations' },
-  { id: 'resources', label: 'Learning Resources' }
+  { id: 'resources', label: 'External Resources' }
 ];
 
 const NotebookOverlay = ({

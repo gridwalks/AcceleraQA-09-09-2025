@@ -79,13 +79,14 @@ const Header = memo(({
     <header className="bg-gray-50 border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center h-16">
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 flex items-center space-x-2">
             <img
               src="/AceleraQA_logo.png"
               alt="AcceleraQA logo"
               width="180"
               height="20"
             />
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">|beta</span>
           </div>
 
           <div className="relative flex items-center space-x-4 ml-auto">

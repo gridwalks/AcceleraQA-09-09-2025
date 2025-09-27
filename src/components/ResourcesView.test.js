@@ -2,21 +2,11 @@ import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 
+const mockGetDocument = jest.fn();
+
 jest.mock('pdfjs-dist/build/pdf', () => ({
   GlobalWorkerOptions: {},
-  getDocument: () => ({
-    promise: Promise.resolve({
-      numPages: 1,
-      getPage: async () => ({
-        getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }),
-        render: () => ({ promise: Promise.resolve() }),
-        cleanup: () => {},
-      }),
-      cleanup: () => {},
-      destroy: () => {},
-    }),
-    destroy: () => {},
-  }),
+  getDocument: (...args) => mockGetDocument(...args),
 }), { virtual: true });
 
 jest.mock('pdfjs-dist/build/pdf.worker.entry', () => 'pdf-worker-stub', { virtual: true });
@@ -39,6 +29,23 @@ jest.mock('../services/ragService', () => ({
 import { DocumentViewer } from './ResourcesView';
 
 describe('DocumentViewer', () => {
+  beforeEach(() => {
+    mockGetDocument.mockReset();
+    mockGetDocument.mockImplementation(() => ({
+      promise: Promise.resolve({
+        numPages: 1,
+        getPage: async () => ({
+          getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }),
+          render: () => ({ promise: Promise.resolve() }),
+          cleanup: () => {},
+        }),
+        cleanup: () => {},
+        destroy: () => {},
+      }),
+      destroy: () => {},
+    }));
+  });
+
   it('uses the PdfBlobViewer when rendering blob-based PDFs', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -50,6 +57,7 @@ describe('DocumentViewer', () => {
           isOpen
           title="Test PDF"
           url="blob:https://example.com/test"
+          blobData={new Uint8Array([1, 2, 3])}
           contentType="application/pdf"
           filename="test.pdf"
           isLoading={false}
@@ -59,9 +67,13 @@ describe('DocumentViewer', () => {
         />
       );
     });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     const pdfViewer = container.querySelector('[data-testid="pdf-blob-viewer"]');
     expect(pdfViewer).not.toBeNull();
+    expect(mockGetDocument).toHaveBeenCalledWith(expect.objectContaining({ data: expect.any(Uint8Array) }));
 
     await act(async () => {
       root.unmount();

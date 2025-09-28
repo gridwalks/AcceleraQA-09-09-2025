@@ -96,6 +96,59 @@ bootstrapDeprecatedRagApi();
 
 const normalizeValue = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
+const RAG_EMPTY_RESPONSE_MARKERS = [
+  'no relevant documents were found for your question',
+  'no relevant guidance was generated from the provided excerpts',
+  'the document search returned no results',
+];
+
+const DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE =
+  'Document Search did not find relevant documents. Switched to AI Knowledge.';
+
+const isMeaningfulDocumentSearchResponse = (answer, sources) => {
+  if (Array.isArray(sources) && sources.length > 0) {
+    return true;
+  }
+
+  if (typeof answer !== 'string') {
+    return false;
+  }
+
+  const normalizedAnswer = answer.trim().toLowerCase();
+
+  if (!normalizedAnswer) {
+    return false;
+  }
+
+  return !RAG_EMPTY_RESPONSE_MARKERS.some((marker) =>
+    normalizedAnswer.startsWith(marker)
+  );
+};
+
+const getDocumentSearchFallbackExplanation = (answer) => {
+  if (typeof answer !== 'string') {
+    return DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE;
+  }
+
+  const trimmedAnswer = answer.trim();
+
+  if (!trimmedAnswer) {
+    return DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE;
+  }
+
+  const normalizedAnswer = trimmedAnswer.toLowerCase();
+
+  if (
+    RAG_EMPTY_RESPONSE_MARKERS.some((marker) =>
+      normalizedAnswer.startsWith(marker)
+    )
+  ) {
+    return DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE;
+  }
+
+  return trimmedAnswer;
+};
+
 const conversationIdMatchesMessage = (conversationId, messageId) => {
   if (!conversationId || !messageId) {
     return false;
@@ -669,6 +722,8 @@ function App() {
       let response = null;
       let modeUsed = 'AI Knowledge';
       let documentSearchAttempted = false;
+      let documentSearchProvidedMeaningfulAnswer = false;
+      let documentSearchFallbackExplanation = '';
       const manualOverrideDisabled = ragManualOverrideRef.current === false;
 
       if (!preparedFile && !manualOverrideDisabled) {
@@ -683,12 +738,18 @@ function App() {
           const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
           const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
 
-          if (ragAnswer || ragSources.length > 0) {
+          if (isMeaningfulDocumentSearchResponse(ragAnswer, ragSources)) {
             response = ragResponse;
             modeUsed = 'Document Search';
+            documentSearchProvidedMeaningfulAnswer = true;
+          } else {
+            documentSearchFallbackExplanation = getDocumentSearchFallbackExplanation(
+              ragAnswer
+            );
           }
         } catch (ragError) {
           console.error('Document search failed, falling back to AI Knowledge:', ragError);
+          documentSearchFallbackExplanation = getDocumentSearchFallbackExplanation();
         }
       } else if (!preparedFile && manualOverrideDisabled) {
         modeUsed = 'AI Knowledge (manual override)';
@@ -737,7 +798,23 @@ function App() {
         content: (() => {
           const answerText = typeof response.answer === 'string' ? response.answer.trim() : '';
           const modeLine = `Mode used: ${modeUsed}`;
-          return answerText ? `${answerText}\n\n_${modeLine}_` : `_${modeLine}_`;
+          const contentSections = [];
+
+          if (documentSearchAttempted && !documentSearchProvidedMeaningfulAnswer) {
+            const fallbackNotice = documentSearchFallbackExplanation
+              ? documentSearchFallbackExplanation
+              : DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE;
+            contentSections.push(`_${fallbackNotice}_`);
+          }
+
+          if (answerText) {
+            contentSections.push(answerText);
+          }
+
+          contentSections.push(`_${modeLine}_`);
+
+          return contentSections.filter(Boolean).join('\n\n');
+
         })(),
         timestamp: Date.now(),
         sources: response.sources || [],

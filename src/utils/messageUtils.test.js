@@ -124,6 +124,8 @@ describe('groupConversationsByThread', () => {
     expect(grouped[0].id).toBe('conv-2');
     expect(grouped[0].userContent).toBe('Another thread question');
     expect(grouped[0].resources).toEqual([{ id: 'res-3', title: 'Doc 3' }]);
+    expect(grouped[0].threadMessages).toHaveLength(1);
+    expect(grouped[0].threadMessages[0].userContent).toBe('Another thread question');
 
     const conv1 = grouped.find((item) => item.id === 'conv-1');
     expect(conv1).toBeDefined();
@@ -131,6 +133,9 @@ describe('groupConversationsByThread', () => {
     expect(conv1.aiContent).toBe('Follow-up answer');
     expect(conv1.conversationCount).toBe(2);
     expect(conv1.resources).toHaveLength(2);
+    expect(conv1.threadMessages).toHaveLength(2);
+    expect(conv1.threadMessages[0].userContent).toBe('First question');
+    expect(conv1.threadMessages[1].aiContent).toBe('Follow-up answer');
   });
 
   it('retains standalone cards without conversation identifiers', () => {
@@ -159,6 +164,20 @@ describe('groupConversationsByThread', () => {
         isCurrent: false,
         isStored: false,
         conversationCount: 1,
+        threadMessages: [
+          {
+            id: 'solo-card',
+            userContent: 'Standalone question',
+            aiContent: 'Standalone answer',
+            timestamp: 1704153900000,
+            resources: [],
+            isStudyNotes: false,
+            originalUserMessage: { id: 'solo-user', type: 'user' },
+            originalAiMessage: { id: 'solo-ai', type: 'ai' },
+            isCurrent: false,
+            isStored: false,
+          },
+        ],
       },
     ]);
   });

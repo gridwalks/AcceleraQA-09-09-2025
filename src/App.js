@@ -711,6 +711,7 @@ function App() {
 
   const clearChat = useCallback(() => {
     setMessages([]);
+    setInputMessage('');
     setUploadedFile(null);
     setActiveDocument(null);
     // Refresh suggestions when chat is cleared (might reveal different patterns)
@@ -719,7 +720,7 @@ function App() {
         refreshLearningSuggestions();
       }, 500);
     }
-  }, [refreshLearningSuggestions]);
+  }, [refreshLearningSuggestions, setInputMessage]);
 
   const clearAllConversations = useCallback(() => {
     setMessages([]);
@@ -1073,6 +1074,7 @@ function App() {
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
                     cooldown={cooldown}
+                    onClearChat={clearChat}
                   />
                 </div>
 
@@ -1109,6 +1111,7 @@ function App() {
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
                     cooldown={cooldown}
+                    onClearChat={clearChat}
                   />
                 </div>
 

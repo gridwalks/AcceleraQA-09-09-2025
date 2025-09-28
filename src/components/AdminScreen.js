@@ -33,7 +33,7 @@ import { getToken, getTokenInfo } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 import RAGConfigurationPage from './RAGConfigurationPage';
 import TrainingResourcesAdmin from './TrainingResourcesAdmin';
-import { MODEL_OPTIONS, getCurrentModel, setCurrentModel } from '../config/modelConfig';
+import { getCurrentModel } from '../config/modelConfig';
 import { getTokenUsageStats } from '../utils/tokenUsage';
 import { getRagBackendLabel, isNeonBackend } from '../config/ragConfig';
 
@@ -73,16 +73,10 @@ const AdminScreen = ({ user, onBack }) => {
   const [authStats, setAuthStats] = useState(null);
   const [systemHealth, setSystemHealth] = useState(null);
   const [error, setError] = useState(null);
-  const [chatModel, setChatModel] = useState(getCurrentModel());
+  const [chatModel] = useState(getCurrentModel());
   const [tokenUsage, setTokenUsage] = useState({ daily: [], monthly: [] });
   const ragBackendLabel = getRagBackendLabel();
   const neonBackendEnabled = isNeonBackend();
-
-  const handleModelChange = (e) => {
-    const model = e.target.value;
-    setChatModel(model);
-    setCurrentModel(model);
-  };
 
   // Check if user has admin role
   const isAdmin = hasAdminRole(user);
@@ -736,20 +730,12 @@ const AdminScreen = ({ user, onBack }) => {
             <div className="space-y-6">
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">AI Model Configuration</h3>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Chat Model
-                    <select
-                      value={chatModel}
-                      onChange={handleModelChange}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    >
-                      {MODEL_OPTIONS.map(option => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+                <p className="text-sm text-gray-700">
+                  Active chat model: <span className="font-semibold text-gray-900">{chatModel}</span>
+                </p>
+                <p className="mt-2 text-xs text-gray-500">
+                  Model selection is centrally managed and cannot be changed from this dashboard.
+                </p>
               </div>
 
               <div className="bg-white rounded-lg shadow p-6">

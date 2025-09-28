@@ -554,6 +554,7 @@ function App() {
 
       if (!preparedFile) {
         documentSearchAttempted = true;
+        setRAGEnabled(true);
         try {
           const ragResponse = await ragSearch(
             rawInput,

@@ -18,6 +18,21 @@ const headers = {
 let sqlClientPromise = null;
 let ensuredSchemaPromise = null;
 let documentTypeOptionsPromise = null;
+
+function getFirstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return '';
+}
 function ensureFetchAvailable() {
   if (typeof globalThis.fetch === 'function') {
     return;
@@ -81,6 +96,9 @@ async function ensureRagSchema(sql) {
         file_size BIGINT,
         text_content TEXT,
         metadata JSONB DEFAULT '{}'::jsonb,
+        title TEXT,
+        summary TEXT,
+        version TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
@@ -116,6 +134,21 @@ async function ensureRagSchema(sql) {
     await sql`
       CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_fts
         ON rag_document_chunks USING GIN (to_tsvector('english', chunk_text))
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS title TEXT
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS summary TEXT
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS version TEXT
     `;
   })().catch(error => {
     ensuredSchemaPromise = null;
@@ -314,12 +347,72 @@ function normalizeDocumentRow(row) {
   const metadata = parseMetadata(row.metadata);
   metadata.processingMode = 'neon-postgresql';
 
+  if (row.title && !metadata.title) {
+    metadata.title = row.title;
+  }
+
+  if (row.title && !metadata.fileTitle) {
+    metadata.fileTitle = row.title;
+  }
+
+  if (row.title && !metadata.documentTitle) {
+    metadata.documentTitle = row.title;
+  }
+
+  if (row.summary && !metadata.summary) {
+    metadata.summary = row.summary;
+  }
+
+  if (row.summary && !metadata.description) {
+    metadata.description = row.summary;
+  }
+
+  if (row.version && !metadata.version) {
+    metadata.version = row.version;
+  }
+
+  if (!metadata.fileName) {
+    metadata.fileName = row.filename;
+  }
+
+  const resolvedTitle = getFirstNonEmptyString(
+    row.title,
+    metadata.title,
+    metadata.fileTitle,
+    metadata.documentTitle,
+    row.filename,
+  );
+
+  if (resolvedTitle) {
+    metadata.title = metadata.title || resolvedTitle;
+    metadata.fileTitle = metadata.fileTitle || resolvedTitle;
+    metadata.documentTitle = metadata.documentTitle || resolvedTitle;
+    metadata.displayTitle = metadata.displayTitle || resolvedTitle;
+  }
+
+  const resolvedSummary = getFirstNonEmptyString(
+    row.summary,
+    metadata.summary,
+    metadata.description,
+  );
+
+  if (resolvedSummary) {
+    metadata.summary = metadata.summary || resolvedSummary;
+    metadata.description = metadata.description || resolvedSummary;
+    if (!metadata.displaySummary) {
+      metadata.displaySummary = resolvedSummary;
+    }
+  }
+
   return {
     id: row.id,
     filename: row.filename,
     originalFilename: row.original_filename || null,
     fileType: row.file_type || null,
     fileSize: row.file_size != null ? Number(row.file_size) : null,
+    title: resolvedTitle || null,
+    summary: resolvedSummary || null,
+    version: row.version || metadata.version || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     metadata,
@@ -332,13 +425,59 @@ function buildSearchResult(row) {
   const metadata = parseMetadata(row.metadata);
   metadata.processingMode = 'neon-postgresql';
 
+  if (row.title && !metadata.title) {
+    metadata.title = row.title;
+  }
+
+  if (row.title && !metadata.documentTitle) {
+    metadata.documentTitle = row.title;
+  }
+
+  if (row.summary && !metadata.summary) {
+    metadata.summary = row.summary;
+  }
+
+  if (row.summary && !metadata.description) {
+    metadata.description = row.summary;
+  }
+
+  if (row.version && !metadata.version) {
+    metadata.version = row.version;
+  }
+
+  const resolvedTitle = getFirstNonEmptyString(
+    row.title,
+    metadata.title,
+    metadata.documentTitle,
+    metadata.fileTitle,
+    row.filename,
+  );
+
+  if (resolvedTitle) {
+    metadata.title = metadata.title || resolvedTitle;
+    metadata.documentTitle = metadata.documentTitle || resolvedTitle;
+  }
+
+  const resolvedSummary = getFirstNonEmptyString(
+    row.summary,
+    metadata.summary,
+    metadata.description,
+  );
+
+  if (resolvedSummary) {
+    metadata.summary = metadata.summary || resolvedSummary;
+    metadata.description = metadata.description || resolvedSummary;
+  }
+
   return {
     documentId: row.document_id,
     chunkId: row.id,
     chunkIndex: row.chunk_index,
     text: row.snippet || row.chunk_text,
     filename: row.filename,
-    documentTitle: metadata.title || metadata.documentTitle || row.filename,
+    documentTitle: resolvedTitle || row.filename,
+    summary: resolvedSummary || null,
+    version: row.version || metadata.version || null,
     score: Number(row.rank || 0),
     metadata,
   };
@@ -365,6 +504,9 @@ async function handleList(sql, userId) {
            d.file_type,
            d.file_size,
            d.metadata,
+           d.title,
+           d.summary,
+           d.version,
            d.created_at,
            d.updated_at,
            COUNT(c.id)::int AS chunk_count
@@ -448,6 +590,56 @@ async function handleUpload(sql, userId, payload = {}) {
   if (mimeType) {
     metadata.mimeType = mimeType;
   }
+
+  metadata.fileName = metadata.fileName || filename;
+
+  const normalizedOriginalFilename = getFirstNonEmptyString(
+    document.originalFilename,
+    metadata.originalFilename,
+    metadata.fileName,
+    filename,
+  );
+
+  if (normalizedOriginalFilename) {
+    metadata.originalFilename = metadata.originalFilename || normalizedOriginalFilename;
+  }
+
+  const normalizedTitle = getFirstNonEmptyString(
+    document.title,
+    metadata.title,
+    metadata.fileTitle,
+    metadata.documentTitle,
+    metadata.displayTitle,
+    filename,
+  );
+
+  const normalizedSummary = getFirstNonEmptyString(
+    document.summary,
+    metadata.summary,
+    metadata.description,
+  );
+
+  const normalizedVersion = getFirstNonEmptyString(
+    document.version,
+    metadata.version,
+  );
+
+  if (normalizedTitle) {
+    metadata.title = metadata.title || normalizedTitle;
+    metadata.fileTitle = metadata.fileTitle || normalizedTitle;
+    metadata.documentTitle = metadata.documentTitle || normalizedTitle;
+    metadata.displayTitle = metadata.displayTitle || normalizedTitle;
+  }
+
+  if (normalizedSummary) {
+    metadata.summary = metadata.summary || normalizedSummary;
+    metadata.description = metadata.description || normalizedSummary;
+  }
+
+  if (normalizedVersion) {
+    metadata.version = metadata.version || normalizedVersion;
+  }
+
   const metadataJson = JSON.stringify(metadata);
 
   const chunkSize = Number.isFinite(document.chunkSize) ? document.chunkSize : DEFAULT_CHUNK_SIZE;
@@ -469,15 +661,21 @@ async function handleUpload(sql, userId, payload = {}) {
         file_type,
         file_size,
         text_content,
-        metadata
+        metadata,
+        title,
+        summary,
+        version
       ) VALUES (
         ${userId},
         ${filename},
-        ${document.originalFilename || null},
+        ${normalizedOriginalFilename || filename},
         ${normalizedDocumentType},
         ${Number.isFinite(document.size) ? Number(document.size) : null},
         ${text},
-        ${metadataJson}::jsonb
+        ${metadataJson}::jsonb,
+        ${normalizedTitle || null},
+        ${normalizedSummary || null},
+        ${normalizedVersion || null}
       )
       RETURNING id,
                 filename,
@@ -485,6 +683,9 @@ async function handleUpload(sql, userId, payload = {}) {
                 file_type,
                 file_size,
                 metadata,
+                title,
+                summary,
+                version,
                 created_at,
                 updated_at
     `;
@@ -551,11 +752,14 @@ async function handleSearch(sql, userId, payload = {}) {
            c.chunk_text,
            d.filename,
            d.metadata,
+           d.title,
+           d.summary,
+           d.version,
            ts_rank_cd(
              to_tsvector('english', c.chunk_text),
              plainto_tsquery('english', ${query})
            ) AS rank,
-           ts_headline(
+            ts_headline(
              'english',
              c.chunk_text,
              plainto_tsquery('english', ${query}),

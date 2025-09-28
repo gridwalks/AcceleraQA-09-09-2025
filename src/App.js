@@ -693,6 +693,7 @@ function App() {
     user?.sub,
     activeDocument,
     adminResources,
+    setRAGEnabled,
   ]);
 
   const handleKeyPress = useCallback(

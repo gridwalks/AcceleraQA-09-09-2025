@@ -5,6 +5,45 @@ import { getCurrentModel } from '../config/modelConfig';
 import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION, RAG_DOCS_FUNCTION } from '../config/ragConfig';
 import { convertDocxToPdfIfNeeded } from '../utils/fileConversion';
 
+let pdfJsLoaderOverride = null;
+let cachedPdfJsLoaderPromise = null;
+
+const loadPdfJs = async () => {
+  if (pdfJsLoaderOverride) {
+    return typeof pdfJsLoaderOverride === 'function'
+      ? await pdfJsLoaderOverride()
+      : pdfJsLoaderOverride;
+  }
+
+  if (!cachedPdfJsLoaderPromise) {
+    cachedPdfJsLoaderPromise = (async () => {
+      const [pdfCore, workerModule] = await Promise.all([
+        import('pdfjs-dist/build/pdf'),
+        import('pdfjs-dist/build/pdf.worker.entry'),
+      ]);
+
+      const { GlobalWorkerOptions } = pdfCore;
+      const workerSrc = workerModule?.default || workerModule;
+      if (GlobalWorkerOptions && workerSrc && !GlobalWorkerOptions.workerSrc) {
+        GlobalWorkerOptions.workerSrc = workerSrc;
+      }
+
+      if (typeof pdfCore.getDocument !== 'function') {
+        throw new Error('PDF.js failed to expose getDocument');
+      }
+
+      return pdfCore;
+    })();
+  }
+
+  return cachedPdfJsLoaderPromise;
+};
+
+export const __setPdfJsLoaderOverride = (loader) => {
+  pdfJsLoaderOverride = loader;
+  cachedPdfJsLoaderPromise = null;
+};
+
 const MAX_PERSISTED_CONTENT_BYTES = 6 * 1024 * 1024; // 6 MB raw capture limit
 
 const DEFAULT_NEON_ENDPOINTS = Array.from(new Set([
@@ -1019,9 +1058,42 @@ class RAGService {
     if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) {
       try {
         const arrayBuffer = await file.arrayBuffer();
-        const raw = new TextDecoder().decode(arrayBuffer);
-        const matches = [...raw.matchAll(/\(([^)]+)\)/g)].map(m => m[1]).join(' ');
-        return matches.trim();
+        const pdfBytes = new Uint8Array(arrayBuffer.slice(0));
+
+        if (!pdfBytes.length) {
+          return '';
+        }
+
+        const pdfCore = await loadPdfJs();
+        const loadingTask = pdfCore.getDocument({ data: pdfBytes });
+        if (!loadingTask || typeof loadingTask.promise?.then !== 'function') {
+          throw new Error('PDF.js did not return a loading task');
+        }
+
+        const pdfDocument = await loadingTask.promise;
+        try {
+          const pageTexts = [];
+          for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            const page = await pdfDocument.getPage(pageNumber);
+            // eslint-disable-next-line no-await-in-loop
+            const textContent = await page.getTextContent();
+            const strings = (textContent?.items || [])
+              .map(item => (typeof item.str === 'string' ? item.str : ''))
+              .filter(Boolean);
+            pageTexts.push(strings.join(' '));
+            page.cleanup?.();
+          }
+
+          return pageTexts.join('\n').trim();
+        } finally {
+          try {
+            pdfDocument.cleanup?.();
+            pdfDocument.destroy?.();
+          } catch (cleanupError) {
+            console.warn('Failed to clean up PDF document after text extraction:', cleanupError);
+          }
+        }
       } catch (err) {
         console.error('Failed to extract PDF text:', err);
         throw new Error(`Failed to extract PDF text: ${err.message}`);

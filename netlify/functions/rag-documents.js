@@ -18,6 +18,21 @@ const DEFAULT_CONTENT_ENCODING = 'base64';
 
 const getOpenAIApiKey = () => process.env.OPENAI_API_KEY || process.env.REACT_APP_OPENAI_API_KEY || null;
 
+const getFirstNonEmptyString = (...values) => {
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return '';
+};
+
 const getSqlClient = () => {
   if (!sqlClient) {
     const connectionString = process.env.NEON_DATABASE_URL;
@@ -226,6 +241,47 @@ const sanitizeDocumentMetadata = (metadata = {}) => {
     }
 
     sanitized[key] = value;
+  }
+
+  if (sanitized.summary && !sanitized.description) {
+    sanitized.description = sanitized.summary;
+  }
+
+  if (sanitized.description && !sanitized.summary) {
+    sanitized.summary = sanitized.description;
+  }
+
+  const resolvedTitle = getFirstNonEmptyString(
+    sanitized.title,
+    sanitized.fileTitle,
+    sanitized.documentTitle,
+    sanitized.displayTitle,
+  );
+
+  if (resolvedTitle) {
+    if (!sanitized.title) {
+      sanitized.title = resolvedTitle;
+    }
+    if (!sanitized.fileTitle) {
+      sanitized.fileTitle = resolvedTitle;
+    }
+    if (!sanitized.documentTitle) {
+      sanitized.documentTitle = resolvedTitle;
+    }
+    if (!sanitized.displayTitle) {
+      sanitized.displayTitle = resolvedTitle;
+    }
+  }
+
+  if (!sanitized.fileName) {
+    const fallbackFileName = getFirstNonEmptyString(
+      sanitized.filename,
+      sanitized.file_name,
+      sanitized.name,
+    );
+    if (fallbackFileName) {
+      sanitized.fileName = fallbackFileName;
+    }
   }
 
   return sanitized;

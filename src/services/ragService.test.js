@@ -140,6 +140,71 @@ describe('ragService neon backend integration', () => {
     expect(result.results[0].documentId).toBe('doc-1');
   });
 
+  test('updateDocumentMetadata sends sanitized changes to Neon', async () => {
+    const neonResponses = {
+      update_metadata: (_userId, payload) => {
+        expect(payload.documentId).toBe(123);
+        expect(payload.metadata).toEqual({
+          title: 'New Title',
+          category: 'guidelines',
+          version: '2.0',
+        });
+        expect(Array.isArray(payload.clearFields)).toBe(true);
+        expect(payload.clearFields).toEqual(expect.arrayContaining(['description', 'tags']));
+        expect(payload.clearFields).toHaveLength(2);
+
+        return {
+          document: {
+            id: 123,
+            filename: 'policy.pdf',
+            metadata: {
+              title: 'New Title',
+              summary: 'Prior summary',
+              description: 'Prior summary',
+              category: 'guidelines',
+              version: '2.0',
+              tags: [],
+              processingMode: 'neon-postgresql',
+            },
+          },
+        };
+      },
+    };
+
+    const { ragService, makeNeonRequestSpy } = await setupNeonRagService({ neonResponses });
+
+    const result = await ragService.updateDocumentMetadata(
+      123,
+      {
+        title: ' New Title ',
+        description: '   ',
+        category: ' guidelines ',
+        version: ' 2.0 ',
+        tags: [],
+      },
+      'user-5'
+    );
+
+    expect(makeNeonRequestSpy).toHaveBeenCalledWith(
+      'update_metadata',
+      'user-5',
+      expect.objectContaining({
+        documentId: 123,
+        metadata: {
+          title: 'New Title',
+          category: 'guidelines',
+          version: '2.0',
+        },
+        clearFields: expect.arrayContaining(['description', 'tags']),
+      })
+    );
+
+    expect(result.id).toBe(123);
+    expect(result.metadata.title).toBe('New Title');
+    expect(result.metadata.category).toBe('guidelines');
+    expect(result.metadata.version).toBe('2.0');
+  });
+
   test('generateRAGResponse builds context from Neon search results', async () => {
     const neonResponses = {
       search: () => ({

@@ -947,23 +947,29 @@ class RAGService {
       throw new Error('documentId is required to update metadata');
     }
 
-    if (this.isNeonBackend()) {
-      throw new Error('Document metadata editing is not supported when using the Neon backend');
-    }
-
     const resolvedUserId = userId || (await getUserId());
     if (!resolvedUserId) {
       throw new Error('User ID is required to update document metadata');
     }
 
     const { sanitizedMetadata, clearFields } = this.prepareMetadataUpdate(metadataUpdates || {});
-    const payload = {
-      documentId,
-      metadata: sanitizedMetadata,
-    };
+    const payload = { documentId, metadata: sanitizedMetadata };
 
     if (clearFields.length > 0) {
       payload.clearFields = clearFields;
+    }
+
+    if (this.isNeonBackend()) {
+      const response = await this.makeNeonRequest('update_metadata', resolvedUserId, payload);
+      const updatedDocument = response?.document;
+
+      if (!updatedDocument) {
+        const errorMessage = response?.error || 'Failed to update document metadata';
+        throw new Error(errorMessage);
+      }
+
+      this.clearDocumentMetadataCache(resolvedUserId);
+      return updatedDocument;
     }
 
     const response = await this.makeDocumentMetadataRequest('update_document', resolvedUserId, payload);

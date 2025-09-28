@@ -554,6 +554,277 @@ async function handleDelete(sql, userId, payload = {}) {
   };
 }
 
+function normalizeClearFields(clearFields = []) {
+  if (!Array.isArray(clearFields)) {
+    return new Set();
+  }
+
+  const normalized = new Set();
+
+  for (const field of clearFields) {
+    if (typeof field !== 'string') {
+      continue;
+    }
+
+    const trimmed = field.trim();
+    if (trimmed) {
+      normalized.add(trimmed);
+    }
+  }
+
+  return normalized;
+}
+
+function applyMetadataClearOperations({ existingMetadata, clearFields, existingRow }) {
+  const updatedMetadata = { ...(existingMetadata || {}) };
+
+  if (!updatedMetadata.processingMode) {
+    updatedMetadata.processingMode = 'neon-postgresql';
+  }
+
+  if (!updatedMetadata.fileName && existingRow?.filename) {
+    updatedMetadata.fileName = existingRow.filename;
+  }
+
+  if (!updatedMetadata.originalFilename && existingRow?.original_filename) {
+    updatedMetadata.originalFilename = existingRow.original_filename;
+  }
+
+  let nextTitle = existingRow?.title || null;
+  let nextSummary = existingRow?.summary || null;
+  let nextVersion = existingRow?.version || null;
+
+  if (clearFields.has('title')) {
+    nextTitle = null;
+    delete updatedMetadata.title;
+    delete updatedMetadata.fileTitle;
+    delete updatedMetadata.documentTitle;
+    delete updatedMetadata.displayTitle;
+  }
+
+  if (clearFields.has('description') || clearFields.has('summary')) {
+    nextSummary = null;
+    delete updatedMetadata.description;
+    delete updatedMetadata.summary;
+    delete updatedMetadata.displaySummary;
+  }
+
+  if (clearFields.has('version')) {
+    nextVersion = null;
+    delete updatedMetadata.version;
+  }
+
+  if (clearFields.has('category')) {
+    delete updatedMetadata.category;
+  }
+
+  if (clearFields.has('tags')) {
+    delete updatedMetadata.tags;
+  }
+
+  return {
+    metadata: updatedMetadata,
+    nextTitle,
+    nextSummary,
+    nextVersion,
+  };
+}
+
+function applyMetadataUpdates({ metadata, updates, state }) {
+  const nextState = {
+    metadata: { ...(metadata || {}) },
+    nextTitle: state.nextTitle,
+    nextSummary: state.nextSummary,
+    nextVersion: state.nextVersion,
+  };
+
+  const titleValue = typeof updates.title === 'string' ? updates.title.trim() : '';
+  if (titleValue) {
+    nextState.nextTitle = titleValue;
+    nextState.metadata.title = titleValue;
+    nextState.metadata.fileTitle = titleValue;
+    nextState.metadata.documentTitle = titleValue;
+    nextState.metadata.displayTitle = titleValue;
+  }
+
+  const summaryValue =
+    typeof updates.description === 'string' && updates.description.trim()
+      ? updates.description.trim()
+      : typeof updates.summary === 'string' && updates.summary.trim()
+        ? updates.summary.trim()
+        : '';
+
+  if (summaryValue) {
+    nextState.nextSummary = summaryValue;
+    nextState.metadata.description = summaryValue;
+    nextState.metadata.summary = summaryValue;
+    nextState.metadata.displaySummary = summaryValue;
+  }
+
+  const versionValue = typeof updates.version === 'string' ? updates.version.trim() : '';
+  if (versionValue) {
+    nextState.nextVersion = versionValue;
+    nextState.metadata.version = versionValue;
+  }
+
+  if ('category' in updates) {
+    const categoryValue = typeof updates.category === 'string' ? updates.category.trim() : '';
+    if (categoryValue) {
+      nextState.metadata.category = categoryValue;
+    } else {
+      delete nextState.metadata.category;
+    }
+  }
+
+  if ('tags' in updates) {
+    const tagValues = Array.isArray(updates.tags)
+      ? updates.tags
+      : typeof updates.tags === 'string'
+        ? updates.tags
+            .split(',')
+            .map(tag => tag.trim())
+            .filter(Boolean)
+        : [];
+
+    const normalizedTags = tagValues
+      .filter(tag => typeof tag === 'string')
+      .map(tag => tag.trim())
+      .filter(Boolean);
+
+    if (normalizedTags.length > 0) {
+      nextState.metadata.tags = normalizedTags;
+    } else {
+      delete nextState.metadata.tags;
+    }
+  }
+
+  if (nextState.nextTitle) {
+    nextState.metadata.title = nextState.metadata.title || nextState.nextTitle;
+    nextState.metadata.fileTitle = nextState.metadata.fileTitle || nextState.nextTitle;
+    nextState.metadata.documentTitle = nextState.metadata.documentTitle || nextState.nextTitle;
+    nextState.metadata.displayTitle = nextState.metadata.displayTitle || nextState.nextTitle;
+  }
+
+  if (nextState.nextSummary) {
+    nextState.metadata.summary = nextState.metadata.summary || nextState.nextSummary;
+    nextState.metadata.description = nextState.metadata.description || nextState.nextSummary;
+    if (!nextState.metadata.displaySummary) {
+      nextState.metadata.displaySummary = nextState.nextSummary;
+    }
+  }
+
+  if (!nextState.metadata.processingMode) {
+    nextState.metadata.processingMode = 'neon-postgresql';
+  }
+
+  return nextState;
+}
+
+async function handleUpdateMetadata(sql, userId, payload = {}) {
+  await ensureRagSchema(sql);
+
+  const documentId = payload.documentId;
+  if (documentId == null) {
+    const error = new Error('documentId is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const metadataUpdates =
+    payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+      ? payload.metadata
+      : {};
+
+  const clearFields = normalizeClearFields(payload.clearFields);
+
+  const [existing] = await sql`
+    SELECT d.id,
+           d.filename,
+           d.original_filename,
+           d.file_type,
+           d.file_size,
+           d.metadata,
+           d.title,
+           d.summary,
+           d.version,
+           d.created_at,
+           d.updated_at,
+           (SELECT COUNT(*)::int FROM rag_document_chunks WHERE document_id = d.id) AS chunk_count
+      FROM rag_documents d
+     WHERE d.id = ${documentId}
+       AND d.user_id = ${userId}
+     LIMIT 1
+  `;
+
+  if (!existing) {
+    const error = new Error('Document not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (clearFields.size === 0 && Object.keys(metadataUpdates).length === 0) {
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        message: 'No metadata changes applied',
+        document: normalizeDocumentRow(existing),
+      }),
+    };
+  }
+
+  const currentMetadata = parseMetadata(existing.metadata);
+  const cleared = applyMetadataClearOperations({
+    existingMetadata: currentMetadata,
+    clearFields,
+    existingRow: existing,
+  });
+
+  const nextState = applyMetadataUpdates({
+    metadata: cleared.metadata,
+    updates: metadataUpdates,
+    state: cleared,
+  });
+
+  const metadataJson = JSON.stringify(nextState.metadata);
+
+  const [updatedRow] = await sql`
+    UPDATE rag_documents
+       SET metadata = ${metadataJson}::jsonb,
+           title = ${nextState.nextTitle || null},
+           summary = ${nextState.nextSummary || null},
+           version = ${nextState.nextVersion || null},
+           updated_at = CURRENT_TIMESTAMP
+     WHERE id = ${documentId}
+       AND user_id = ${userId}
+   RETURNING id,
+             filename,
+             original_filename,
+             file_type,
+             file_size,
+             metadata,
+             title,
+             summary,
+             version,
+             created_at,
+             updated_at,
+             (SELECT COUNT(*)::int FROM rag_document_chunks WHERE document_id = rag_documents.id) AS chunk_count
+  `;
+
+  if (!updatedRow) {
+    const error = new Error('Failed to update document metadata');
+    error.statusCode = 500;
+    throw error;
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      message: 'Document metadata updated',
+      document: normalizeDocumentRow(updatedRow),
+    }),
+  };
+}
+
 async function handleUpload(sql, userId, payload = {}) {
   await ensureRagSchema(sql);
 
@@ -603,6 +874,7 @@ async function handleUpload(sql, userId, payload = {}) {
   if (normalizedOriginalFilename) {
     metadata.originalFilename = metadata.originalFilename || normalizedOriginalFilename;
   }
+
   const normalizedTitle = getFirstNonEmptyString(
     document.title,
     metadata.title,
@@ -878,6 +1150,8 @@ export const handler = async (event) => {
         return { ...(await handleUpload(sql, userId, requestBody)), headers };
       case 'delete':
         return { ...(await handleDelete(sql, userId, requestBody)), headers };
+      case 'update_metadata':
+        return { ...(await handleUpdateMetadata(sql, userId, requestBody)), headers };
       case 'search':
         return { ...(await handleSearch(sql, userId, requestBody)), headers };
       case 'stats':

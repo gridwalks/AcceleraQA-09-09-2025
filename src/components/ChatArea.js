@@ -1,7 +1,7 @@
 // src/components/ChatArea.js - DEPLOYMENT READY (fixes DatabaseOff issue)
 
 import React, { useCallback } from 'react';
-import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown } from 'lucide-react';
+import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown, Trash2 } from 'lucide-react';
 import { exportToWord } from '../utils/exportUtils';
 
 const createUnicodeLetterRegex = () => {
@@ -690,7 +690,15 @@ const ChatArea = ({
   uploadedFile,
   setUploadedFile,
   cooldown, // rate-limit cooldown (seconds)
+  onClearChat,
 }) => {
+  const inputLength = typeof inputMessage === 'string' ? inputMessage.length : 0;
+  const trimmedInputMessage = typeof inputMessage === 'string' ? inputMessage.trim() : '';
+  const hasMessages = Array.isArray(messages) && messages.length > 0;
+  const hasAttachment = Boolean(uploadedFile);
+  const canClearChat = Boolean(onClearChat) && (hasMessages || hasAttachment || trimmedInputMessage.length > 0);
+  const clearButtonDisabled = isLoading || !canClearChat;
+
   const handleExportStudyNotes = useCallback((studyNotesMessage) => {
     if (!studyNotesMessage) {
       return;
@@ -1032,7 +1040,7 @@ const ChatArea = ({
           <button
             type="button"
             onClick={handleSendMessage}
-            disabled={isLoading || cooldown > 0 || (!inputMessage.trim() && !uploadedFile)}
+            disabled={isLoading || cooldown > 0 || (!trimmedInputMessage && !uploadedFile)}
             className="flex min-w-[44px] items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:py-4"
             title={cooldown > 0 ? `Please wait ${cooldown}s` : 'Send message'}
           >
@@ -1048,12 +1056,29 @@ const ChatArea = ({
           <AttachmentPreview file={uploadedFile} onRemove={() => setUploadedFile(null)} />
         )}
 
-        {/* Character/Line Count for longer messages */}
-        {inputMessage.length > 100 && (
-          <div className="text-xs text-gray-500 mt-2 text-right">
-            {inputMessage.length} characters
-          </div>
-        )}
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          {inputLength > 100 && (
+            <div className="text-xs text-gray-500 text-right sm:text-left">
+              {inputLength} characters
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (clearButtonDisabled || !onClearChat) {
+                return;
+              }
+              onClearChat();
+            }}
+            disabled={clearButtonDisabled}
+            aria-label="Clear chat history"
+            title="Clear the current conversation"
+            className="inline-flex items-center gap-2 self-end sm:self-auto sm:ml-auto rounded-md border border-transparent bg-white px-3 py-2 text-xs sm:text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
+            <span>Clear chat</span>
+          </button>
+        </div>
       </div>
     </div>
   );

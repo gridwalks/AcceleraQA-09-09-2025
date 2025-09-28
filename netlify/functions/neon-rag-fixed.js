@@ -41,9 +41,6 @@ function resolveConnectionString() {
     error.statusCode = 500;
     throw error;
   }
-  return userId;
-}
-
   if (!/sslmode=/i.test(connectionString)) {
     console.warn('Connection string missing sslmode parameter; Neon recommends sslmode=require');
   }

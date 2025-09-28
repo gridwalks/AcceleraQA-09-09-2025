@@ -17,6 +17,82 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
+const getS3BucketName = () =>
+  process.env.RAG_S3_BUCKET ||
+  process.env.S3_BUCKET ||
+  process.env.AWS_S3_BUCKET ||
+  process.env.AWS_BUCKET_NAME ||
+  '';
+
+const getS3KeyPrefix = () => {
+  const candidates = [
+    process.env.RAG_S3_PREFIX,
+    process.env.S3_KEY_PREFIX,
+    process.env.AWS_S3_PREFIX,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+
+    const trimmed = candidate.trim().replace(/^\/+|\/+$/g, '');
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return 'rag-documents';
+};
+
+const isAccessDeniedError = (error) => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = error.name || error.Code || error.code;
+  const status = error.$metadata?.httpStatusCode || error.statusCode;
+  const message = typeof error.message === 'string' ? error.message : '';
+
+  return (
+    code === 'AccessDenied' ||
+    code === 'Forbidden' ||
+    status === 403 ||
+    /access\s*denied/i.test(message)
+  );
+};
+
+const buildS3UploadError = (error) => {
+  const bucket = getS3BucketName();
+  const prefix = getS3KeyPrefix();
+  const accessDenied = isAccessDeniedError(error);
+  const baseMessage = accessDenied
+    ? 'Access denied when uploading document to S3.'
+    : 'Failed to upload document to S3.';
+
+  const guidanceParts = [];
+  if (bucket) {
+    guidanceParts.push(`bucket "${bucket}"`);
+  }
+  if (prefix) {
+    guidanceParts.push(`prefix "${prefix}"`);
+  }
+
+  const guidance = guidanceParts.length
+    ? ` Confirm the configured IAM role allows s3:PutObject on ${guidanceParts.join(' and ')}.`
+    : '';
+
+  const detail = error && typeof error.message === 'string' && error.message
+    ? ` Details: ${error.message}`
+    : '';
+
+  const friendlyError = new Error(`${baseMessage}${guidance}${detail}`.trim());
+  const fallbackStatus = error?.$metadata?.httpStatusCode || error?.statusCode || 502;
+  const normalizedStatus = Number.isFinite(fallbackStatus) ? Number(fallbackStatus) : 502;
+  friendlyError.statusCode = accessDenied ? 403 : Math.min(Math.max(normalizedStatus, 400), 599);
+  return friendlyError;
+};
+
 let sqlClientPromise = null;
 let ensuredSchemaPromise = null;
 let documentTypeOptionsPromise = null;
@@ -941,17 +1017,22 @@ async function handleUpload(sql, userId, payload = {}) {
 
   let storageLocation = null;
   if (contentBuffer && contentBuffer.length > 0) {
-    storageLocation = await uploadDocumentToS3({
-      body: contentBuffer,
-      contentType: mimeType || 'application/octet-stream',
-      userId,
-      documentId: document.documentId || document.id || payload.documentId || filename,
-      filename,
-      metadata: {
-        'x-user-id': userId,
-        'x-document-filename': filename,
-      },
-    });
+    try {
+      storageLocation = await uploadDocumentToS3({
+        body: contentBuffer,
+        contentType: mimeType || 'application/octet-stream',
+        userId,
+        documentId: document.documentId || document.id || payload.documentId || filename,
+        filename,
+        metadata: {
+          'x-user-id': userId,
+          'x-document-filename': filename,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to upload document content to S3', error);
+      throw buildS3UploadError(error);
+    }
 
     metadata.storage = {
       provider: 's3',

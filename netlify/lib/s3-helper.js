@@ -53,8 +53,51 @@ const getS3Client = async (region) => {
   return cachedClient;
 };
 
+const sanitizeKeyPrefix = (prefix) => {
+  if (typeof prefix !== 'string') {
+    return '';
+  }
+
+  return prefix
+    .split('/')
+    .map(segment => sanitizeKeySegment(segment, ''))
+    .filter(Boolean)
+    .join('/');
+};
+
+const getConfiguredKeyPrefix = () => {
+  const candidates = [
+    process.env.RAG_S3_PREFIX,
+    process.env.S3_KEY_PREFIX,
+    process.env.AWS_S3_PREFIX,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+
+    const trimmed = candidate.trim().replace(/^\/+|\/+$/g, '');
+    if (!trimmed) {
+      continue;
+    }
+
+    const sanitized = sanitizeKeyPrefix(trimmed);
+    if (sanitized) {
+      return sanitized;
+    }
+  }
+
+  return DEFAULT_KEY_PREFIX;
+};
+
 const buildObjectKey = ({ userId, documentId, filename }) => {
-  const segments = [DEFAULT_KEY_PREFIX];
+  const segments = [];
+
+  const configuredPrefix = getConfiguredKeyPrefix();
+  if (configuredPrefix) {
+    segments.push(configuredPrefix);
+  }
 
   const normalizedUserId = sanitizeKeySegment(userId, 'anonymous');
   segments.push(normalizedUserId);
@@ -110,11 +153,20 @@ export const uploadDocumentToS3 = async ({
   const key = buildObjectKey({ userId, documentId, filename });
 
   const { PutObjectCommand } = await loadS3Module();
+  const size = Buffer.isBuffer(body)
+    ? body.length
+    : ArrayBuffer.isView(body)
+      ? body.byteLength
+      : typeof body === 'string'
+        ? Buffer.byteLength(body)
+        : null;
+  
   const putObjectCommand = new PutObjectCommand({
     Bucket: bucket,
     Key: key,
     Body: body,
     ContentType: contentType || 'application/octet-stream',
+    ...(typeof size === 'number' ? { ContentLength: size } : {}),
     Metadata: Object.fromEntries(
       Object.entries(metadata || {})
         .filter(([metaKey, metaValue]) =>
@@ -128,14 +180,6 @@ export const uploadDocumentToS3 = async ({
   const etag = typeof response.ETag === 'string' ? response.ETag.replace(/"/g, '') : null;
   const url = buildS3Url({ bucket, region, key });
 
-  const size = Buffer.isBuffer(body)
-    ? body.length
-    : ArrayBuffer.isView(body)
-      ? body.byteLength
-      : typeof body === 'string'
-        ? Buffer.byteLength(body)
-        : null;
-
   return {
     bucket,
     region,
@@ -148,6 +192,7 @@ export const uploadDocumentToS3 = async ({
 
 export const __internal = {
   resolveS3Config,
+  getConfiguredKeyPrefix,
   buildObjectKey,
   buildS3Url,
   sanitizeKeySegment,

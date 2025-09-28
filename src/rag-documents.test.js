@@ -35,6 +35,9 @@ afterEach(() => {
   delete global.fetch;
   delete process.env.RAG_S3_BUCKET;
   delete process.env.RAG_S3_REGION;
+  delete process.env.RAG_S3_PREFIX;
+  delete process.env.S3_KEY_PREFIX;
+  delete process.env.AWS_S3_PREFIX;
   delete global.__UPLOAD_DOCUMENT_TO_S3_MOCK__;
 });
 

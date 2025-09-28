@@ -102,4 +102,37 @@ describe('neon-rag-fixed handleUpload', () => {
       expect.objectContaining({ provider: 's3', url: expect.stringContaining('https://test-bucket.s3.amazonaws.com') })
     );
   });
+
+  test('surfaces helpful message when S3 denies access', async () => {
+    uploadDocumentToS3Mock.mockRejectedValueOnce(
+      Object.assign(new Error('Access Denied'), {
+        name: 'AccessDenied',
+        $metadata: { httpStatusCode: 403 },
+      })
+    );
+
+    const sqlMock = jest.fn(async (strings) => {
+      const query = strings.join(' ');
+      if (query.includes('SELECT enumlabel')) {
+        return [];
+      }
+      return [];
+    });
+
+    const payload = {
+      document: {
+        documentId: 'doc-1',
+        filename: 'Policy.pdf',
+        text: 'Document body',
+        type: 'application/pdf',
+        content: Buffer.from('fake').toString('base64'),
+        encoding: 'base64',
+      },
+    };
+
+    await expect(handleUpload(sqlMock, 'user-123', payload)).rejects.toMatchObject({
+      message: expect.stringContaining('Access denied when uploading document to S3'),
+      statusCode: 403,
+    });
+  });
 });

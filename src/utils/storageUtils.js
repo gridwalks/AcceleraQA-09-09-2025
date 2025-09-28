@@ -28,15 +28,8 @@ const STORAGE_CONFIG = {
  * @returns {boolean} - Whether localStorage is available
  */
 export function isStorageAvailable() {
-  try {
-    const test = '__storage_test__';
-    localStorage.setItem(test, test);
-    localStorage.removeItem(test);
-    return true;
-  } catch (error) {
-    console.warn('localStorage not available:', error);
-    return false;
-  }
+  console.info('Persistent localStorage usage has been disabled for conversations.');
+  return false;
 }
 
 /**
@@ -234,134 +227,8 @@ function buildThreadSnapshotsForStorage(messages) {
  * @returns {Promise<Object[]>} - Loaded messages or empty array
  */
 export async function loadMessagesFromStorage(userId) {
-  console.log('=== LOADING MESSAGES FROM STORAGE ===');
-  console.log('User ID:', userId);
-  
-  if (!isStorageAvailable()) {
-    console.warn('Storage not available, returning empty messages');
-    return [];
-  }
-
-  try {
-    if (!userId) {
-      throw new Error('User ID is required');
-    }
-    
-    const storageKey = getUserStorageKey(userId);
-    console.log('Storage key:', storageKey);
-    
-    const storedData = localStorage.getItem(storageKey);
-    console.log('Raw stored data exists:', !!storedData);
-    console.log('Raw stored data length:', storedData?.length || 0);
-    
-    if (!storedData) {
-      console.log(`No stored data found for user ${userId}`);
-      return [];
-    }
-    
-    const data = decompressData(storedData);
-    console.log('Decompressed data:', data);
-    
-    // ENHANCED: Handle different data formats that might be stored
-    let messages = [];
-
-    if (Array.isArray(data)) {
-      // Old format: data is directly an array of messages
-      console.log('Found old format - array of messages');
-      messages = data;
-    } else if (Array.isArray(data.threads)) {
-      console.log('Found threaded storage format');
-      messages = data.threads.flatMap((thread) => {
-        const threadId = thread?.id || thread?.threadId || thread?.thread_id || null;
-        const threadMessages = Array.isArray(thread?.messages) ? thread.messages : [];
-        return threadMessages.map((msg) => ({
-          ...msg,
-          threadId: msg.threadId || msg.conversationThreadId || threadId || null,
-          conversationThreadId: msg.conversationThreadId || msg.threadId || threadId || null,
-          conversationId: msg.conversationId || threadId || null,
-        }));
-      });
-    } else if (data.messages && Array.isArray(data.messages)) {
-      // Newer format: data is an object with messages array
-      console.log('Found message array format inside object');
-      messages = data.messages;
-    } else {
-      console.warn('Unknown data format:', data);
-      return [];
-    }
-
-    console.log('Raw messages found:', messages.length);
-    console.log('Sample messages:', messages.slice(0, 2).map(m => ({
-      id: m?.id,
-      type: m?.type,
-      content: m?.content?.substring(0, 50) + '...',
-      timestamp: m?.timestamp
-    })));
-    
-    // FIXED: Better message validation and repair
-    const validMessages = [];
-
-    messages.forEach((msg, index) => {
-      if (!msg || typeof msg !== 'object') {
-        console.log(`Skipping invalid message at index ${index}:`, msg);
-        return;
-      }
-
-      if (Object.keys(msg).length === 1 && msg.version) {
-        console.log(`Skipping version-only record at index ${index}:`, msg);
-        return;
-      }
-
-      if (validateMessage(msg)) {
-        validMessages.push({
-          ...msg,
-          role: msg.role || (msg.type === 'ai' ? 'assistant' : 'user'),
-          isStored: true,
-          isCurrent: false
-        });
-      } else {
-        console.warn(`Invalid message at index ${index}, attempting repair:`, msg);
-        const repairedMessage = repairMessage(msg);
-        if (repairedMessage) {
-          console.log(`Successfully repaired message at index ${index}`);
-          validMessages.push({
-            ...repairedMessage,
-            role: repairedMessage.role || (repairedMessage.type === 'ai' ? 'assistant' : 'user'),
-            isStored: true,
-            isCurrent: false
-          });
-        } else {
-          console.error(`Could not repair message at index ${index}, skipping`);
-        }
-      }
-    });
-    
-    console.log(`Successfully loaded ${validMessages.length} valid messages out of ${messages.length} total`);
-    console.log('Valid messages sample:', validMessages.slice(0, 2).map(m => ({
-      id: m.id,
-      type: m.type,
-      content: m.content.substring(0, 50) + '...',
-      timestamp: m.timestamp
-    })));
-    
-    return validMessages;
-    
-  } catch (error) {
-    console.error('Error loading messages from storage:', error);
-    console.error('Error stack:', error.stack);
-    
-    // If there's corrupted data, try to clear it and return empty array
-    try {
-      const storageKey = getUserStorageKey(userId);
-      console.log('Attempting to clear corrupted data...');
-      localStorage.removeItem(storageKey);
-      console.log('Corrupted data cleared');
-    } catch (clearError) {
-      console.error('Error clearing corrupted data:', clearError);
-    }
-    
-    return [];
-  }
+  console.info('Persistent message storage is disabled. Returning empty history for user:', userId);
+  return [];
 }
 
 /**
@@ -428,72 +295,8 @@ function validateMessagesForStorage(messages) {
  * @returns {Promise<boolean>} - Success status
  */
 export async function saveMessagesToStorage(userId, messages) {
-  if (!isStorageAvailable()) {
-    console.warn('Storage not available, messages not saved');
-    return false;
-  }
-
-  try {
-    // Validate input
-    if (!userId) {
-      throw new Error('User ID is required');
-    }
-    
-    const validMessages = validateMessagesForStorage(messages);
-    const storageKey = getUserStorageKey(userId);
-    
-    console.log(`Saving ${validMessages.length} messages to storage for user ${userId}`);
-    
-    // Check storage usage and cleanup if needed
-    const usage = getStorageUsage();
-    if (usage.percentage > STORAGE_CONFIG.CLEANUP_THRESHOLD * 100) {
-      console.log('Storage usage high, performing cleanup...');
-      cleanupOldMessages(userId);
-    }
-    
-    const threads = buildThreadSnapshotsForStorage(validMessages);
-
-    // Prepare data for storage
-    const storageData = {
-      version: STORAGE_CONFIG.VERSION,
-      userId,
-      messages: validMessages,
-      threads,
-      threadCount: threads.length,
-      lastSaved: new Date().toISOString(),
-      messageCount: validMessages.length,
-      appVersion: APP_CONFIG.VERSION
-    };
-    
-    // Save to localStorage
-    const compressedData = compressData(storageData);
-    localStorage.setItem(storageKey, compressedData);
-    
-    // Update metadata
-    updateStorageMetadata(userId, validMessages.length);
-    
-    console.log(`Successfully saved ${validMessages.length} messages for user ${userId}`);
-    return true;
-    
-  } catch (error) {
-    console.error('Error saving messages to storage:', error);
-    
-    // If quota exceeded, try cleanup and retry once
-    if (error.name === 'QuotaExceededError') {
-      try {
-        console.log('Quota exceeded, attempting cleanup and retry...');
-        cleanupOldMessages(userId, Math.floor(STORAGE_CONFIG.MAX_MESSAGES_PER_USER * 0.5));
-        
-        // Retry with fewer messages
-        const reducedMessages = messages.slice(-Math.floor(STORAGE_CONFIG.MAX_MESSAGES_PER_USER * 0.5));
-        return await saveMessagesToStorage(userId, reducedMessages);
-      } catch (retryError) {
-        console.error('Retry failed:', retryError);
-      }
-    }
-    
-    return false;
-  }
+  console.info('Persistent message storage is disabled. Skipping save for user:', userId);
+  return false;
 }
 
 /**

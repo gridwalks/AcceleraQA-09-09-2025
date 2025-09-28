@@ -159,6 +159,31 @@ const mapDocumentRow = (row) => {
   };
 };
 
+const isAccessDeniedError = (error) => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = error.name || error.Code || error.code;
+  const status = error.$metadata?.httpStatusCode || error.statusCode;
+  const message = typeof error.message === 'string' ? error.message : '';
+
+  return (
+    code === 'AccessDenied' ||
+    code === 'Forbidden' ||
+    status === 403 ||
+    /access\s*denied/i.test(message)
+  );
+};
+
+const logS3AccessDeniedHint = (error) => {
+  if (isAccessDeniedError(error)) {
+    console.error(
+      'If the policy is scoped to arn:aws:s3:::acceleraqa-kb/uploads/* but your app is writing to rag-documents/, S3 will return Access Denied'
+    );
+  }
+};
+
 const estimateBinarySizeFromBase64 = (base64 = '') => {
   if (!base64) return 0;
 
@@ -407,6 +432,7 @@ const handleSaveDocument = async (sql, userId, payload) => {
       });
     } catch (uploadError) {
       console.error('Failed to upload document content to S3:', uploadError);
+      logS3AccessDeniedHint(uploadError);
       storageLocation = null;
     }
   }

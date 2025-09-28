@@ -1031,6 +1031,11 @@ async function handleUpload(sql, userId, payload = {}) {
       });
     } catch (error) {
       console.error('Failed to upload document content to S3', error);
+      if (isAccessDeniedError(error)) {
+        console.error(
+          'If the policy is scoped to arn:aws:s3:::acceleraqa-kb/uploads/* but your app is writing to rag-documents/, S3 will return Access Denied'
+        );
+      }
       throw buildS3UploadError(error);
     }
 

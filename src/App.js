@@ -158,8 +158,8 @@ function App() {
   const [adminResources, setAdminResources] = useState([]);
 
   // Learning suggestions state
-  const [learningSuggestions, setLearningSuggestions] = useState([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [, setLearningSuggestions] = useState([]);
+  const [, setIsLoadingSuggestions] = useState(false);
 
   // Save status
   const [isSaving, setIsSaving] = useState(false);
@@ -953,28 +953,6 @@ function App() {
     }
   }, [messages, thirtyDayMessages, selectedMessages, setMessages, setSelectedMessages]);
 
-  // Handle learning suggestions updates
-  const handleSuggestionsUpdate = useCallback((suggestions) => {
-    console.log('Learning suggestions updated:', suggestions.length);
-    // Could trigger additional UI updates or analytics here
-  }, []);
-
-  const handleAddResourceToNotebook = useCallback((item) => {
-    if (!item || !item.title) return;
-    const { title, url = '', type = item.type || 'Resource' } = item;
-    const newMessage = {
-      id: uuidv4(),
-      role: 'assistant',
-      type: 'ai',
-      content: `${title}${url ? ' - ' + url : ''}`,
-      timestamp: Date.now(),
-      resources: [{ title, url, type, addedAt: Date.now() }],
-      // Mark message so it can be hidden from the chat area
-      isResource: true,
-    };
-    setMessages(prev => [...prev, newMessage]);
-  }, [setMessages]);
-
   const handleDeleteConversation = useCallback((conversation) => {
     if (!conversation) {
       return;
@@ -1128,11 +1106,6 @@ function App() {
                   <Sidebar
                     messages={messages}
                     thirtyDayMessages={thirtyDayMessages}
-                    user={user}
-                    learningSuggestions={learningSuggestions}
-                    isLoadingSuggestions={isLoadingSuggestions}
-                    onSuggestionsUpdate={handleSuggestionsUpdate}
-                    onAddResource={handleAddResourceToNotebook}
                     onConversationSelect={handleConversationSelect}
                   />
                 </div>
@@ -1165,11 +1138,6 @@ function App() {
                   <Sidebar
                     messages={messages}
                     thirtyDayMessages={thirtyDayMessages}
-                    user={user}
-                    learningSuggestions={learningSuggestions}
-                    isLoadingSuggestions={isLoadingSuggestions}
-                    onSuggestionsUpdate={handleSuggestionsUpdate}
-                    onAddResource={handleAddResourceToNotebook}
                     onConversationSelect={handleConversationSelect}
                   />
                 </div>

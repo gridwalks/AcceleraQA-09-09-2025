@@ -71,15 +71,31 @@ export const handler = async (event, context) => {
   }
 };
 
+const sanitizeConversationId = (id) => {
+  if (!id) return null;
+  const trimmed = String(id).trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/[^a-zA-Z0-9._-]/g, '_');
+};
+
+const sortMessagesByTimestamp = (messages = []) =>
+  messages
+    .slice()
+    .sort((a, b) => {
+      const aTime = a?.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const bTime = b?.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return aTime - bTime;
+    });
+
 /**
  * Save conversation with enhanced RAG tracking
  */
-async function saveConversation(userId, conversationData) {
+async function saveConversation(userId, conversationData = {}) {
   try {
     const conversationStore = getConversationStore();
-    
-    const { messages, metadata } = conversationData;
-    
+
+    const { messages, metadata = {}, conversationId: payloadConversationId } = conversationData;
+
     // Validate required fields
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return {
@@ -89,54 +105,116 @@ async function saveConversation(userId, conversationData) {
       };
     }
 
-    // Extract RAG information
-    const ragMessages = messages.filter(msg => 
-      msg.sources && msg.sources.length > 0
-    );
-    
-    const ragDocuments = [...new Set(
-      ragMessages.flatMap(msg => 
-        msg.sources?.map(source => source.documentId) || []
-      )
-    )];
+    const firstMessage = messages[0] || {};
+    const metadataConversationId = metadata.conversationId || metadata.threadId || metadata.sessionId;
+    const messageConversationId = firstMessage.conversationId || firstMessage.threadId || firstMessage.sessionId;
 
-    const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const resolvedConversationId =
+      sanitizeConversationId(payloadConversationId) ||
+      sanitizeConversationId(metadataConversationId) ||
+      sanitizeConversationId(messageConversationId);
+
+    const conversationId =
+      resolvedConversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const conversationKey = `${userId}/${conversationId}`;
+
+    const existingData = await conversationStore.get(conversationKey);
+    const existingConversation = existingData ? JSON.parse(existingData) : null;
+
+
     const timestamp = new Date().toISOString();
 
-    // Prepare conversation data
+    const existingMessages = Array.isArray(existingConversation?.messages)
+      ? existingConversation.messages
+      : [];
+
+    const messageMap = new Map();
+
+    existingMessages.forEach(msg => {
+      if (msg && msg.id) {
+        messageMap.set(msg.id, msg);
+      }
+    });
+
+    messages.forEach(msg => {
+      if (msg && msg.id) {
+        const existing = messageMap.get(msg.id) || {};
+        messageMap.set(msg.id, { ...existing, ...msg });
+      }
+    });
+
+    const mergedMessages = sortMessagesByTimestamp(Array.from(messageMap.values()));
+    const addedMessageCount = Math.max(0, mergedMessages.length - existingMessages.length);
+
+    const mergedRagMessages = mergedMessages.filter(msg => msg.sources && msg.sources.length > 0);
+    const mergedRagDocuments = [...new Set(
+      mergedRagMessages.flatMap(msg => msg.sources?.map(source => source.documentId) || [])
+    )];
+
+    const mergedMetadata = {
+      ...(existingConversation?.metadata || {}),
+      ...metadata,
+      conversationId,
+      messageCount: mergedMessages.length,
+      lastActivity: timestamp,
+      ragUsed: mergedRagMessages.length > 0,
+      ragDocuments: mergedRagDocuments,
+      ragMessageCount: mergedRagMessages.length,
+    };
+
     const conversationRecord = {
       id: conversationId,
       userId,
-      messages,
-      metadata: metadata || {},
-      messageCount: messages.length,
-      usedRag: ragMessages.length > 0,
-      ragDocuments,
-      ragMessageCount: ragMessages.length,
-      createdAt: timestamp,
+      messages: mergedMessages,
+      metadata: mergedMetadata,
+      messageCount: mergedMessages.length,
+      usedRag: mergedRagMessages.length > 0,
+      ragDocuments: mergedRagDocuments,
+      ragMessageCount: mergedRagMessages.length,
+      createdAt: existingConversation?.createdAt || timestamp,
       updatedAt: timestamp
     };
 
-    // Store conversation
-    await conversationStore.set(`${userId}/${conversationId}`, JSON.stringify(conversationRecord));
+    await conversationStore.set(conversationKey, JSON.stringify(conversationRecord));
 
-    // Update user conversation stats
-    await updateUserConversationStats(userId, {
-      conversations: 1,
-      messages: messages.length,
-      ragConversations: ragMessages.length > 0 ? 1 : 0
-    });
+    const statsDeltas = {};
+
+    if (!existingConversation) {
+      statsDeltas.conversations = 1;
+    }
+
+    if (addedMessageCount > 0) {
+      statsDeltas.messages = addedMessageCount;
+    }
+
+    const previouslyUsedRag = existingConversation?.usedRag || false;
+    const currentlyUsesRag = mergedRagMessages.length > 0;
+
+    if (!existingConversation) {
+      statsDeltas.ragConversations = currentlyUsesRag ? 1 : 0;
+    } else if (previouslyUsedRag !== currentlyUsesRag) {
+      statsDeltas.ragConversations = currentlyUsesRag ? 1 : -1;
+    }
+
+    if (Object.keys(statsDeltas).length > 0) {
+      await updateUserConversationStats(userId, statsDeltas);
+    }
 
     return {
-      statusCode: 201,
+      statusCode: existingConversation ? 200 : 201,
       headers,
       body: JSON.stringify({
         id: conversationId,
-        created_at: timestamp,
-        message: 'Conversation saved successfully',
-        messageCount: messages.length,
-        ragUsed: ragMessages.length > 0,
-        ragDocuments: ragDocuments.length
+        created_at: conversationRecord.createdAt,
+        updated_at: timestamp,
+        message: existingConversation
+          ? 'Conversation updated successfully'
+          : 'Conversation saved successfully',
+        messageCount: mergedMessages.length,
+        ragUsed: currentlyUsesRag,
+        ragDocuments: mergedRagDocuments.length,
+        appendedMessages: addedMessageCount,
+        isNewConversation: !existingConversation
       }),
     };
   } catch (error) {

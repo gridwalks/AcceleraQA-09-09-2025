@@ -150,7 +150,6 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [ragEnabled, setRAGEnabled] = useState(true);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [activeDocument, setActiveDocument] = useState(null);
   const [cooldown, setCooldown] = useState(0);
@@ -547,15 +546,33 @@ function App() {
         ? { vectorStoreIds: [activeDocument.vectorStoreId] }
         : undefined;
 
-      const response = ragEnabled && !preparedFile
-        ? await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory)
-        : await openaiService.getChatResponse(
-            rawInput,
-            preparedFile,
-            conversationHistory,
-            undefined,
-            vectorStoreIdToUse
-          );
+      let response = null;
+      let modeUsed = 'AI Knowledge';
+      let documentSearchAttempted = false;
+
+      if (!preparedFile) {
+        documentSearchAttempted = true;
+        const ragResponse = await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory);
+        const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
+        const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
+
+        if (ragAnswer || ragSources.length > 0) {
+          response = ragResponse;
+          modeUsed = 'Document Search';
+        }
+      }
+
+      if (!response) {
+        response = await openaiService.getChatResponse(
+          rawInput,
+          preparedFile,
+          conversationHistory,
+          undefined,
+          vectorStoreIdToUse
+        );
+
+        modeUsed = documentSearchAttempted ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
+      }
 
       const combinedInternalResources = buildInternalResources({
         attachments,
@@ -574,7 +591,11 @@ function App() {
         id: uuidv4(),
         role: 'assistant',
         type: 'ai',
-        content: response.answer,
+        content: (() => {
+          const answerText = typeof response.answer === 'string' ? response.answer.trim() : '';
+          const modeLine = `Mode used: ${modeUsed}`;
+          return answerText ? `${answerText}\n\n_${modeLine}_` : `_${modeLine}_`;
+        })(),
         timestamp: Date.now(),
         sources: response.sources || [],
         resources: mergedResources,
@@ -666,7 +687,6 @@ function App() {
   }, [
     inputMessage,
     uploadedFile,
-    ragEnabled,
     messages,
     refreshLearningSuggestions,
     cooldown,
@@ -1059,8 +1079,6 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
@@ -1094,8 +1112,6 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}

@@ -28,6 +28,8 @@ async function getSqlClient() {
       return neon(process.env.NEON_DATABASE_URL);
     })();
   }
+  return userId;
+}
 
   return sqlClientPromise;
 }
@@ -179,6 +181,7 @@ function normalizeDocumentTypeValue({ mimeType, filename, allowedTypes }) {
     xml: 'xml',
     'application/xml': 'xml',
   };
+}
 
   for (const candidate of mimeCandidates) {
     const mapped = canonicalMap[candidate];

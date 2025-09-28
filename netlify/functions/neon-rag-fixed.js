@@ -300,10 +300,16 @@ async function getSql() {
 let poolInstance = null;
 async function getPool() {
   if (!poolInstance) {
-
     const { Pool, neonConfig } = await import('@neondatabase/serverless');
-    const ws = (await import('ws')).default;
-    neonConfig.webSocketConstructor = ws;
+
+    const wsModule = await import('ws');
+    const wsConstructor = wsModule?.default || wsModule?.WebSocket || wsModule;
+
+    if (typeof wsConstructor !== 'function') {
+      throw new Error('Failed to load ws WebSocket constructor for Neon pool');
+    }
+
+    neonConfig.webSocketConstructor = wsConstructor;
 
     const connectionString = process.env.NEON_DATABASE_URL;
     if (!connectionString) {

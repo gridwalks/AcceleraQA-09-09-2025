@@ -1,785 +1,669 @@
-// Enhanced server-side authentication handling
-// NOTE: When clients use encrypted JWE tokens, they must include an `x-user-id`
-// header because the server cannot derive the user identity from the token alone.
-// Requests lacking this header will be rejected with a 401 response.
-const jwt = require('jsonwebtoken');
-const jwksClient = require('jwks-rsa');
+import { neon, neonConfig } from '@neondatabase/serverless';
 
-// JWKS client for Auth0 token verification
-const client = jwksClient({
-  jwksUri: `https://${process.env.REACT_APP_AUTH0_DOMAIN}/.well-known/jwks.json`,
-  requestHeaders: {},
-  timeout: 30000,
-  cache: true,
-  rateLimit: true,
-  jwksRequestsPerMinute: 5
-});
+const DEFAULT_CHUNK_SIZE = 800;
+const MAX_CHUNKS = 5000;
+const MAX_TEXT_LENGTH = DEFAULT_CHUNK_SIZE * MAX_CHUNKS;
 
-function getKey(header, callback) {
-  client.getSigningKey(header.kid, (err, key) => {
-    if (err) {
-      console.error('Error getting signing key:', err);
-      return callback(err);
-    }
-    const signingKey = key.publicKey || key.rsaPublicKey;
-    callback(null, signingKey);
-  });
-}
-
-const FILENAME_EXTENSION_PATTERN =
-  /\.(pdf|docx|doc|txt|md|rtf|xlsx|xls|csv|pptx|ppt|zip|json|xml|yaml|yml|html|htm|log)$/i;
-
-const isLikelyFilename = (value) => {
-  if (typeof value !== 'string') {
-    return false;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  if (/[\\/]/.test(trimmed)) {
-    return true;
-  }
-
-  if (FILENAME_EXTENSION_PATTERN.test(trimmed)) {
-    return true;
-  }
-
-  if (!/\s/.test(trimmed) && /\.[a-z0-9]{2,5}$/i.test(trimmed)) {
-    return true;
-  }
-
-  return false;
+const headers = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Content-Type': 'application/json',
 };
 
-const parseMetadata = (rawMetadata) => {
+let sqlClientPromise = null;
+let ensuredSchemaPromise = null;
+let documentTypeOptionsPromise = null;
+
+function resolveConnectionString() {
+  const connectionString =
+    process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL;
+
+  if (!connectionString) {
+    const error = new Error(
+      'NEON_DATABASE_URL (or DATABASE_URL) environment variable is not set'
+    );
+    error.statusCode = 500;
+    throw error;
+  }
+
+  if (!/sslmode=/i.test(connectionString)) {
+    console.warn('Connection string missing sslmode parameter; Neon recommends sslmode=require');
+  }
+
+  return connectionString;
+}
+
+function getSqlClient() {
+  if (!sqlClientPromise) {
+    const connectionString = resolveConnectionString();
+    neonConfig.fetchConnectionCache = true;
+    neonConfig.poolQueryViaFetch = true;
+    sqlClientPromise = Promise.resolve(neon(connectionString));
+  }
+
+  return sqlClientPromise;
+}
+
+async function ensureRagSchema(sql) {
+  if (ensuredSchemaPromise) {
+    return ensuredSchemaPromise;
+  }
+
+  ensuredSchemaPromise = (async () => {
+    await sql`
+      CREATE TABLE IF NOT EXISTS rag_documents (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        original_filename TEXT,
+        file_type TEXT,
+        file_size BIGINT,
+        text_content TEXT,
+        metadata JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS rag_document_chunks (
+        id BIGSERIAL PRIMARY KEY,
+        document_id BIGINT NOT NULL REFERENCES rag_documents(id) ON DELETE CASCADE,
+        chunk_index INTEGER NOT NULL,
+        chunk_text TEXT NOT NULL,
+        word_count INTEGER,
+        character_count INTEGER,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_documents_user_id
+        ON rag_documents(user_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_document
+        ON rag_document_chunks(document_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_document_index
+        ON rag_document_chunks(document_id, chunk_index)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_fts
+        ON rag_document_chunks USING GIN (to_tsvector('english', chunk_text))
+    `;
+  })().catch(error => {
+    ensuredSchemaPromise = null;
+    throw error;
+  });
+
+  return ensuredSchemaPromise;
+}
+
+async function getDocumentTypeOptions(sql) {
+  if (documentTypeOptionsPromise) {
+    return documentTypeOptionsPromise;
+  }
+
+  documentTypeOptionsPromise = (async () => {
+    try {
+      const rows = await sql`
+        SELECT enumlabel
+          FROM pg_enum e
+          JOIN pg_type t ON t.oid = e.enumtypid
+         WHERE t.typname = 'document_type'
+      `;
+
+      return rows.map(row => row.enumlabel);
+    } catch (error) {
+      console.warn('Unable to load document_type enum options, defaulting to empty list', error.message);
+      return [];
+    }
+  })().catch(error => {
+    documentTypeOptionsPromise = null;
+    throw error;
+  });
+
+  return documentTypeOptionsPromise;
+}
+
+function guessExtension(filename) {
+  if (typeof filename !== 'string') {
+    return '';
+  }
+
+  const match = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match ? match[1] : '';
+}
+
+function normalizeDocumentTypeValue({ mimeType, filename, allowedTypes }) {
+  if (!Array.isArray(allowedTypes) || allowedTypes.length === 0) {
+    return null;
+  }
+
+  const normalizedMime = typeof mimeType === 'string' ? mimeType.toLowerCase() : '';
+  const extension = guessExtension(filename);
+
+  const mimeCandidates = new Set();
+  if (normalizedMime) {
+    mimeCandidates.add(normalizedMime);
+    const slashIndex = normalizedMime.indexOf('/');
+    if (slashIndex >= 0) {
+      mimeCandidates.add(normalizedMime.slice(slashIndex + 1));
+    }
+  }
+
+  if (extension) {
+    mimeCandidates.add(extension);
+  }
+
+  const canonicalMap = {
+    pdf: 'pdf',
+    'application/pdf': 'pdf',
+    doc: 'doc',
+    'application/msword': 'doc',
+    docx: 'docx',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    ppt: 'ppt',
+    'application/vnd.ms-powerpoint': 'ppt',
+    pptx: 'pptx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    xls: 'xls',
+    'application/vnd.ms-excel': 'xls',
+    xlsx: 'xlsx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    csv: 'csv',
+    'text/csv': 'csv',
+    txt: 'text',
+    text: 'text',
+    'text/plain': 'text',
+    md: 'markdown',
+    markdown: 'markdown',
+    'text/markdown': 'markdown',
+    json: 'json',
+    'application/json': 'json',
+    html: 'html',
+    'text/html': 'html',
+    xml: 'xml',
+    'application/xml': 'xml',
+  };
+
+  for (const candidate of mimeCandidates) {
+    const mapped = canonicalMap[candidate];
+    if (mapped && allowedTypes.includes(mapped)) {
+      return mapped;
+    }
+    if (allowedTypes.includes(candidate)) {
+      return candidate;
+    }
+  }
+
+  if (allowedTypes.includes('other')) {
+    return 'other';
+  }
+
+  if (allowedTypes.includes('unknown')) {
+    return 'unknown';
+  }
+
+  if (allowedTypes.includes('text')) {
+    return 'text';
+  }
+
+  return null;
+}
+
+function requireUserId(event) {
+  const headers = event.headers || {};
+  const userId =
+    headers['x-user-id'] ||
+    headers['X-User-Id'] ||
+    headers['X-User-ID'] ||
+    headers['x-user-id'.toLowerCase()];
+  if (!userId || typeof userId !== 'string') {
+    const error = new Error('Missing x-user-id header');
+    error.statusCode = 401;
+    throw error;
+  }
+  return userId;
+}
+
+function chunkText(text, chunkSize = DEFAULT_CHUNK_SIZE) {
+  if (typeof text !== 'string') {
+    return [];
+  }
+
+  const normalizedSize = Math.max(200, Math.min(chunkSize, 2000));
+  const chunks = [];
+  let index = 0;
+
+  for (let offset = 0; offset < text.length; offset += normalizedSize) {
+    const chunkTextValue = text.slice(offset, offset + normalizedSize);
+    chunks.push({
+      index: index++,
+      text: chunkTextValue,
+      wordCount: chunkTextValue.split(/\s+/).filter(Boolean).length,
+      characterCount: chunkTextValue.length,
+    });
+    if (chunks.length >= MAX_CHUNKS) {
+      break;
+    }
+  }
+
+  return chunks;
+}
+
+function parseMetadata(rawMetadata) {
   if (!rawMetadata) {
     return {};
   }
 
-  if (typeof rawMetadata === 'object') {
-    if (Array.isArray(rawMetadata)) {
-      return {};
-    }
+  if (typeof rawMetadata === 'object' && !Array.isArray(rawMetadata)) {
     return { ...rawMetadata };
   }
 
   if (typeof rawMetadata === 'string') {
     try {
       const parsed = JSON.parse(rawMetadata);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? { ...parsed } : {};
-    } catch (error) {
-      console.warn('Failed to parse document metadata JSON:', error.message);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
       return {};
     }
   }
 
   return {};
-};
+}
 
-const collectTitleCandidates = (...objects) => {
-  const seen = new Set();
-  const candidates = [];
+function normalizeDocumentRow(row) {
+  const metadata = parseMetadata(row.metadata);
+  metadata.processingMode = 'neon-postgresql';
 
-  const pushCandidate = (value) => {
-    if (typeof value !== 'string') {
-      return;
-    }
-
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) {
-      return;
-    }
-
-    seen.add(key);
-    candidates.push(trimmed);
+  return {
+    id: row.id,
+    filename: row.filename,
+    originalFilename: row.original_filename || null,
+    fileType: row.file_type || null,
+    fileSize: row.file_size != null ? Number(row.file_size) : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    metadata,
+    chunkCount: row.chunk_count != null ? Number(row.chunk_count) : undefined,
+    storage: 'neon-postgresql',
   };
+}
 
-  const visit = (obj, depth = 0) => {
-    if (!obj || typeof obj !== 'object' || depth > 3) {
-      return;
-    }
+function buildSearchResult(row) {
+  const metadata = parseMetadata(row.metadata);
+  metadata.processingMode = 'neon-postgresql';
 
-    if (Array.isArray(obj)) {
-      obj.forEach(item => visit(item, depth + 1));
-      return;
-    }
-
-    pushCandidate(obj.documentTitle);
-    pushCandidate(obj.document_title);
-    pushCandidate(obj.title);
-    pushCandidate(obj.displayTitle);
-    pushCandidate(obj.display_title);
-    pushCandidate(obj.displayName);
-    pushCandidate(obj.display_name);
-    pushCandidate(obj.name);
-    pushCandidate(obj.label);
-    pushCandidate(obj.fileTitle);
-    pushCandidate(obj.file_title);
-    pushCandidate(obj.documentName);
-    pushCandidate(obj.document_name);
-
-    const nestedKeys = [
-      'metadata',
-      'documentMetadata',
-      'document',
-      'file',
-      'details',
-      'info',
-      'source',
-      'data',
-    ];
-
-    nestedKeys.forEach(key => {
-      if (key in obj) {
-        visit(obj[key], depth + 1);
-      }
-    });
+  return {
+    documentId: row.document_id,
+    chunkId: row.id,
+    chunkIndex: row.chunk_index,
+    text: row.snippet || row.chunk_text,
+    filename: row.filename,
+    documentTitle: metadata.title || metadata.documentTitle || row.filename,
+    score: Number(row.rank || 0),
+    metadata,
   };
-
-  objects.forEach(obj => visit(obj));
-
-  return candidates;
-};
-
-// Enhanced user extraction with JWT verification
-const extractUserId = async (event, context) => {
-  console.log('=== ENHANCED SERVER-SIDE USER EXTRACTION ===');
-  
-  let userId = null;
-  let source = 'unknown';
-  let debugInfo = {};
-  
-  // Method 1: Direct x-user-id header (most reliable)
-  if (event.headers['x-user-id']) {
-    userId = event.headers['x-user-id'];
-    source = 'x-user-id header';
-    debugInfo.foundInHeader = true;
-    console.log('✅ Found user ID in x-user-id header');
-    return { userId, source, debugInfo };
-  }
-  
-  // Method 2: JWT token verification
-  if (event.headers.authorization) {
-    try {
-      const authHeader = event.headers.authorization;
-      
-      if (authHeader.startsWith('Bearer ')) {
-        const token = authHeader.replace('Bearer ', '');
-        const parts = token.split('.');
-        
-        console.log('JWT parts count:', parts.length);
-        debugInfo.jwtPartsCount = parts.length;
-        
-        if (parts.length === 3) {
-          // Standard JWT - verify and decode
-          try {
-            const decoded = await new Promise((resolve, reject) => {
-              jwt.verify(token, getKey, {
-                audience: process.env.REACT_APP_AUTH0_AUDIENCE,
-                issuer: `https://${process.env.REACT_APP_AUTH0_DOMAIN}/`,
-                algorithms: ['RS256']
-              }, (err, decoded) => {
-                if (err) reject(err);
-                else resolve(decoded);
-              });
-            });
-            
-            if (decoded && decoded.sub) {
-              userId = decoded.sub;
-              source = 'JWT verification';
-              debugInfo.jwtVerified = true;
-              debugInfo.jwtSubject = decoded.sub;
-              console.log('✅ JWT verified and user extracted');
-            }
-          } catch (verifyError) {
-            console.error('JWT verification failed:', verifyError.message);
-            debugInfo.jwtVerificationError = verifyError.message;
-            
-            // Fallback: try to decode without verification (less secure)
-            try {
-              let payload = parts[1];
-              while (payload.length % 4) {
-                payload += '=';
-              }
-              
-              const decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
-              if (decoded.sub) {
-                userId = decoded.sub;
-                source = 'JWT decode (unverified)';
-                debugInfo.jwtUnverified = true;
-                console.log('⚠️ JWT decoded without verification');
-              }
-            } catch (decodeError) {
-              console.error('JWT decode failed:', decodeError.message);
-              debugInfo.jwtDecodeError = decodeError.message;
-            }
-          }
-        } else if (parts.length === 5) {
-          // JWE (encrypted JWT) - requires x-user-id header or server-side decryption
-          console.log('🔒 JWE token detected - requires server-side decryption');
-          debugInfo.jwtType = 'JWE';
-          debugInfo.requiresServerDecryption = true;
-
-          // Clients must send the user ID in the x-user-id header when using JWE.
-          const headerUserId = event.headers['x-user-id'];
-          if (headerUserId) {
-            userId = headerUserId;
-            source = 'x-user-id header (JWE)';
-            debugInfo.foundInHeader = true;
-            console.log('✅ Using x-user-id header for JWE token');
-          } else {
-            console.error('x-user-id header required for JWE token');
-            debugInfo.missingUserIdHeader = true;
-            const err = new Error('x-user-id header required when using JWE token');
-            err.statusCode = 401;
-            throw err;
-          }
-
-          // Optional: implement server-side JWE decryption here if a decryption key is available.
-        }
-      }
-    } catch (error) {
-      console.error('Auth header processing error:', error);
-      debugInfo.authProcessingError = error.message;
-    }
-  }
-  
-  // Method 3: Netlify context
-  if (!userId && context.clientContext?.user?.sub) {
-    userId = context.clientContext.user.sub;
-    source = 'netlify context';
-    debugInfo.foundInContext = true;
-    console.log('✅ Found user ID in Netlify context');
-  }
-  
-  // Method 4: Development fallback
-  if (!userId && (process.env.NODE_ENV === 'development' || process.env.NETLIFY_DEV === 'true')) {
-    userId = 'dev-user-' + Date.now();
-    source = 'development fallback';
-    debugInfo.developmentFallback = true;
-    console.log('⚠️ Using development fallback');
-  }
-  
-  console.log('Final userId:', userId || 'NOT_FOUND');
-  console.log('Source:', source);
-  console.log('=== END EXTRACTION ===');
-
-  return { userId, source, debugInfo };
-};
-
-// Standard headers for all responses
-const headers = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Content-Type': 'application/json',
-};
-
-// Database connection helper
-let sqlInstance = null;
-async function getSql() {
-  if (!sqlInstance) {
-    const { neon } = await import('@neondatabase/serverless');
-    const connectionString = process.env.NEON_DATABASE_URL;
-    if (!connectionString) {
-      throw new Error('NEON_DATABASE_URL environment variable is not set');
-    }
-    sqlInstance = neon(connectionString);
-  }
-  return sqlInstance;
 }
 
-let poolInstance = null;
-async function getPool() {
-  if (!poolInstance) {
+async function handleTest(sql, userId) {
+  await ensureRagSchema(sql);
+  await sql`SELECT 1`;
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      message: 'Neon RAG service reachable',
+      userId,
+    }),
+  };
+}
 
-    const { Pool, neonConfig } = await import('@neondatabase/serverless');
-    const ws = (await import('ws')).default;
-    neonConfig.webSocketConstructor = ws;
+async function handleList(sql, userId) {
+  await ensureRagSchema(sql);
+  const rows = await sql`
+    SELECT d.id,
+           d.filename,
+           d.original_filename,
+           d.file_type,
+           d.file_size,
+           d.metadata,
+           d.created_at,
+           d.updated_at,
+           COUNT(c.id)::int AS chunk_count
+      FROM rag_documents d
+      LEFT JOIN rag_document_chunks c ON c.document_id = d.id
+     WHERE d.user_id = ${userId}
+     GROUP BY d.id
+     ORDER BY d.created_at DESC
+  `;
 
-    const connectionString = process.env.NEON_DATABASE_URL;
-    if (!connectionString) {
-      throw new Error('NEON_DATABASE_URL environment variable is not set');
-    }
-    poolInstance = new Pool({ connectionString });
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      documents: rows.map(normalizeDocumentRow),
+    }),
+  };
+}
+
+async function handleDelete(sql, userId, payload = {}) {
+  await ensureRagSchema(sql);
+  const documentId = payload.documentId;
+
+  if (documentId == null) {
+    const error = new Error('documentId is required');
+    error.statusCode = 400;
+    throw error;
   }
-  return poolInstance;
-}
 
-function chunkText(text, size = 800) {
-  const chunks = [];
-  let index = 0;
-  for (let i = 0; i < text.length; i += size) {
-    const chunkText = text.slice(i, i + size);
-    chunks.push({
-      text: chunkText,
-      index: index++,
-      wordCount: chunkText.split(/\s+/).filter(Boolean).length,
-      characterCount: chunkText.length,
-    });
+  const result = await sql`
+    DELETE FROM rag_documents
+     WHERE id = ${documentId} AND user_id = ${userId}
+     RETURNING id
+  `;
+
+  if (result.length === 0) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({ error: 'Document not found' }),
+    };
   }
-  return chunks;
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ success: true, documentId }),
+  };
 }
 
-function getFileType(filename = '') {
-  const ext = filename.split('.').pop().toLowerCase();
-  if (['pdf'].includes(ext)) return 'pdf';
-  if (['doc', 'docx'].includes(ext)) return 'doc';
-  return 'txt';
-}
+async function handleUpload(sql, userId, payload = {}) {
+  await ensureRagSchema(sql);
 
-// Main handler that dispatches RAG actions
-exports.handler = async (event, context) => {
-  console.log('Neon RAG Fixed function called:', {
-    method: event.httpMethod,
-    hasBody: !!event.body,
+  const document = payload.document || {};
+  const filename = typeof document.filename === 'string' ? document.filename.trim() : '';
+  const text = typeof document.text === 'string' ? document.text : '';
+  const mimeType = [
+    document.mimeType,
+    document.type,
+    document.fileType,
+    document.contentType,
+  ].find(value => typeof value === 'string' && value.trim());
+
+  if (!filename) {
+    const error = new Error('Document filename is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!text) {
+    const error = new Error('Document text is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (text.length > MAX_TEXT_LENGTH) {
+    const error = new Error('Document text exceeds maximum length');
+    error.statusCode = 413;
+    throw error;
+  }
+
+  const metadata = parseMetadata(document.metadata);
+  metadata.processingMode = 'neon-postgresql';
+  if (mimeType) {
+    metadata.mimeType = mimeType;
+  }
+  const metadataJson = JSON.stringify(metadata);
+
+  const chunkSize = Number.isFinite(document.chunkSize) ? document.chunkSize : DEFAULT_CHUNK_SIZE;
+  const chunks = chunkText(text, chunkSize);
+  const allowedDocumentTypes = await getDocumentTypeOptions(sql);
+  const normalizedDocumentType = normalizeDocumentTypeValue({
+    mimeType,
+    filename,
+    allowedTypes: allowedDocumentTypes,
   });
 
-  // Handle CORS preflight
+  let insertedDocument;
+  try {
+    const [row] = await sql`
+      INSERT INTO rag_documents (
+        user_id,
+        filename,
+        original_filename,
+        file_type,
+        file_size,
+        text_content,
+        metadata
+      ) VALUES (
+        ${userId},
+        ${filename},
+        ${document.originalFilename || null},
+        ${normalizedDocumentType},
+        ${Number.isFinite(document.size) ? Number(document.size) : null},
+        ${text},
+        ${metadataJson}::jsonb
+      )
+      RETURNING id,
+                filename,
+                original_filename,
+                file_type,
+                file_size,
+                metadata,
+                created_at,
+                updated_at
+    `;
+
+    insertedDocument = row;
+
+    for (const chunk of chunks) {
+      await sql`
+        INSERT INTO rag_document_chunks (
+          document_id,
+          chunk_index,
+          chunk_text,
+          word_count,
+          character_count
+        ) VALUES (
+          ${row.id},
+          ${chunk.index},
+          ${chunk.text},
+          ${chunk.wordCount},
+          ${chunk.characterCount}
+        )
+      `;
+    }
+  } catch (error) {
+    if (insertedDocument?.id) {
+      await sql`
+        DELETE FROM rag_documents WHERE id = ${insertedDocument.id}
+      `;
+    }
+    throw error;
+  }
+
+  const responseDocument = normalizeDocumentRow({
+    ...insertedDocument,
+    chunk_count: chunks.length,
+  });
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      message: 'Document stored',
+      document: responseDocument,
+      chunks: chunks.length,
+    }),
+  };
+}
+
+async function handleSearch(sql, userId, payload = {}) {
+  await ensureRagSchema(sql);
+  const query = typeof payload.query === 'string' ? payload.query.trim() : '';
+
+  if (!query) {
+    const error = new Error('Search query is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const limit = Math.max(1, Math.min(Number(payload.options?.limit) || 10, 50));
+
+  const rows = await sql`
+    SELECT c.id,
+           c.document_id,
+           c.chunk_index,
+           c.chunk_text,
+           d.filename,
+           d.metadata,
+           ts_rank_cd(
+             to_tsvector('english', c.chunk_text),
+             plainto_tsquery('english', ${query})
+           ) AS rank,
+           ts_headline(
+             'english',
+             c.chunk_text,
+             plainto_tsquery('english', ${query}),
+             'MaxWords=40, MinWords=20, ShortWord=3, HighlightAll=TRUE'
+           ) AS snippet
+      FROM rag_document_chunks c
+      JOIN rag_documents d ON d.id = c.document_id
+     WHERE d.user_id = ${userId}
+       AND to_tsvector('english', c.chunk_text) @@ plainto_tsquery('english', ${query})
+     ORDER BY rank DESC NULLS LAST, c.created_at DESC
+     LIMIT ${limit}
+  `;
+
+  const results = rows.map(buildSearchResult);
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      query,
+      results,
+    }),
+  };
+}
+
+async function handleStats(sql, userId) {
+  await ensureRagSchema(sql);
+
+  const [documentStats] = await sql`
+    SELECT COUNT(*)::int AS total_documents,
+           COALESCE(SUM(file_size), 0)::bigint AS total_size
+      FROM rag_documents
+     WHERE user_id = ${userId}
+  `;
+
+  const [chunkStats] = await sql`
+    SELECT COUNT(*)::int AS total_chunks
+      FROM rag_document_chunks c
+      JOIN rag_documents d ON d.id = c.document_id
+     WHERE d.user_id = ${userId}
+  `;
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      totalDocuments: Number(documentStats?.total_documents || 0),
+      totalChunks: Number(chunkStats?.total_chunks || 0),
+      totalSize: Number(documentStats?.total_size || 0),
+      storage: 'neon-postgresql',
+    }),
+  };
+}
+
+export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers, body: JSON.stringify({ message: 'ok' }) };
+  }
+
+  if (event.httpMethod !== 'POST') {
     return {
-      statusCode: 200,
+      statusCode: 405,
       headers,
-      body: JSON.stringify({ message: 'CORS preflight' }),
+      body: JSON.stringify({ error: 'Method not allowed' }),
+    };
+  }
+
+  let requestBody = {};
+  try {
+    requestBody = JSON.parse(event.body || '{}');
+  } catch (error) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: 'Invalid JSON payload' }),
+    };
+  }
+
+  let userId;
+  try {
+    userId = requireUserId(event);
+  } catch (error) {
+    return {
+      statusCode: error.statusCode || 401,
+      headers,
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+
+  const action = requestBody.action;
+  if (!action) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: 'Action is required' }),
+    };
+  }
+
+  let sql;
+  try {
+    sql = await getSqlClient();
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    console.error('Failed to initialize Neon client', error);
+    return {
+      statusCode,
+      headers,
+      body: JSON.stringify({ error: error.message || 'Failed to initialize Neon client' }),
     };
   }
 
   try {
-    // Only allow POST requests
-    if (event.httpMethod !== 'POST') {
-      return {
-        statusCode: 405,
-        headers,
-        body: JSON.stringify({ error: 'Method not allowed' }),
-      };
-    }
-
-    // Parse request body
-    let requestData;
-    try {
-      requestData = JSON.parse(event.body || '{}');
-    } catch (parseError) {
-      console.error('Error parsing request body:', parseError);
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Invalid JSON in request body' }),
-      };
-    }
-
-    // Extract authenticated user
-    const { userId } = await extractUserId(event, context);
-    if (!userId) {
-      return {
-        statusCode: 401,
-        headers,
-        body: JSON.stringify({ error: 'User authentication required' }),
-      };
-    }
-
-    const { action } = requestData;
-    if (!action) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Action parameter is required' }),
-      };
-    }
-
-    console.log('Processing action:', action, 'for user:', userId);
-
-    // Dispatch actions
     switch (action) {
       case 'test':
-        return await handleTest(userId, requestData);
+        return { ...(await handleTest(sql, userId)), headers };
       case 'list':
-        return await handleList(userId);
+        return { ...(await handleList(sql, userId)), headers };
       case 'upload':
-        return await handleUpload(userId, requestData.document);
+        return { ...(await handleUpload(sql, userId, requestBody)), headers };
       case 'delete':
-        return await handleDelete(userId, requestData.documentId);
+        return { ...(await handleDelete(sql, userId, requestBody)), headers };
       case 'search':
-        return await handleSearch(userId, requestData.query, requestData.options);
+        return { ...(await handleSearch(sql, userId, requestBody)), headers };
       case 'stats':
-        return await handleStats(userId);
+        return { ...(await handleStats(sql, userId)), headers };
       default:
         return {
           statusCode: 400,
           headers,
-          body: JSON.stringify({ error: `Invalid action: ${action}` }),
+          body: JSON.stringify({ error: `Unknown action: ${action}` }),
         };
     }
   } catch (error) {
-    console.error('Neon RAG Fixed function error:', error);
+    const statusCode = error.statusCode || 500;
+    console.error(`Neon RAG action "${action}" failed`, error);
     return {
-      statusCode: 500,
+      statusCode,
       headers,
       body: JSON.stringify({
-        error: 'Internal server error',
-        message: error.message,
+        error: error.message || 'Unexpected server error',
       }),
     };
   }
 };
-
-// Action handlers
-async function handleTest(userId) {
-  return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify({ message: 'RAG service operational', userId }),
-  };
-}
-
-async function handleUpload(userId, document) {
-  try {
-    if (!document || !document.filename) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Invalid document data' }),
-      };
-    }
-    const text = document.text || '';
-    const chunks = chunkText(text);
-
-    // Short-circuit in test environments where a real database is unavailable
-    if (process.env.NEON_DATABASE_URL && process.env.NEON_DATABASE_URL.includes('localhost')) {
-      try {
-        const { Pool } = require('@neondatabase/serverless');
-        const pool = new Pool();
-        const client = await pool.connect();
-        for (const chunk of chunks) {
-          await client.query('INSERT INTO rag_document_chunks', []);
-        }
-      } catch (e) {
-        // ignore test DB operations
-      }
-      return {
-        statusCode: 201,
-        headers,
-        body: JSON.stringify({
-          id: 1,
-          filename: document.filename,
-          chunks: chunks.length,
-          message: 'Document uploaded successfully',
-        }),
-      };
-    }
-
-    const pool = await getPool();
-    let client;
-    let insertedDocument;
-    try {
-      client = await pool.connect();
-      await client.query('BEGIN');
-
-      const docResult = await client.query(
-        `INSERT INTO rag_documents (
-          user_id,
-          filename,
-          original_filename,
-          file_type,
-          file_size,
-          text_content,
-          metadata
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, filename, created_at`,
-        [
-          userId,
-          document.filename,
-          document.filename,
-          getFileType(document.filename),
-          document.size || text.length,
-          text,
-          JSON.stringify(document.metadata || {})
-        ]
-      );
-      insertedDocument = docResult.rows[0];
-
-      for (const chunk of chunks) {
-        await client.query(
-          `INSERT INTO rag_document_chunks (
-            document_id,
-            chunk_index,
-            chunk_text,
-            word_count,
-            character_count
-          ) VALUES ($1,$2,$3,$4,$5)`,
-          [
-            insertedDocument.id,
-            chunk.index,
-            chunk.text,
-            chunk.wordCount,
-            chunk.characterCount,
-          ]
-        );
-      }
-
-      await client.query('COMMIT');
-    } catch (err) {
-      if (client) {
-        try {
-          await client.query('ROLLBACK');
-        } catch (rollbackError) {
-          console.error('Rollback error:', rollbackError);
-        }
-      }
-      throw err;
-    } finally {
-      if (client) client.release();
-    }
-
-    return {
-      statusCode: 201,
-      headers,
-      body: JSON.stringify({
-        id: insertedDocument.id,
-        filename: insertedDocument.filename,
-        chunks: chunks.length,
-        message: 'Document uploaded successfully',
-      }),
-    };
-  } catch (error) {
-    console.error('Upload error:', error);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Failed to upload document', message: error.message }),
-    };
-  }
-}
-
-async function handleList(userId) {
-  try {
-    const sql = await getSql();
-    const rows = await sql`
-      SELECT d.id, d.filename, d.file_type, d.file_size, d.created_at, d.metadata,
-             (SELECT COUNT(*) FROM rag_document_chunks c WHERE c.document_id = d.id) AS chunk_count
-      FROM rag_documents d
-      WHERE d.user_id = ${userId}
-      ORDER BY d.created_at DESC
-    `;
-
-    const documents = rows.map(doc => ({
-      id: doc.id,
-      filename: doc.filename,
-      type: `application/${doc.file_type}`,
-      size: doc.file_size,
-      chunks: doc.chunk_count,
-      createdAt: doc.created_at,
-      metadata: doc.metadata,
-    }));
-
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ documents, total: documents.length }),
-    };
-  } catch (error) {
-    console.error('List error:', error);
-    // Return an empty list for common database errors so the client
-    // can continue to function even if the backing store is unavailable.
-    const message = error.message || '';
-    const isMissingTable = /rag_documents/i.test(message) || /relation/i.test(message);
-
-    const isMissingColumn =
-      error.code === '42703' || /column .* does not exist/i.test(message);
-    const isConfigError = message.includes('NEON_DATABASE_URL');
-    if (isMissingTable || isMissingColumn || isConfigError) {
-
-      console.warn('Returning empty document list due to database configuration issue');
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ documents: [], total: 0, warning: 'database unavailable' }),
-      };
-    }
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Failed to list documents', message: message }),
-    };
-  }
-}
-
-async function handleDelete(userId, documentId) {
-  try {
-    if (!documentId) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Document ID is required' }),
-      };
-    }
-    const sql = await getSql();
-    const [doc] = await sql`
-      SELECT user_id FROM rag_documents WHERE id = ${documentId}
-    `;
-    if (!doc) {
-      return {
-        statusCode: 404,
-        headers,
-        body: JSON.stringify({ error: 'Document not found' }),
-      };
-    }
-
-    const isAdmin = (process.env.ADMIN_USER_IDS || '').split(',').includes(userId);
-    if (doc.user_id !== userId && !isAdmin) {
-      return {
-        statusCode: 404,
-        headers,
-        body: JSON.stringify({ error: 'Document not found' }),
-      };
-    }
-
-    await sql`
-      DELETE FROM rag_documents WHERE id = ${documentId}
-    `;
-
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ message: 'Document deleted', documentId }),
-    };
-  } catch (error) {
-    console.error('Delete error:', error);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Failed to delete document', message: error.message }),
-    };
-  }
-}
-
-async function handleSearch(userId, query, options = {}) {
-  try {
-    if (!query || typeof query !== 'string') {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Valid search query is required' }),
-      };
-    }
-    const { limit = 10 } = options;
-    const sql = await getSql();
-    const rows = await sql`
-      SELECT c.document_id, c.chunk_index, c.chunk_text, d.filename, d.original_filename, d.metadata
-      FROM rag_document_chunks c
-      JOIN rag_documents d ON c.document_id = d.id
-      WHERE d.user_id = ${userId}
-        AND c.chunk_text ILIKE ${'%' + query + '%'}
-      LIMIT ${limit}
-    `;
-
-    const results = rows.map((row, index) => {
-      const metadata = parseMetadata(row.metadata);
-      const titleCandidates = collectTitleCandidates(
-        metadata,
-        metadata?.documentMetadata,
-        metadata?.metadata,
-        metadata?.file,
-        metadata?.fileMetadata,
-        metadata?.details,
-        metadata?.info
-      );
-
-      const fallbackFilename = typeof row.filename === 'string' ? row.filename.trim() : '';
-      const fallbackOriginal =
-        typeof row.original_filename === 'string' ? row.original_filename.trim() : '';
-
-      if (fallbackFilename) {
-        titleCandidates.push(fallbackFilename);
-      }
-      if (fallbackOriginal && fallbackOriginal !== fallbackFilename) {
-        titleCandidates.push(fallbackOriginal);
-      }
-
-      const preferredTitle = titleCandidates.find(candidate => !isLikelyFilename(candidate));
-      const resolvedTitle = preferredTitle || `Document ${index + 1}`;
-
-      const documentTitle = preferredTitle || null;
-
-      const metadataWithTitle = { ...metadata };
-      if (documentTitle) {
-        if (
-          typeof metadataWithTitle.documentTitle !== 'string' ||
-          !metadataWithTitle.documentTitle.trim()
-        ) {
-          metadataWithTitle.documentTitle = documentTitle;
-        }
-
-        if (typeof metadataWithTitle.title !== 'string' || !metadataWithTitle.title.trim()) {
-          metadataWithTitle.title = documentTitle;
-        }
-      }
-
-      return {
-        documentId: row.document_id,
-        filename: row.filename,
-        originalFilename: row.original_filename || null,
-        chunkIndex: row.chunk_index,
-        text: row.chunk_text,
-        similarity: 1,
-        title: resolvedTitle,
-        documentTitle: documentTitle || resolvedTitle,
-        metadata: metadataWithTitle,
-      };
-    });
-
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ results, totalFound: results.length }),
-    };
-  } catch (error) {
-    console.error('Search error:', error);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Search failed', message: error.message }),
-    };
-  }
-}
-
-async function handleStats(userId) {
-  try {
-    const sql = await getSql();
-    const [docInfo] = await sql`
-      SELECT COUNT(*) AS doc_count, COALESCE(SUM(file_size),0) AS total_size
-      FROM rag_documents
-      WHERE user_id = ${userId}
-    `;
-    const [chunkInfo] = await sql`
-      SELECT COUNT(*) AS chunk_count
-      FROM rag_document_chunks c
-      JOIN rag_documents d ON c.document_id = d.id
-      WHERE d.user_id = ${userId}
-    `;
-
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        totalDocuments: parseInt(docInfo.doc_count, 10),
-        totalChunks: parseInt(chunkInfo.chunk_count, 10),
-        totalSize: parseInt(docInfo.total_size, 10) || 0,
-        lastUpdated: new Date().toISOString(),
-      }),
-    };
-  } catch (error) {
-    console.error('Stats error:', error);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Failed to get stats', message: error.message }),
-    };
-  }
-}

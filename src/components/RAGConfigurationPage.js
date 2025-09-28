@@ -175,6 +175,12 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const editingDocumentTitle = editingDocument ? getDocumentTitle(editingDocument) : '';
   const editingDocumentFilename = editingDocument?.filename || '';
 
+  useEffect(() => {
+    if (!isAdmin && activeTab === 'summary') {
+      setActiveTab('documents');
+    }
+  }, [isAdmin, activeTab]);
+
   
   // Enhanced authentication debugging
   const checkAuthentication = useCallback(async () => {
@@ -828,17 +834,19 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                   {documents.length}
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('summary')}
-                className={`flex items-center space-x-2 py-2 px-1 border-b-2 text-sm font-medium ${
-                  activeTab === 'summary'
-                    ? 'border-emerald-600 text-emerald-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <span>Generate Summary</span>
-              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('summary')}
+                  className={`flex items-center space-x-2 py-2 px-1 border-b-2 text-sm font-medium ${
+                    activeTab === 'summary'
+                      ? 'border-emerald-600 text-emerald-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <span>Generate Summary</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setActiveTab('training')}
@@ -1228,7 +1236,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
           </>
         )}
 
-        {activeTab === 'summary' && (
+        {isAdmin && activeTab === 'summary' && (
           <div className="space-y-6">
             <SummaryRequestPanel documents={documents} user={user} />
           </div>

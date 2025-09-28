@@ -1,5 +1,6 @@
 // src/services/neonService.js - FIXED VERSION
 import { getToken, getUserId } from './authService';
+import { deriveThreadIdAssignments } from '../utils/messageUtils';
 
 class NeonService {
   constructor() {
@@ -172,12 +173,50 @@ class NeonService {
         return { success: false, error: 'No valid messages' };
       }
 
-      const ragMessages = validMessages.filter(
+      const threadAssignments = deriveThreadIdAssignments(validMessages);
+      const lastAssignment = threadAssignments[threadAssignments.length - 1] || null;
+      const metadataConversationId = metadata?.conversationId || metadata?.threadId;
+      const conversationIdCandidates = [
+        metadataConversationId,
+        ...validMessages
+          .map(msg => msg.conversationId || msg.conversationThreadId || msg.threadId)
+          .filter(Boolean),
+        lastAssignment
+      ].filter(Boolean);
+
+      const resolvedConversationId = conversationIdCandidates[0] || `conv_${Date.now()}`;
+
+      const normalizedMessages = validMessages.map((msg, index) => {
+        const assignment = threadAssignments[index] || resolvedConversationId;
+        return {
+          id: msg.id,
+          type: msg.type,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          resources: msg.resources || [],
+          sources: msg.sources || [],
+          isStudyNotes: msg.isStudyNotes || false,
+          conversationId: msg.conversationId || assignment,
+          conversationThreadId: msg.conversationThreadId || assignment,
+          threadId: msg.threadId || assignment,
+        };
+      });
+
+      const targetThreadId = metadataConversationId || lastAssignment || resolvedConversationId;
+      const threadMessages = normalizedMessages.filter((_, index) => {
+        const assignment = threadAssignments[index] || resolvedConversationId;
+        return assignment === targetThreadId;
+      });
+
+      const messagesToPersist = threadMessages.length > 0 ? threadMessages : normalizedMessages;
+
+      const ragMessages = messagesToPersist.filter(
         msg => msg.sources && msg.sources.length > 0
       );
-      
+
       const ragDocuments = [...new Set(
-        ragMessages.flatMap(msg => 
+        ragMessages.flatMap(msg =>
           msg.sources?.map(source => source.documentId) || []
         )
       )];
@@ -185,26 +224,20 @@ class NeonService {
       const payload = {
         action: 'save_conversation',
         data: {
-          messages: validMessages.map(msg => ({
-            id: msg.id,
-            type: msg.type,
-            role: msg.role || (msg.type === 'ai' ? 'assistant' : 'user'),
-            content: msg.content,
-            timestamp: msg.timestamp,
-            resources: msg.resources || [],
-            sources: msg.sources || [],
-            isStudyNotes: msg.isStudyNotes || false
-          })),
+          conversationId: resolvedConversationId,
+          messages: messagesToPersist,
           metadata: {
-            topics: this.extractTopics(validMessages),
-            messageCount: validMessages.length,
+            ...metadata,
+            topics: this.extractTopics(messagesToPersist),
+            messageCount: messagesToPersist.length,
             lastActivity: new Date().toISOString(),
             ragUsed: ragMessages.length > 0,
             ragDocuments: ragDocuments,
             ragMessageCount: ragMessages.length,
-            sessionId: Date.now().toString(),
-            userAgent: navigator.userAgent,
-            ...metadata
+            threadId: targetThreadId,
+            conversationId: resolvedConversationId,
+            sessionId: metadata?.sessionId || Date.now().toString(),
+            userAgent: navigator.userAgent
           }
         }
       };

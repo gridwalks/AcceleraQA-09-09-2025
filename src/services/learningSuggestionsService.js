@@ -1,9 +1,160 @@
 // src/services/learningSuggestionsService.js
 import neonService from './neonService';
-import openaiService from './openaiService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
-import { OPENAI_CONFIG } from '../config/constants';
 import { findBestResourceMatch } from '../utils/resourceGenerator';
+
+const TOPIC_SUGGESTIONS = {
+  gmp: {
+    id: 'gmp_inspection_readiness',
+    title: 'Strengthen GMP Inspection Readiness',
+    type: 'Guideline',
+    description: 'Review current FDA/EMA inspection focus areas and create an internal readiness checklist aligned with recent findings.',
+    objective: 'Translate recent GMP questions into a proactive inspection preparation plan',
+    difficulty: 'Intermediate'
+  },
+  validation: {
+    id: 'process_validation_strategy',
+    title: 'Modernize Process Validation Strategy',
+    type: 'Workshop',
+    description: 'Assess Stage 1–3 validation evidence and identify continuous verification signals for critical parameters.',
+    objective: 'Turn conversation learnings into a lifecycle validation roadmap with measurable checkpoints',
+    difficulty: 'Advanced'
+  },
+  capa: {
+    id: 'capa_effectiveness_review',
+    title: 'CAPA Effectiveness Deep Dive',
+    type: 'Training',
+    description: 'Map recurring deviations to CAPA actions and define effectiveness metrics tied to risk priority numbers.',
+    objective: 'Improve root-cause depth and verify CAPA closure evidence using Neon-saved conversations',
+    difficulty: 'Intermediate'
+  },
+  regulatory: {
+    id: 'global_regulatory_landscape',
+    title: 'Track Global Regulatory Updates',
+    type: 'Reference',
+    description: 'Consolidate FDA, EMA, and ICH updates referenced in recent conversations into a quarterly monitoring brief.',
+    objective: 'Ensure teams act on the most recent regulatory expectations highlighted during support chats',
+    difficulty: 'Intermediate'
+  },
+  quality_control: {
+    id: 'qc_method_reliability',
+    title: 'QC Method Reliability Checks',
+    type: 'Checklist',
+    description: 'Validate analytical method lifecycle control by reviewing system suitability failures discussed with the assistant.',
+    objective: 'Establish data-driven triggers for method revalidation and technician coaching',
+    difficulty: 'Intermediate'
+  },
+  sterile_processing: {
+    id: 'aseptic_process_risk_review',
+    title: 'Aseptic Process Risk Review',
+    type: 'Workshop',
+    description: 'Revisit aseptic interventions and environmental monitoring questions to refresh contamination control strategies.',
+    objective: 'Prioritize mitigations for the highest contamination risks raised in chat history',
+    difficulty: 'Advanced'
+  },
+  supply_chain: {
+    id: 'supplier_qualification_refresh',
+    title: 'Refresh Supplier Qualification Program',
+    type: 'Program',
+    description: 'Document supplier issues surfaced in conversations and align qualification tiers with business criticality.',
+    objective: 'Build a multi-tier supplier monitoring plan with Neon-linked CAPA follow-up actions',
+    difficulty: 'Intermediate'
+  },
+  risk_management: {
+    id: 'qrm_playbook_update',
+    title: 'Update the Quality Risk Management Playbook',
+    type: 'Guideline',
+    description: 'Convert risk-themed questions into refreshed FMEA templates and risk review cadences.',
+    objective: 'Operationalize ICH Q9(R1) principles using conversation-derived scenarios',
+    difficulty: 'Intermediate'
+  },
+  documentation: {
+    id: 'documentation_standards_boost',
+    title: 'Boost Documentation Standards',
+    type: 'Training',
+    description: 'Audit SOP language and change-control hygiene based on issues identified across recent support chats.',
+    objective: 'Clarify authorship expectations and approval flows to close documentation gaps',
+    difficulty: 'Beginner'
+  },
+  training: {
+    id: 'targeted_training_pathways',
+    title: 'Create Targeted Training Pathways',
+    type: 'Program',
+    description: 'Group repeated competency questions into role-based microlearning playlists.',
+    objective: 'Deliver just-in-time training that reinforces weak spots highlighted by team conversations',
+    difficulty: 'Beginner'
+  }
+};
+
+const INDUSTRY_SUGGESTIONS = {
+  biologics: {
+    id: 'biologics_control_strategy',
+    title: 'Biologics Control Strategy Alignment',
+    type: 'Guideline',
+    description: 'Map upstream/downstream risks discussed with the assistant to control points in your biologics lifecycle.',
+    objective: 'Ensure critical quality attributes remain protected from cell culture through fill-finish',
+    difficulty: 'Advanced'
+  },
+  small_molecule: {
+    id: 'small_molecule_ppqs',
+    title: 'Optimize Small Molecule PPQ Readiness',
+    type: 'Workshop',
+    description: 'Use Neon conversation exports to align process performance qualification evidence with stage-gate criteria.',
+    objective: 'Strengthen validation packages before regulatory submission',
+    difficulty: 'Intermediate'
+  },
+  medical_device: {
+    id: 'device_qms_improvement',
+    title: 'Medical Device QMS Improvement Sprint',
+    type: 'Program',
+    description: 'Translate chat questions about 21 CFR 820 into actionable QMS backlog items.',
+    objective: 'Close the most critical device quality system gaps in the next 60 days',
+    difficulty: 'Intermediate'
+  },
+  vaccines: {
+    id: 'vaccine_cold_chain_assurance',
+    title: 'Vaccine Cold Chain Assurance Review',
+    type: 'Checklist',
+    description: 'Audit cold chain excursions and contingency plans mentioned in chats against WHO guidance.',
+    objective: 'Secure temperature-controlled logistics for upcoming campaigns',
+    difficulty: 'Advanced'
+  },
+  gene_therapy: {
+    id: 'gene_therapy_compliance',
+    title: 'Gene Therapy Compliance Guardrails',
+    type: 'Guideline',
+    description: 'Aggregate regulatory and biosafety themes raised in Neon conversations into a compliance readiness matrix.',
+    objective: 'Demonstrate robust oversight for complex, high-risk modalities',
+    difficulty: 'Advanced'
+  }
+};
+
+const COMPLEXITY_SUGGESTIONS = {
+  basic: {
+    id: 'quality_basics_foundation',
+    title: 'Reinforce Quality System Foundations',
+    type: 'Learning Path',
+    description: 'Turn introductory-level conversations into a structured refresher across deviation handling, change control, and CAPA basics.',
+    objective: 'Build confidence in core pharmaceutical quality responsibilities',
+    difficulty: 'Beginner'
+  },
+  intermediate: {
+    id: 'scale_quality_leadership',
+    title: 'Scale Quality Leadership Skills',
+    type: 'Workshop',
+    description: 'Advance from tactical question handling to leading cross-functional risk reviews and data-driven decisions.',
+    objective: 'Translate daily problem-solving into repeatable governance rituals',
+    difficulty: 'Intermediate'
+  },
+  advanced: {
+    id: 'enterprise_quality_strategy',
+    title: 'Drive Enterprise Quality Strategy',
+    type: 'Program',
+    description: 'Package complex, high-volume questions into an executive quality roadmap with measurable OKRs.',
+    objective: 'Elevate insights from Neon chats into portfolio-level decisions',
+    difficulty: 'Advanced'
+  }
+};
 
 class LearningSuggestionsService {
   constructor() {
@@ -61,7 +212,7 @@ class LearningSuggestionsService {
         return cached.suggestions;
       }
 
-      // Get user's recent conversations from OpenAI backend
+        // Get user's recent conversations from the Neon backend
       const recentConversations = await this.getRecentConversations();
 
       if (!recentConversations || recentConversations.length === 0) {
@@ -106,7 +257,7 @@ class LearningSuggestionsService {
   }
 
   /**
-   * Generates learning suggestions using ChatGPT based on conversation analysis
+   * Generates learning suggestions using Neon conversation data
    * @param {Object[]} conversations - Recent conversations
    * @returns {Promise<Object[]>} - Generated suggestions
    */
@@ -117,20 +268,15 @@ class LearningSuggestionsService {
     try {
       // Extract and analyze conversation topics
       const conversationSummary = this.analyzeConversationTopics(conversations);
-      
-      // Create prompt for ChatGPT to generate learning suggestions
-      const prompt = this.createLearningPrompt(conversationSummary);
-      
-      // Get suggestions from ChatGPT using a lighter model
-      const response = await openaiService.getChatResponse(
-        prompt,
-        null,
-        [],
-        OPENAI_CONFIG.SUGGESTIONS_MODEL
+
+      const suggestions = this.buildSuggestionsFromSummary(
+        conversationSummary,
+        conversations
       );
-      
-      // Parse and format the suggestions
-      const suggestions = this.parseSuggestions(response.answer);
+
+      if (!suggestions.length) {
+        return this.getDefaultSuggestions();
+      }
 
       return suggestions;
 
@@ -262,123 +408,95 @@ class LearningSuggestionsService {
     });
   }
 
-  /**
-   * Creates a detailed prompt for ChatGPT to generate learning suggestions
-   * @param {Object} analysis - Conversation analysis
-   * @returns {string} - ChatGPT prompt
-   */
-  createLearningPrompt(analysis) {
-    return `Based on a pharmaceutical professional's recent conversation history, generate 4-6 personalized learning suggestions. 
-
-CONVERSATION ANALYSIS:
-- Topics discussed: ${analysis.topics.join(', ') || 'General pharmaceutical topics'}
-- Question complexity: ${analysis.complexity}
-- Industry focus: ${analysis.industries.join(', ') || 'General pharmaceutical'}
-- Total interactions: ${analysis.totalMessages}
-
-Generate learning suggestions that:
-1. Build on topics already discussed
-2. Address knowledge gaps revealed in questions
-3. Provide next-level learning opportunities
-4. Include mix of theoretical and practical resources
-5. Are specific to pharmaceutical quality and compliance
-
-For each suggestion, provide:
-- Title (concise, specific)
-- Type (Training, Guideline, Reference, Portal, etc.)
-- Description (1-2 sentences explaining relevance)
-- Learning objective (what they'll gain)
-- Difficulty level (Beginner/Intermediate/Advanced)
-
-Format as JSON array with objects containing: title, type, description, objective, difficulty, relevance_score (1-10).
-
-Focus on actionable learning that will help them advance their pharmaceutical quality expertise.`;
-  }
-
-  /**
-   * Parses ChatGPT response into structured suggestions
-   * @param {string} response - ChatGPT response
-   * @returns {Object[]} - Parsed suggestions
-   */
-  parseSuggestions(response) {
+  buildSuggestionsFromSummary(analysis, conversations) {
     if (!FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
       return [];
     }
-    try {
-      // Try to extract JSON from the response
-      const jsonMatch = response.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const suggestions = JSON.parse(jsonMatch[0]);
-        const normalizedSuggestions = suggestions.map(suggestion => ({
-          id: `suggestion_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          title: suggestion.title || 'Learning Resource',
-          type: suggestion.type || 'Reference',
-          description: suggestion.description || '',
-          objective: suggestion.objective || '',
-          difficulty: suggestion.difficulty || 'Intermediate',
-          relevanceScore: suggestion.relevance_score || 5,
-          source: 'ai_generated',
-          isPersonalized: true,
-          generatedAt: new Date().toISOString(),
-          url: suggestion.url
-        }));
 
-        return normalizedSuggestions.map(suggestion => this.attachResourceLink(suggestion));
+    const personalized = [];
+    const seenTitles = new Set();
+
+    const addSuggestion = (template, context = {}) => {
+      if (!template || seenTitles.has(template.title)) {
+        return;
       }
-    } catch (error) {
-      console.error('Error parsing ChatGPT suggestions:', error);
-    }
 
-    // Fallback: parse text-based response
-    return this.parseTextSuggestions(response);
-  }
-
-  /**
-   * Parses text-based suggestions as fallback
-   * @param {string} response - Text response
-   * @returns {Object[]} - Parsed suggestions
-   */
-  parseTextSuggestions(response) {
-    if (!FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
-      return [];
-    }
-    const suggestions = [];
-    const lines = response.split('\n').filter(line => line.trim());
-    
-    let currentSuggestion = null;
-    
-    lines.forEach(line => {
-      // Look for numbered items or bullet points
-      if (/^\d+\.|\*|\-/.test(line.trim())) {
-        if (currentSuggestion) {
-          suggestions.push(currentSuggestion);
+      const suggestion = this.attachResourceLink({
+        id: `${template.id}_${Math.random().toString(36).slice(2, 8)}`,
+        title: template.title,
+        type: template.type,
+        description: template.description,
+        objective: template.objective,
+        difficulty: template.difficulty || this.mapComplexityToDifficulty(analysis.complexity),
+        relevanceScore: context.relevanceScore || this.estimateRelevanceScore(analysis),
+        source: 'neon_conversation_analysis',
+        isPersonalized: true,
+        metadata: {
+          topics: analysis.topics,
+          industries: analysis.industries,
+          complexity: analysis.complexity,
+          totalMessages: analysis.totalMessages,
+          ...context
         }
-        
-        currentSuggestion = {
-          id: `suggestion_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          title: line.replace(/^\d+\.|\*|\-/, '').trim(),
-          type: 'Training',
-          description: '',
-          objective: 'Enhance pharmaceutical quality knowledge',
-          difficulty: 'Intermediate',
-          relevanceScore: 7,
-          source: 'ai_generated',
-          isPersonalized: true,
-          generatedAt: new Date().toISOString()
-        };
-      } else if (currentSuggestion && line.trim()) {
-        // Add description
-        currentSuggestion.description += (currentSuggestion.description ? ' ' : '') + line.trim();
-      }
+      });
+
+      seenTitles.add(template.title);
+      personalized.push(suggestion);
+    };
+
+    analysis.topics.forEach(topic => {
+      addSuggestion(TOPIC_SUGGESTIONS[topic], { focus: topic, relevanceScore: 9 });
     });
-    
-    if (currentSuggestion) {
-      suggestions.push(currentSuggestion);
+
+    analysis.industries.forEach(industry => {
+      addSuggestion(INDUSTRY_SUGGESTIONS[industry], { focus: industry, relevanceScore: 8 });
+    });
+
+    if (personalized.length < 4) {
+      addSuggestion(COMPLEXITY_SUGGESTIONS[analysis.complexity], { relevanceScore: 7 });
     }
-    
-    return suggestions
-      .slice(0, 6)
-      .map(suggestion => this.attachResourceLink(suggestion)); // Limit to 6 suggestions
+
+    if (personalized.length < 5) {
+      const engagementTemplate = this.buildEngagementSuggestion(analysis, conversations);
+      addSuggestion(engagementTemplate, { relevanceScore: 6 });
+    }
+
+    return personalized.slice(0, 6);
+  }
+
+  mapComplexityToDifficulty(complexity) {
+    switch (complexity) {
+      case 'advanced':
+        return 'Advanced';
+      case 'intermediate':
+        return 'Intermediate';
+      default:
+        return 'Beginner';
+    }
+  }
+
+  estimateRelevanceScore(analysis) {
+    const base = Math.min(10, Math.max(5, Math.floor(analysis.totalMessages / 5) + 6));
+    const topicBoost = Math.min(2, analysis.topics.length);
+    const industryBoost = analysis.industries.length ? 1 : 0;
+    return Math.min(10, base + topicBoost + industryBoost);
+  }
+
+  buildEngagementSuggestion(analysis, conversations) {
+    const mostRecentConversation = conversations[0];
+    const lastUpdated = mostRecentConversation?.updated_at || mostRecentConversation?.timestamp;
+    const timeframeDescription = lastUpdated
+      ? `from ${new Date(lastUpdated).toLocaleDateString()}`
+      : 'captured this month';
+
+    return {
+      id: 'neon_knowledge_base',
+      title: 'Turn Neon Conversations into a Knowledge Base',
+      type: 'Playbook',
+      description: `Export recent Neon conversations ${timeframeDescription} and tag recurring decision points so future chats start with documented context.`,
+      objective: 'Operationalize captured Q&A threads into a reusable playbook for your quality team',
+      difficulty: this.mapComplexityToDifficulty(analysis.complexity)
+    };
   }
 
   /**

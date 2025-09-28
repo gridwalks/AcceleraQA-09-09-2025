@@ -59,7 +59,7 @@ describe('ragService neon backend integration', () => {
 
     const result = await ragService.uploadDocument(
       file,
-      { title: '  Policy Overview ', tags: ' gmp , qa ' },
+      { title: '  Policy Overview ', description: ' Summary of the quality policy. ', version: ' v1 ', tags: ' gmp , qa ' },
       'user-1'
     );
 
@@ -69,9 +69,15 @@ describe('ragService neon backend integration', () => {
       expect.objectContaining({
         document: expect.objectContaining({
           filename: 'Policy.pdf',
+          title: 'Policy Overview',
+          summary: 'Summary of the quality policy.',
+          version: 'v1',
           metadata: expect.objectContaining({
             title: 'Policy Overview',
             tags: ['gmp', 'qa'],
+            summary: 'Summary of the quality policy.',
+            description: 'Summary of the quality policy.',
+            version: 'v1',
             processingMode: 'neon-postgresql',
           }),
         }),
@@ -80,6 +86,8 @@ describe('ragService neon backend integration', () => {
 
     expect(result.storage).toBe('neon-postgresql');
     expect(result.metadata.title).toBe('Policy Overview');
+    expect(result.metadata.summary).toBe('Summary of the quality policy.');
+    expect(result.metadata.version).toBe('v1');
     expect(result.metadata.tags).toEqual(['gmp', 'qa']);
   });
 

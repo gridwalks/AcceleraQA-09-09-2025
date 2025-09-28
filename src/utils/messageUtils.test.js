@@ -1,6 +1,7 @@
 import {
   buildChatHistory,
   combineMessagesIntoConversations,
+  expandConversationThread,
   groupConversationsByThread,
   mergeCurrentAndStoredMessages,
 } from './messageUtils';
@@ -218,6 +219,7 @@ describe('combineMessagesIntoConversations', () => {
     expect(combined[2].originalUserMessage.threadId).toBe(laterThreadId);
     expect(combined[0].originalUserMessage.threadId).toBe(firstThreadId);
   });
+
 });
 
 describe('groupConversationsByThread', () => {
@@ -368,6 +370,152 @@ describe('groupConversationsByThread', () => {
         ],
       },
     ]);
+  });
+
+  it('groups cards when conversation id only exists on the combined entry', () => {
+    const conversations = [
+      {
+        id: 'pair-1',
+        conversationId: 'thread-1',
+        userContent: 'First question',
+        aiContent: 'First answer',
+        timestamp: '2024-02-01T10:00:00.000Z',
+        resources: [],
+        isStored: true,
+        isCurrent: false,
+      },
+      {
+        id: 'pair-2',
+        conversationId: 'thread-1',
+        userContent: 'Second question',
+        aiContent: 'Second answer',
+        timestamp: '2024-02-01T10:05:00.000Z',
+        resources: [],
+        isStored: true,
+        isCurrent: false,
+      },
+    ];
+
+    const grouped = groupConversationsByThread(conversations);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].id).toBe('thread-1');
+    expect(grouped[0].conversationCount).toBe(2);
+    expect(grouped[0].threadMessages).toHaveLength(2);
+    expect(grouped[0].threadMessages[0].conversationId).toBe('thread-1');
+    expect(grouped[0].threadMessages[1].conversationId).toBe('thread-1');
+  });
+});
+
+describe('expandConversationThread', () => {
+  const baseUserMessage = (overrides = {}) => ({
+    id: `user-${Math.random().toString(36).slice(2, 8)}`,
+    role: 'user',
+    type: 'user',
+    timestamp: '2024-03-01T10:00:00.000Z',
+    content: 'Question',
+    ...overrides,
+  });
+
+  const baseAiMessage = (overrides = {}) => ({
+    id: `ai-${Math.random().toString(36).slice(2, 8)}`,
+    role: 'assistant',
+    type: 'ai',
+    timestamp: '2024-03-01T10:05:00.000Z',
+    content: 'Answer',
+    ...overrides,
+  });
+
+  it('returns chronological messages for each exchange in the thread', () => {
+    const conversation = {
+      id: 'thread-1',
+      conversationId: 'thread-1',
+      threadId: 'thread-1',
+      threadMessages: [
+        {
+          id: 'pair-1',
+          timestamp: '2024-03-01T10:05:00.000Z',
+          userContent: 'First question',
+          aiContent: 'First answer',
+          resources: [{ id: 'res-1' }],
+          originalUserMessage: baseUserMessage({
+            id: 'msg-1',
+            timestamp: '2024-03-01T10:00:00.000Z',
+            content: 'First question',
+            conversationId: 'thread-1',
+          }),
+          originalAiMessage: baseAiMessage({
+            id: 'msg-2',
+            timestamp: '2024-03-01T10:05:00.000Z',
+            content: 'First answer',
+            conversationId: 'thread-1',
+          }),
+        },
+        {
+          id: 'pair-2',
+          timestamp: '2024-03-01T10:15:00.000Z',
+          userContent: 'Follow-up question',
+          aiContent: 'Follow-up answer',
+          originalUserMessage: baseUserMessage({
+            id: 'msg-3',
+            timestamp: '2024-03-01T10:10:00.000Z',
+            content: 'Follow-up question',
+            conversationId: 'thread-1',
+          }),
+          originalAiMessage: baseAiMessage({
+            id: 'msg-4',
+            timestamp: '2024-03-01T10:15:00.000Z',
+            content: 'Follow-up answer',
+            conversationId: 'thread-1',
+          }),
+        },
+      ],
+    };
+
+    const expanded = expandConversationThread(conversation);
+
+    expect(expanded).toHaveLength(4);
+    expect(expanded.map((message) => message.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ]);
+    expect(expanded.every((message) => message.threadId === 'thread-1')).toBe(true);
+    expect(expanded[1].resources).toEqual([{ id: 'res-1' }]);
+    expect(expanded[0].timestamp).toBe('2024-03-01T10:00:00.000Z');
+    expect(expanded[3].timestamp).toBe('2024-03-01T10:15:00.000Z');
+  });
+
+  it('constructs fallback messages when originals are missing', () => {
+    const conversation = {
+      id: 'fallback-thread',
+      conversationId: 'fallback-thread',
+      timestamp: '2024-03-02T12:00:00.000Z',
+      userContent: 'Standalone question',
+      aiContent: 'Standalone answer',
+      resources: [{ id: 'res-fallback' }],
+    };
+
+    const expanded = expandConversationThread(conversation);
+
+    expect(expanded).toHaveLength(2);
+    expect(expanded[0]).toMatchObject({
+      role: 'user',
+      content: 'Standalone question',
+      conversationId: 'fallback-thread',
+    });
+    expect(expanded[1]).toMatchObject({
+      role: 'assistant',
+      content: 'Standalone answer',
+      resources: [{ id: 'res-fallback' }],
+      conversationId: 'fallback-thread',
+    });
+  });
+
+  it('returns empty array for invalid input', () => {
+    expect(expandConversationThread(null)).toEqual([]);
+    expect(expandConversationThread(undefined)).toEqual([]);
   });
 
   it('groups cards when conversation id only exists on the combined entry', () => {

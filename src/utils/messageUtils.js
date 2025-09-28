@@ -15,12 +15,19 @@ const getTimestampValue = (timestamp) => {
 };
 
 const resolveMessageType = (msg) => {
-  if (!msg || typeof msg !== 'object') return null;
+  if (!msg || typeof msg !== 'object') {
+    return null;
+  }
 
   const type = msg.type || msg.role;
 
-  if (type === 'assistant') return 'ai';
-  if (type === 'system') return 'system';
+  if (type === 'assistant') {
+    return 'ai';
+  }
+
+  if (type === 'system') {
+    return 'system';
+  }
 
   return type || null;
 };
@@ -117,8 +124,12 @@ export function getMessagesByDays(messages, days = UI_CONFIG.MESSAGE_HISTORY_DAY
  * @returns {Object[]} - Merged and deduplicated messages
  */
 export function mergeCurrentAndStoredMessages(currentMessages, storedMessages) {
-  const safeCurrent = Array.isArray(currentMessages) ? currentMessages.filter(Boolean) : [];
-  const safeStored = Array.isArray(storedMessages) ? storedMessages.filter(Boolean) : [];
+  const safeCurrent = Array.isArray(currentMessages)
+    ? currentMessages.filter(Boolean)
+    : [];
+  const safeStored = Array.isArray(storedMessages)
+    ? storedMessages.filter(Boolean)
+    : [];
 
   if (process.env.NODE_ENV === 'development') {
     console.log('=== MERGE FUNCTION DEBUG ===');
@@ -129,7 +140,9 @@ export function mergeCurrentAndStoredMessages(currentMessages, storedMessages) {
   const messageMap = new Map();
 
   const assignMessage = (message, { isCurrentMessage }) => {
-    if (!message || typeof message !== 'object') return;
+    if (!message || typeof message !== 'object') {
+      return;
+    }
 
     const key = getMessageMergeKey(message) || `generated:${messageMap.size}`;
     const existing = messageMap.get(key);
@@ -693,6 +706,143 @@ export function groupConversationsByThread(conversations) {
       const timeB = resolveConversationTimestamp(b) ?? -Infinity;
       return timeB - timeA;
     });
+}
+
+const resolveRoleFromType = (type) => {
+  if (type === 'ai' || type === 'assistant') {
+    return 'assistant';
+  }
+
+  if (type === 'system') {
+    return 'system';
+  }
+
+  return 'user';
+};
+
+const resolveTypeFromRole = (role) => {
+  if (role === 'assistant') {
+    return 'ai';
+  }
+
+  if (role === 'system') {
+    return 'system';
+  }
+
+  return 'user';
+};
+
+export function expandConversationThread(conversation) {
+  if (!conversation || typeof conversation !== 'object') {
+    return [];
+  }
+
+  const threadMessages = Array.isArray(conversation.threadMessages) && conversation.threadMessages.length
+    ? conversation.threadMessages.filter(Boolean)
+    : [conversation];
+
+  const expanded = [];
+  let fallbackCounter = 0;
+
+  threadMessages.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+
+    const threadId =
+      resolveConversationThreadId(entry) ||
+      resolveConversationThreadId(conversation) ||
+      entry.threadId ||
+      conversation.threadId ||
+      conversation.id ||
+      null;
+
+    const conversationId =
+      entry.conversationId ||
+      entry.originalAiMessage?.conversationId ||
+      entry.originalUserMessage?.conversationId ||
+      conversation.conversationId ||
+      conversation.originalAiMessage?.conversationId ||
+      conversation.originalUserMessage?.conversationId ||
+      threadId ||
+      null;
+
+    const conversationThreadId = threadId || conversationId || null;
+    const baseIdentifier =
+      conversationId ||
+      threadId ||
+      entry.id ||
+      conversation.id ||
+      `thread-${expanded.length + 1}`;
+
+    const pushMessage = (messageLike, {
+      role,
+      fallbackContent,
+      fallbackResources,
+      sourceTimestamp,
+    }) => {
+      const resolvedType = resolveTypeFromRole(
+        messageLike?.role || resolveRoleFromType(messageLike?.type || role)
+      );
+      const resolvedRole = messageLike?.role || resolveRoleFromType(resolvedType);
+      const timestampValue =
+        messageLike?.timestamp ||
+        sourceTimestamp ||
+        entry.timestamp ||
+        conversation.timestamp ||
+        null;
+
+      fallbackCounter += 1;
+
+      expanded.push({
+        ...(messageLike || {}),
+        id: (messageLike && messageLike.id) || `${baseIdentifier}-${resolvedRole}-${fallbackCounter}`,
+        role: resolvedRole,
+        type: messageLike?.type || resolvedType,
+        content:
+          messageLike?.content != null
+            ? messageLike.content
+            : fallbackContent != null
+            ? fallbackContent
+            : '',
+        timestamp: timestampValue,
+        resources: Array.isArray(messageLike?.resources)
+          ? messageLike.resources
+          : Array.isArray(fallbackResources)
+          ? fallbackResources
+          : [],
+        conversationId: messageLike?.conversationId || conversationId || null,
+        threadId: messageLike?.threadId || threadId || null,
+        conversationThreadId: messageLike?.conversationThreadId || conversationThreadId || null,
+        isStored: messageLike?.isStored ?? entry.isStored ?? conversation.isStored ?? false,
+        isCurrent: messageLike?.isCurrent ?? entry.isCurrent ?? conversation.isCurrent ?? false,
+      });
+    };
+
+    if (entry.originalUserMessage || entry.userContent) {
+      pushMessage(entry.originalUserMessage, {
+        role: 'user',
+        fallbackContent: entry.userContent,
+        fallbackResources: [],
+        sourceTimestamp: entry.originalUserMessage?.timestamp || entry.timestamp,
+      });
+    }
+
+    if (entry.originalAiMessage || entry.aiContent) {
+      pushMessage(entry.originalAiMessage, {
+        role: 'assistant',
+        fallbackContent: entry.aiContent,
+        fallbackResources: entry.resources,
+        sourceTimestamp: entry.originalAiMessage?.timestamp || entry.timestamp,
+      });
+    }
+  });
+
+  return expanded.sort((a, b) => {
+    const timeA = getTimestampValue(a.timestamp) ?? -Infinity;
+    const timeB = getTimestampValue(b.timestamp) ?? -Infinity;
+    return timeA - timeB;
+  });
 }
 
 /**

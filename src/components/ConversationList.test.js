@@ -48,7 +48,14 @@ describe('ConversationList', () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(onSelect).toHaveBeenCalledWith('conv1');
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'conv1',
+        conversationId: 'conv1',
+        threadMessages: conversation.threadMessages,
+      })
+    );
 
     document.body.removeChild(container);
   });

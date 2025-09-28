@@ -51,9 +51,19 @@ const ConversationList = memo(({ conversations = [], onSelect = () => {} }) => {
       conv.conversationId ||
       conv.threadId;
 
-    if (conversationId) {
-      onSelect(conversationId);
-    }
+    const normalizedConversationId =
+      conversationId ||
+      conv.conversationId ||
+      conv.threadId ||
+      conv.id ||
+      null;
+
+    onSelect({
+      ...conv,
+      conversationId: normalizedConversationId,
+      threadId: conv.threadId || normalizedConversationId,
+      threadMessages,
+    });
   };
 
   return (

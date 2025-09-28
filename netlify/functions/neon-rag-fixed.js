@@ -212,8 +212,6 @@ function normalizeDocumentTypeValue({ mimeType, filename, allowedTypes }) {
     xml: 'xml',
     'application/xml': 'xml',
   };
-}
-
   for (const candidate of mimeCandidates) {
     const mapped = canonicalMap[candidate];
     if (mapped && allowedTypes.includes(mapped)) {

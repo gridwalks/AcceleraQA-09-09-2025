@@ -1,3 +1,4 @@
+
 import { neon, neonConfig } from '@neondatabase/serverless';
 
 export const config = {
@@ -7,7 +8,6 @@ export const config = {
 const DEFAULT_CHUNK_SIZE = 800;
 const MAX_CHUNKS = 5000;
 const MAX_TEXT_LENGTH = DEFAULT_CHUNK_SIZE * MAX_CHUNKS;
-
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
@@ -41,6 +41,8 @@ function resolveConnectionString() {
     error.statusCode = 500;
     throw error;
   }
+  return userId;
+}
 
   if (!/sslmode=/i.test(connectionString)) {
     console.warn('Connection string missing sslmode parameter; Neon recommends sslmode=require');
@@ -213,6 +215,7 @@ function normalizeDocumentTypeValue({ mimeType, filename, allowedTypes }) {
     xml: 'xml',
     'application/xml': 'xml',
   };
+}
 
   for (const candidate of mimeCandidates) {
     const mapped = canonicalMap[candidate];

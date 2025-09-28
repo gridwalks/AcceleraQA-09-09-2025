@@ -152,6 +152,7 @@ describe('combineMessagesIntoConversations', () => {
     expect(combined[1].conversationId).toBe('conv-456');
     expect(combined[1].threadId).toBe('conv-456');
   });
+
   it('creates deterministic thread ids when metadata is missing', () => {
     const messages = [
       { id: 'local-user-1', role: 'user', type: 'user', timestamp: '2024-05-01T10:00:00.000Z', content: 'Hi there' },

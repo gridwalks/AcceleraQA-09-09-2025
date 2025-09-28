@@ -225,6 +225,12 @@ export function combineMessagesIntoConversations(messages) {
 
   const resolveThreadIdForIndex = (idx) => threadAssignments[idx] || null;
 
+  const resolveConversationId = (message, fallback) =>
+    message?.conversationId ||
+    message?.conversation?.id ||
+    fallback ||
+    null;
+
   return messages.reduce((acc, message, index, array) => {
     const messageType = resolveMessageType(message);
 

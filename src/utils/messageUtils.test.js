@@ -179,7 +179,6 @@ describe('combineMessagesIntoConversations', () => {
     expect(combined[2].originalUserMessage.threadId).toBe(laterThreadId);
     expect(combined[0].originalUserMessage.threadId).toBe(firstThreadId);
   });
-
 });
 
 describe('groupConversationsByThread', () => {

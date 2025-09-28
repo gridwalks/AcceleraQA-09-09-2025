@@ -1,3 +1,6 @@
+
+import { neon, neonConfig } from '@neondatabase/serverless';
+
 const DEFAULT_CHUNK_SIZE = 800;
 const MAX_CHUNKS = 5000;
 const MAX_TEXT_LENGTH = DEFAULT_CHUNK_SIZE * MAX_CHUNKS;
@@ -13,23 +16,34 @@ let sqlClientPromise = null;
 let ensuredSchemaPromise = null;
 let documentTypeOptionsPromise = null;
 
-async function getSqlClient() {
-  if (!process.env.NEON_DATABASE_URL) {
-    const error = new Error('NEON_DATABASE_URL environment variable is not set');
+function resolveConnectionString() {
+  const connectionString =
+    process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL;
+
+  if (!connectionString) {
+    const error = new Error(
+      'NEON_DATABASE_URL (or DATABASE_URL) environment variable is not set'
+    );
     error.statusCode = 500;
     throw error;
   }
-
-  if (!sqlClientPromise) {
-    sqlClientPromise = (async () => {
-      const { neon, neonConfig } = await import('@neondatabase/serverless');
-      neonConfig.fetchConnectionCache = true;
-      neonConfig.poolQueryViaFetch = true;
-      return neon(process.env.NEON_DATABASE_URL);
-    })();
-  }
   return userId;
 }
+
+  if (!/sslmode=/i.test(connectionString)) {
+    console.warn('Connection string missing sslmode parameter; Neon recommends sslmode=require');
+  }
+
+  return connectionString;
+}
+
+function getSqlClient() {
+  if (!sqlClientPromise) {
+    const connectionString = resolveConnectionString();
+    neonConfig.fetchConnectionCache = true;
+    neonConfig.poolQueryViaFetch = true;
+    sqlClientPromise = Promise.resolve(neon(connectionString));
+  }
 
   return sqlClientPromise;
 }
@@ -209,7 +223,12 @@ function normalizeDocumentTypeValue({ mimeType, filename, allowedTypes }) {
 }
 
 function requireUserId(event) {
-  const userId = event.headers?.['x-user-id'];
+  const headers = event.headers || {};
+  const userId =
+    headers['x-user-id'] ||
+    headers['X-User-Id'] ||
+    headers['X-User-ID'] ||
+    headers['x-user-id'.toLowerCase()];
   if (!userId || typeof userId !== 'string') {
     const error = new Error('Missing x-user-id header');
     error.statusCode = 401;
@@ -562,7 +581,7 @@ async function handleStats(sql, userId) {
   };
 }
 
-exports.handler = async (event) => {
+export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: JSON.stringify({ message: 'ok' }) };
   }

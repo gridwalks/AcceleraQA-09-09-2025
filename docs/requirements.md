@@ -56,9 +56,10 @@ AcceleraQA is an AI-powered learning assistant tailored for pharmaceutical quali
 *As a learner, I want the assistant to cite relevant documents when available so I can trust the guidance.*
 
 **Acceptance Criteria**
-- When RAG is enabled and no new file upload is pending, the system issues a retrieval search using either the active document vector store or the configured backend before calling OpenAI chat completion.【F:src/App.js†L484-L519】
-- Assistant replies merge OpenAI-sourced references with internal attachments and admin-curated resources, deduplicating entries for clarity.【F:src/App.js†L501-L520】
+- When RAG is enabled and no new file upload is pending, the system issues a retrieval search using either the active document vector store or the configured backend before calling OpenAI chat completion.【F:src/App.js†L669-L714】
+- Assistant replies merge OpenAI-sourced references with internal attachments and admin-curated resources, deduplicating entries for clarity.【F:src/App.js†L720-L745】
 - The transcript displays up to three source cards per message with titles, snippets, and outbound links when available.【F:src/components/ChatArea.js†L854-L919】
+- If document search returns no answer or sources, the assistant automatically falls back to AI Knowledge, labels the message with the mode used, and retries document search on the next prompt.【F:src/App.js†L669-L717】【F:src/components/ChatArea.js†L713-L745】
 
 #### Story 2.3 – Enforce responsible usage throttling
 *As a system steward, I want to throttle rapid-fire prompts so that platform limits are respected.*

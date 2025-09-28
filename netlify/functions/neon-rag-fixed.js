@@ -1,6 +1,8 @@
 
 import { neon, neonConfig } from '@neondatabase/serverless';
 
+import { uploadDocumentToS3 } from '../lib/s3-helper.js';
+
 export const config = {
   nodeRuntime: 'nodejs18.x',
 };
@@ -375,6 +377,13 @@ function normalizeDocumentRow(row) {
     metadata.fileName = row.filename;
   }
 
+  const storageLocation =
+    metadata.storage && typeof metadata.storage === 'object' ? { ...metadata.storage } : null;
+
+  if (storageLocation) {
+    metadata.storage = storageLocation;
+  }
+
   const resolvedTitle = getFirstNonEmptyString(
     row.title,
     metadata.title,
@@ -417,7 +426,8 @@ function normalizeDocumentRow(row) {
     updatedAt: row.updated_at,
     metadata,
     chunkCount: row.chunk_count != null ? Number(row.chunk_count) : undefined,
-    storage: 'neon-postgresql',
+    storage: storageLocation?.provider || 'neon-postgresql',
+    storageLocation,
   };
 }
 
@@ -911,6 +921,53 @@ async function handleUpload(sql, userId, payload = {}) {
     metadata.version = metadata.version || normalizedVersion;
   }
 
+  const encoding = typeof document.encoding === 'string' ? document.encoding.trim().toLowerCase() : '';
+  let contentBuffer = null;
+  if (typeof document.content === 'string' && document.content.trim()) {
+    if (encoding && encoding !== 'base64') {
+      const error = new Error(`Unsupported document encoding: ${encoding}`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    try {
+      contentBuffer = Buffer.from(document.content.trim(), 'base64');
+    } catch (bufferError) {
+      const error = new Error('Failed to decode document content');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  let storageLocation = null;
+  if (contentBuffer && contentBuffer.length > 0) {
+    storageLocation = await uploadDocumentToS3({
+      body: contentBuffer,
+      contentType: mimeType || 'application/octet-stream',
+      userId,
+      documentId: document.documentId || document.id || payload.documentId || filename,
+      filename,
+      metadata: {
+        'x-user-id': userId,
+        'x-document-filename': filename,
+      },
+    });
+
+    metadata.storage = {
+      provider: 's3',
+      bucket: storageLocation.bucket,
+      region: storageLocation.region,
+      key: storageLocation.key,
+      url: storageLocation.url,
+      etag: storageLocation.etag || null,
+      size: storageLocation.size ?? contentBuffer.length,
+    };
+  }
+
+  const resolvedFileSize = Number.isFinite(document.size)
+    ? Number(document.size)
+    : storageLocation?.size ?? (contentBuffer ? contentBuffer.length : null);
+
   const metadataJson = JSON.stringify(metadata);
 
   const chunkSize = Number.isFinite(document.chunkSize) ? document.chunkSize : DEFAULT_CHUNK_SIZE;
@@ -941,7 +998,7 @@ async function handleUpload(sql, userId, payload = {}) {
         ${filename},
         ${normalizedOriginalFilename || filename},
         ${normalizedDocumentType},
-        ${Number.isFinite(document.size) ? Number(document.size) : null},
+        ${resolvedFileSize},
         ${text},
         ${metadataJson}::jsonb,
         ${normalizedTitle || null},
@@ -1000,6 +1057,7 @@ async function handleUpload(sql, userId, payload = {}) {
       message: 'Document stored',
       document: responseDocument,
       chunks: chunks.length,
+      storageLocation: responseDocument.storageLocation || storageLocation,
     }),
   };
 }
@@ -1174,4 +1232,9 @@ export const handler = async (event) => {
       }),
     };
   }
+};
+
+export const __testHelpers = {
+  handleUpload,
+  normalizeDocumentRow,
 };

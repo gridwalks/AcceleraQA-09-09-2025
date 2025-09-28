@@ -1,3 +1,4 @@
+
 import { neon, neonConfig } from '@neondatabase/serverless';
 
 const DEFAULT_CHUNK_SIZE = 800;
@@ -26,6 +27,8 @@ function resolveConnectionString() {
     error.statusCode = 500;
     throw error;
   }
+  return userId;
+}
 
   if (!/sslmode=/i.test(connectionString)) {
     console.warn('Connection string missing sslmode parameter; Neon recommends sslmode=require');
@@ -192,6 +195,7 @@ function normalizeDocumentTypeValue({ mimeType, filename, allowedTypes }) {
     xml: 'xml',
     'application/xml': 'xml',
   };
+}
 
   for (const candidate of mimeCandidates) {
     const mapped = canonicalMap[candidate];

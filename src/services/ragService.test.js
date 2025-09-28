@@ -244,3 +244,65 @@ describe('ragService neon backend integration', () => {
     expect(result.resources).toEqual(chatResponse.resources);
   });
 });
+
+describe('extractTextFromFile', () => {
+  test('uses pdf.js to extract structured text from PDFs', async () => {
+    jest.resetModules();
+
+    const pageMocks = [
+      {
+        getTextContent: jest.fn(async () => ({ items: [{ str: 'Section 1' }, { str: 'Overview' }] })),
+        cleanup: jest.fn(),
+      },
+      {
+        getTextContent: jest.fn(async () => ({ items: [{ str: 'Section 2' }, { str: 'Details' }] })),
+        cleanup: jest.fn(),
+      },
+    ];
+
+    const cleanupMock = jest.fn();
+    const destroyMock = jest.fn();
+
+    const getDocumentMock = jest.fn(() => ({
+      promise: Promise.resolve({
+        numPages: pageMocks.length,
+        getPage: jest.fn(async (pageNumber) => pageMocks[pageNumber - 1]),
+        cleanup: cleanupMock,
+        destroy: destroyMock,
+      }),
+    }));
+
+    const GlobalWorkerOptions = {};
+
+    const loaderMock = jest.fn(async () => ({
+      getDocument: getDocumentMock,
+      GlobalWorkerOptions,
+    }));
+
+    const ragModule = await import('./ragService.js');
+    const ragService = ragModule.default;
+    ragModule.__setPdfJsLoaderOverride(loaderMock);
+
+    const encoder = new TextEncoder();
+    const pdfBuffer = encoder.encode('%PDF-1.4\n').buffer;
+    const file = {
+      type: 'application/pdf',
+      arrayBuffer: async () => pdfBuffer,
+    };
+
+    const text = await ragService.extractTextFromFile(file);
+
+    expect(text).toBe('Section 1 Overview\nSection 2 Details');
+    expect(loaderMock).toHaveBeenCalledTimes(1);
+    expect(getDocumentMock).toHaveBeenCalledWith({ data: expect.any(Uint8Array) });
+    expect(pageMocks[0].getTextContent).toHaveBeenCalled();
+    expect(pageMocks[1].getTextContent).toHaveBeenCalled();
+    expect(pageMocks[0].cleanup).toHaveBeenCalled();
+    expect(pageMocks[1].cleanup).toHaveBeenCalled();
+    expect(cleanupMock).toHaveBeenCalled();
+    expect(destroyMock).toHaveBeenCalled();
+
+    ragModule.__setPdfJsLoaderOverride(null);
+    jest.resetModules();
+  });
+});

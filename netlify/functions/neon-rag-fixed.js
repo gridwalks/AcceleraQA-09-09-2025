@@ -11,6 +11,7 @@ const headers = {
 
 let sqlClientPromise = null;
 let ensuredSchemaPromise = null;
+let documentTypeOptionsPromise = null;
 
 async function getSqlClient() {
   if (!process.env.NEON_DATABASE_URL) {
@@ -27,6 +28,8 @@ async function getSqlClient() {
       return neon(process.env.NEON_DATABASE_URL);
     })();
   }
+  return userId;
+}
 
   return sqlClientPromise;
 }
@@ -89,6 +92,120 @@ async function ensureRagSchema(sql) {
   });
 
   return ensuredSchemaPromise;
+}
+
+async function getDocumentTypeOptions(sql) {
+  if (documentTypeOptionsPromise) {
+    return documentTypeOptionsPromise;
+  }
+
+  documentTypeOptionsPromise = (async () => {
+    try {
+      const rows = await sql`
+        SELECT enumlabel
+          FROM pg_enum e
+          JOIN pg_type t ON t.oid = e.enumtypid
+         WHERE t.typname = 'document_type'
+      `;
+
+      return rows.map(row => row.enumlabel);
+    } catch (error) {
+      console.warn('Unable to load document_type enum options, defaulting to empty list', error.message);
+      return [];
+    }
+  })().catch(error => {
+    documentTypeOptionsPromise = null;
+    throw error;
+  });
+
+  return documentTypeOptionsPromise;
+}
+
+function guessExtension(filename) {
+  if (typeof filename !== 'string') {
+    return '';
+  }
+
+  const match = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match ? match[1] : '';
+}
+
+function normalizeDocumentTypeValue({ mimeType, filename, allowedTypes }) {
+  if (!Array.isArray(allowedTypes) || allowedTypes.length === 0) {
+    return null;
+  }
+
+  const normalizedMime = typeof mimeType === 'string' ? mimeType.toLowerCase() : '';
+  const extension = guessExtension(filename);
+
+  const mimeCandidates = new Set();
+  if (normalizedMime) {
+    mimeCandidates.add(normalizedMime);
+    const slashIndex = normalizedMime.indexOf('/');
+    if (slashIndex >= 0) {
+      mimeCandidates.add(normalizedMime.slice(slashIndex + 1));
+    }
+  }
+
+  if (extension) {
+    mimeCandidates.add(extension);
+  }
+
+  const canonicalMap = {
+    pdf: 'pdf',
+    'application/pdf': 'pdf',
+    doc: 'doc',
+    'application/msword': 'doc',
+    docx: 'docx',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    ppt: 'ppt',
+    'application/vnd.ms-powerpoint': 'ppt',
+    pptx: 'pptx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    xls: 'xls',
+    'application/vnd.ms-excel': 'xls',
+    xlsx: 'xlsx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    csv: 'csv',
+    'text/csv': 'csv',
+    txt: 'text',
+    text: 'text',
+    'text/plain': 'text',
+    md: 'markdown',
+    markdown: 'markdown',
+    'text/markdown': 'markdown',
+    json: 'json',
+    'application/json': 'json',
+    html: 'html',
+    'text/html': 'html',
+    xml: 'xml',
+    'application/xml': 'xml',
+  };
+}
+
+  for (const candidate of mimeCandidates) {
+    const mapped = canonicalMap[candidate];
+    if (mapped && allowedTypes.includes(mapped)) {
+      return mapped;
+    }
+    if (allowedTypes.includes(candidate)) {
+      return candidate;
+    }
+  }
+
+  if (allowedTypes.includes('other')) {
+    return 'other';
+  }
+
+  if (allowedTypes.includes('unknown')) {
+    return 'unknown';
+  }
+
+  if (allowedTypes.includes('text')) {
+    return 'text';
+  }
+
+  return null;
 }
 
 function requireUserId(event) {
@@ -255,6 +372,12 @@ async function handleUpload(sql, userId, payload = {}) {
   const document = payload.document || {};
   const filename = typeof document.filename === 'string' ? document.filename.trim() : '';
   const text = typeof document.text === 'string' ? document.text : '';
+  const mimeType = [
+    document.mimeType,
+    document.type,
+    document.fileType,
+    document.contentType,
+  ].find(value => typeof value === 'string' && value.trim());
 
   if (!filename) {
     const error = new Error('Document filename is required');
@@ -276,10 +399,19 @@ async function handleUpload(sql, userId, payload = {}) {
 
   const metadata = parseMetadata(document.metadata);
   metadata.processingMode = 'neon-postgresql';
+  if (mimeType) {
+    metadata.mimeType = mimeType;
+  }
   const metadataJson = JSON.stringify(metadata);
 
   const chunkSize = Number.isFinite(document.chunkSize) ? document.chunkSize : DEFAULT_CHUNK_SIZE;
   const chunks = chunkText(text, chunkSize);
+  const allowedDocumentTypes = await getDocumentTypeOptions(sql);
+  const normalizedDocumentType = normalizeDocumentTypeValue({
+    mimeType,
+    filename,
+    allowedTypes: allowedDocumentTypes,
+  });
 
   let insertedDocument;
   try {
@@ -296,7 +428,7 @@ async function handleUpload(sql, userId, payload = {}) {
         ${userId},
         ${filename},
         ${document.originalFilename || null},
-        ${document.type || document.fileType || null},
+        ${normalizedDocumentType},
         ${Number.isFinite(document.size) ? Number(document.size) : null},
         ${text},
         ${metadataJson}::jsonb

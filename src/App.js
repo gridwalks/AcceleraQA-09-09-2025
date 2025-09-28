@@ -689,6 +689,7 @@ function App() {
           }
         } catch (ragError) {
           console.error('Document search failed, falling back to AI Knowledge:', ragError);
+        }
       } else if (!preparedFile && manualOverrideDisabled) {
         modeUsed = 'AI Knowledge (manual override)';
       }

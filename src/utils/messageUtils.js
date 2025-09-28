@@ -1,5 +1,76 @@
 import { UI_CONFIG } from '../config/constants';
 
+const getTimestampValue = (timestamp) => {
+  if (timestamp == null) {
+    return null;
+  }
+
+  if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
+    return timestamp;
+  }
+
+  if (typeof timestamp === 'string') {
+    const parsed = Date.parse(timestamp);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
+const mergeResourceArrays = (existing = [], incoming = []) => {
+  if (!Array.isArray(existing) || existing.length === 0) {
+    return Array.isArray(incoming) ? incoming.filter(Boolean) : [];
+  }
+
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    return existing.filter(Boolean);
+  }
+
+  const normalized = [...existing.filter(Boolean)];
+  const seen = new Set();
+
+  normalized.forEach((resource) => {
+    if (!resource) {
+      return;
+    }
+
+    if (resource.id) {
+      seen.add(`id:${resource.id}`);
+    }
+
+    if (resource.url) {
+      seen.add(`url:${resource.url}`);
+    }
+
+    if (resource.title) {
+      seen.add(`title:${resource.title}`);
+    }
+  });
+
+  incoming.forEach((resource) => {
+    if (!resource) {
+      return;
+    }
+
+    const candidates = [
+      resource.id ? `id:${resource.id}` : null,
+      resource.url ? `url:${resource.url}` : null,
+      resource.title ? `title:${resource.title}` : null,
+    ].filter(Boolean);
+
+    const isDuplicate = candidates.some((candidate) => seen.has(candidate));
+
+    if (!isDuplicate) {
+      normalized.push(resource);
+      candidates.forEach((candidate) => seen.add(candidate));
+    }
+  });
+
+  return normalized;
+};
+
 /**
  * Filters messages from the specified number of days ago
  * @param {Object[]} messages - Array of message objects
@@ -186,6 +257,118 @@ export function combineMessagesIntoConversations(messages) {
 
     return acc;
   }, []);
+}
+
+const resolveConversationThreadId = (conversation) =>
+  conversation?.originalAiMessage?.conversationId ||
+  conversation?.originalUserMessage?.conversationId ||
+  null;
+
+const resolveConversationTimestamp = (conversation) => {
+  if (!conversation || typeof conversation !== 'object') {
+    return null;
+  }
+
+  const directTimestamp = getTimestampValue(conversation.timestamp);
+  if (directTimestamp != null) {
+    return directTimestamp;
+  }
+
+  const aiTimestamp = getTimestampValue(conversation.originalAiMessage?.timestamp);
+  if (aiTimestamp != null) {
+    return aiTimestamp;
+  }
+
+  return getTimestampValue(conversation.originalUserMessage?.timestamp);
+};
+
+const normalizeConversationPreview = (conversation) => ({
+  id: conversation.id,
+  userContent: conversation.userContent,
+  aiContent: conversation.aiContent,
+  timestamp: conversation.timestamp,
+  resources: Array.isArray(conversation.resources)
+    ? conversation.resources.filter(Boolean)
+    : [],
+  isStudyNotes: Boolean(conversation.isStudyNotes),
+  originalUserMessage: conversation.originalUserMessage,
+  originalAiMessage: conversation.originalAiMessage,
+  isCurrent: Boolean(conversation.isCurrent),
+  isStored: Boolean(conversation.isStored),
+});
+
+export function groupConversationsByThread(conversations) {
+  if (!Array.isArray(conversations) || conversations.length === 0) {
+    return [];
+  }
+
+  const threads = new Map();
+
+  conversations.forEach((conversation) => {
+    if (!conversation) {
+      return;
+    }
+
+    const threadId = resolveConversationThreadId(conversation);
+    const normalizedConversation = normalizeConversationPreview(conversation);
+    const timestampValue = resolveConversationTimestamp(normalizedConversation);
+
+    if (!threadId) {
+      const existing = threads.get(normalizedConversation.id);
+      if (!existing || (timestampValue != null && timestampValue > existing.sortTimestamp)) {
+        threads.set(normalizedConversation.id, {
+          ...normalizedConversation,
+          conversationCount: 1,
+          sortTimestamp: timestampValue ?? -Infinity,
+        });
+      }
+      return;
+    }
+
+    const existing = threads.get(threadId);
+    if (!existing) {
+      threads.set(threadId, {
+        ...normalizedConversation,
+        id: threadId,
+        sortTimestamp: timestampValue ?? -Infinity,
+        conversationCount: 1,
+      });
+      return;
+    }
+
+    const mergedResources = mergeResourceArrays(existing.resources, normalizedConversation.resources);
+    const nextCount = (existing.conversationCount || 1) + 1;
+
+    const shouldUseNewPreview =
+      timestampValue != null && timestampValue >= existing.sortTimestamp;
+
+    const updated = shouldUseNewPreview
+      ? {
+          ...normalizedConversation,
+          id: threadId,
+          sortTimestamp: timestampValue ?? existing.sortTimestamp,
+          conversationCount: nextCount,
+          resources: mergedResources,
+        }
+      : {
+          ...existing,
+          conversationCount: nextCount,
+          resources: mergedResources,
+        };
+
+    threads.set(threadId, updated);
+  });
+
+  return Array.from(threads.values())
+    .map((conversation) => {
+      const { sortTimestamp, ...rest } = conversation;
+      return rest;
+    })
+    .sort((a, b) => {
+      const timeA = resolveConversationTimestamp(a) ?? -Infinity;
+      const timeB = resolveConversationTimestamp(b) ?? -Infinity;
+      return timeB - timeA;
+    });
 }
 
 /**

@@ -300,10 +300,16 @@ async function getSql() {
 let poolInstance = null;
 async function getPool() {
   if (!poolInstance) {
-
     const { Pool, neonConfig } = await import('@neondatabase/serverless');
-    const ws = (await import('ws')).default;
-    neonConfig.webSocketConstructor = ws;
+
+    const wsModule = await import('ws');
+    const wsConstructor = wsModule?.default || wsModule?.WebSocket || wsModule;
+
+    if (typeof wsConstructor !== 'function') {
+      throw new Error('Failed to load ws WebSocket constructor for Neon pool');
+    }
+
+    neonConfig.webSocketConstructor = wsConstructor;
 
     const connectionString = process.env.NEON_DATABASE_URL;
     if (!connectionString) {
@@ -312,6 +318,62 @@ async function getPool() {
     poolInstance = new Pool({ connectionString });
   }
   return poolInstance;
+}
+
+let ragSchemaPromise = null;
+async function ensureRagSchema() {
+  if (!ragSchemaPromise) {
+    ragSchemaPromise = (async () => {
+      const sql = await getSql();
+
+      await sql`
+        CREATE TABLE IF NOT EXISTS rag_documents (
+          id BIGSERIAL PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          original_filename TEXT,
+          file_type TEXT,
+          file_size BIGINT,
+          text_content TEXT,
+          metadata JSONB DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await sql`
+        CREATE TABLE IF NOT EXISTS rag_document_chunks (
+          id BIGSERIAL PRIMARY KEY,
+          document_id BIGINT NOT NULL REFERENCES rag_documents(id) ON DELETE CASCADE,
+          chunk_index INTEGER NOT NULL,
+          chunk_text TEXT NOT NULL,
+          word_count INTEGER,
+          character_count INTEGER,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_documents_user_id
+          ON rag_documents(user_id)
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_document_id
+          ON rag_document_chunks(document_id)
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_document_index
+          ON rag_document_chunks(document_id, chunk_index)
+      `;
+    })().catch(error => {
+      ragSchemaPromise = null;
+      throw error;
+    });
+  }
+
+  return ragSchemaPromise;
 }
 
 function chunkText(text, size = 800) {
@@ -448,6 +510,8 @@ async function handleUpload(userId, document) {
         body: JSON.stringify({ error: 'Invalid document data' }),
       };
     }
+    await ensureRagSchema();
+
     const text = document.text || '';
     const chunks = chunkText(text);
 
@@ -559,6 +623,8 @@ async function handleUpload(userId, document) {
 
 async function handleList(userId) {
   try {
+    await ensureRagSchema();
+
     const sql = await getSql();
     const rows = await sql`
       SELECT d.id, d.filename, d.file_type, d.file_size, d.created_at, d.metadata,
@@ -612,6 +678,8 @@ async function handleList(userId) {
 
 async function handleDelete(userId, documentId) {
   try {
+    await ensureRagSchema();
+
     if (!documentId) {
       return {
         statusCode: 400,
@@ -661,6 +729,8 @@ async function handleDelete(userId, documentId) {
 
 async function handleSearch(userId, query, options = {}) {
   try {
+    await ensureRagSchema();
+
     if (!query || typeof query !== 'string') {
       return {
         statusCode: 400,
@@ -751,6 +821,8 @@ async function handleSearch(userId, query, options = {}) {
 
 async function handleStats(userId) {
   try {
+    await ensureRagSchema();
+
     const sql = await getSql();
     const [docInfo] = await sql`
       SELECT COUNT(*) AS doc_count, COALESCE(SUM(file_size),0) AS total_size

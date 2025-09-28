@@ -17,7 +17,7 @@ import StorageNotification, { useStorageNotifications } from './components/Stora
 // Utility
 import { v4 as uuidv4 } from 'uuid';
 import authService, { initializeAuth, handleLogout } from './services/authService';
-import { search as ragSearch } from './services/ragService';
+import ragService, { search as ragSearch } from './services/ragService';
 import openaiService from './services/openaiService';
 
 import {
@@ -178,6 +178,7 @@ function App() {
   );
   const adminResourcesLoadedRef = useRef(false);
   const inactivityTimerRef = useRef(null);
+  const usesNeonBackend = useMemo(() => ragService.isNeonBackend(), []);
 
   const handleLogoutComplete = useCallback(() => {
     setIsAuthenticated(false);
@@ -546,10 +547,12 @@ function App() {
       return;
     }
 
-    const vectorStoreIdToUse = preparedFile ? null : activeDocument?.vectorStoreId || null;
+    const vectorStoreIdToUse = usesNeonBackend || preparedFile
+      ? null
+      : activeDocument?.vectorStoreId || null;
 
     try {
-      const ragSearchOptions = activeDocument?.vectorStoreId
+      const ragSearchOptions = !usesNeonBackend && activeDocument?.vectorStoreId
         ? { vectorStoreIds: [activeDocument.vectorStoreId] }
         : undefined;
 
@@ -588,7 +591,7 @@ function App() {
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      if (response.vectorStoreId) {
+      if (!usesNeonBackend && response.vectorStoreId) {
         if (preparedFile) {
           const now = Date.now();
           setActiveDocument({

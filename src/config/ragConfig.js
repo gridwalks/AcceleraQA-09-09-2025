@@ -6,7 +6,7 @@ export const RAG_BACKENDS = {
 const backendEnv = (process.env.REACT_APP_RAG_BACKEND || '').toLowerCase();
 export const RAG_BACKEND = Object.values(RAG_BACKENDS).includes(backendEnv)
   ? backendEnv
-  : RAG_BACKENDS.OPENAI;
+  : RAG_BACKENDS.NEON;
 
 const DEFAULT_NEON_FUNCTION = '/.netlify/functions/neon-rag-fixed';
 const DEFAULT_NEON_DB_FUNCTION = '/.netlify/functions/neon-db';
@@ -19,9 +19,11 @@ export const RAG_DOCS_FUNCTION = process.env.REACT_APP_RAG_DOCS_FUNCTION || DEFA
 export const isNeonBackend = () => RAG_BACKEND === RAG_BACKENDS.NEON;
 
 export const getRagBackendLabel = () =>
-  RAG_BACKEND === RAG_BACKENDS.NEON ? 'Neon PostgreSQL' : 'OpenAI File Search';
+  RAG_BACKEND === RAG_BACKENDS.NEON
+    ? 'Neon PostgreSQL (Netlify Functions)'
+    : 'OpenAI File Search';
 
 export const getRagSearchDescription = () =>
   RAG_BACKEND === RAG_BACKENDS.NEON
-    ? 'Search your uploaded documents using PostgreSQL full-text search with ranking.'
+    ? 'Search your uploaded documents using the Netlify Neon PostgreSQL full-text pipeline.'
     : 'Search your uploaded documents using OpenAI vector search with Assistants API.';

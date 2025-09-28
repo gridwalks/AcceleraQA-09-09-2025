@@ -297,21 +297,60 @@ async function getSql() {
   return sqlInstance;
 }
 
-let poolInstance = null;
-async function getPool() {
-  if (!poolInstance) {
+let ragSchemaPromise = null;
+async function ensureRagSchema() {
+  if (!ragSchemaPromise) {
+    ragSchemaPromise = (async () => {
+      const sql = await getSql();
 
-    const { Pool, neonConfig } = await import('@neondatabase/serverless');
-    const ws = (await import('ws')).default;
-    neonConfig.webSocketConstructor = ws;
+      await sql`
+        CREATE TABLE IF NOT EXISTS rag_documents (
+          id BIGSERIAL PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          original_filename TEXT,
+          file_type TEXT,
+          file_size BIGINT,
+          text_content TEXT,
+          metadata JSONB DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
 
-    const connectionString = process.env.NEON_DATABASE_URL;
-    if (!connectionString) {
-      throw new Error('NEON_DATABASE_URL environment variable is not set');
-    }
-    poolInstance = new Pool({ connectionString });
+      await sql`
+        CREATE TABLE IF NOT EXISTS rag_document_chunks (
+          id BIGSERIAL PRIMARY KEY,
+          document_id BIGINT NOT NULL REFERENCES rag_documents(id) ON DELETE CASCADE,
+          chunk_index INTEGER NOT NULL,
+          chunk_text TEXT NOT NULL,
+          word_count INTEGER,
+          character_count INTEGER,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_documents_user_id
+          ON rag_documents(user_id)
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_document_id
+          ON rag_document_chunks(document_id)
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_document_index
+          ON rag_document_chunks(document_id, chunk_index)
+      `;
+    })().catch(error => {
+      ragSchemaPromise = null;
+      throw error;
+    });
   }
-  return poolInstance;
+
+  return ragSchemaPromise;
 }
 
 function chunkText(text, size = 800) {
@@ -448,6 +487,8 @@ async function handleUpload(userId, document) {
         body: JSON.stringify({ error: 'Invalid document data' }),
       };
     }
+    await ensureRagSchema();
+
     const text = document.text || '';
     const chunks = chunkText(text);
 
@@ -475,15 +516,12 @@ async function handleUpload(userId, document) {
       };
     }
 
-    const pool = await getPool();
-    let client;
+    const sql = await getSql();
     let insertedDocument;
-    try {
-      client = await pool.connect();
-      await client.query('BEGIN');
 
-      const docResult = await client.query(
-        `INSERT INTO rag_documents (
+    try {
+      const [docRow] = await sql`
+        INSERT INTO rag_documents (
           user_id,
           filename,
           original_filename,
@@ -491,50 +529,49 @@ async function handleUpload(userId, document) {
           file_size,
           text_content,
           metadata
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, filename, created_at`,
-        [
-          userId,
-          document.filename,
-          document.filename,
-          getFileType(document.filename),
-          document.size || text.length,
-          text,
-          JSON.stringify(document.metadata || {})
-        ]
-      );
-      insertedDocument = docResult.rows[0];
+        ) VALUES (
+          ${userId},
+          ${document.filename},
+          ${document.filename},
+          ${getFileType(document.filename)},
+          ${document.size || text.length},
+          ${text},
+          ${JSON.stringify(parseMetadata(document.metadata))}
+        )
+        RETURNING id, filename
+      `;
+
+      insertedDocument = docRow;
 
       for (const chunk of chunks) {
-        await client.query(
-          `INSERT INTO rag_document_chunks (
+        await sql`
+          INSERT INTO rag_document_chunks (
             document_id,
             chunk_index,
             chunk_text,
             word_count,
             character_count
-          ) VALUES ($1,$2,$3,$4,$5)`,
-          [
-            insertedDocument.id,
-            chunk.index,
-            chunk.text,
-            chunk.wordCount,
-            chunk.characterCount,
-          ]
-        );
+          ) VALUES (
+            ${insertedDocument.id},
+            ${chunk.index},
+            ${chunk.text},
+            ${chunk.wordCount},
+            ${chunk.characterCount}
+          )
+        `;
       }
-
-      await client.query('COMMIT');
     } catch (err) {
-      if (client) {
+      if (insertedDocument?.id) {
         try {
-          await client.query('ROLLBACK');
-        } catch (rollbackError) {
-          console.error('Rollback error:', rollbackError);
+          await sql`
+            DELETE FROM rag_documents WHERE id = ${insertedDocument.id}
+          `;
+        } catch (cleanupError) {
+          console.error('Cleanup error after failed upload:', cleanupError);
         }
       }
+
       throw err;
-    } finally {
-      if (client) client.release();
     }
 
     return {
@@ -559,6 +596,8 @@ async function handleUpload(userId, document) {
 
 async function handleList(userId) {
   try {
+    await ensureRagSchema();
+
     const sql = await getSql();
     const rows = await sql`
       SELECT d.id, d.filename, d.file_type, d.file_size, d.created_at, d.metadata,
@@ -612,6 +651,8 @@ async function handleList(userId) {
 
 async function handleDelete(userId, documentId) {
   try {
+    await ensureRagSchema();
+
     if (!documentId) {
       return {
         statusCode: 400,
@@ -661,6 +702,8 @@ async function handleDelete(userId, documentId) {
 
 async function handleSearch(userId, query, options = {}) {
   try {
+    await ensureRagSchema();
+
     if (!query || typeof query !== 'string') {
       return {
         statusCode: 400,
@@ -751,6 +794,8 @@ async function handleSearch(userId, query, options = {}) {
 
 async function handleStats(userId) {
   try {
+    await ensureRagSchema();
+
     const sql = await getSql();
     const [docInfo] = await sql`
       SELECT COUNT(*) AS doc_count, COALESCE(SUM(file_size),0) AS total_size

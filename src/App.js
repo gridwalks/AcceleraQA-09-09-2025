@@ -150,7 +150,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [ragEnabled, setRAGEnabled] = useState(true);
+  const [lastResponseMode, setLastResponseMode] = useState('document-search');
   const [uploadedFile, setUploadedFile] = useState(null);
   const [activeDocument, setActiveDocument] = useState(null);
   const [cooldown, setCooldown] = useState(0);
@@ -184,6 +184,7 @@ function App() {
     setIsAuthenticated(false);
     setUser(null);
     setLearningSuggestions([]);
+    setLastResponseMode('document-search');
     setShowRAGConfig(false);
     setShowAdmin(false);
     setShowNotebook(false);
@@ -547,15 +548,45 @@ function App() {
         ? { vectorStoreIds: [activeDocument.vectorStoreId] }
         : undefined;
 
-      const response = ragEnabled && !preparedFile
-        ? await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory)
-        : await openaiService.getChatResponse(
+      let response = null;
+      let modeUsed = 'AI Knowledge';
+      let documentSearchAttempted = false;
+
+      if (!preparedFile) {
+        documentSearchAttempted = true;
+        try {
+          const ragResponse = await ragSearch(
             rawInput,
-            preparedFile,
-            conversationHistory,
-            undefined,
-            vectorStoreIdToUse
+            user?.sub,
+            ragSearchOptions,
+            conversationHistory
           );
+          const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
+          const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
+
+          if (ragAnswer || ragSources.length > 0) {
+            response = ragResponse;
+            modeUsed = 'Document Search';
+          }
+        } catch (ragError) {
+          console.error('Document search failed, falling back to AI Knowledge:', ragError);
+        }
+      }
+
+      if (!response) {
+        response = await openaiService.getChatResponse(
+          rawInput,
+          preparedFile,
+          conversationHistory,
+          undefined,
+          vectorStoreIdToUse
+        );
+
+        modeUsed = documentSearchAttempted ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
+        setLastResponseMode('ai-knowledge');
+      } else {
+        setLastResponseMode('document-search');
+      }
 
       const combinedInternalResources = buildInternalResources({
         attachments,
@@ -574,7 +605,11 @@ function App() {
         id: uuidv4(),
         role: 'assistant',
         type: 'ai',
-        content: response.answer,
+        content: (() => {
+          const answerText = typeof response.answer === 'string' ? response.answer.trim() : '';
+          const modeLine = `Mode used: ${modeUsed}`;
+          return answerText ? `${answerText}\n\n_${modeLine}_` : `_${modeLine}_`;
+        })(),
         timestamp: Date.now(),
         sources: response.sources || [],
         resources: mergedResources,
@@ -666,13 +701,13 @@ function App() {
   }, [
     inputMessage,
     uploadedFile,
-    ragEnabled,
     messages,
     refreshLearningSuggestions,
     cooldown,
     user?.sub,
     activeDocument,
     adminResources,
+    usesNeonBackend,
   ]);
 
   const handleKeyPress = useCallback(
@@ -705,6 +740,7 @@ function App() {
     setInputMessage('');
     setUploadedFile(null);
     setActiveDocument(null);
+    setLastResponseMode('document-search');
     // Refresh suggestions when chat is cleared (might reveal different patterns)
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
       setTimeout(() => {
@@ -719,6 +755,7 @@ function App() {
     setActiveDocument(null);
     setSelectedMessages(new Set());
     setThirtyDayMessages([]);
+    setLastResponseMode('document-search');
     // Clear learning suggestions cache when all conversations are cleared
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && user?.sub) {
       import('./services/learningSuggestionsService').then(({ default: learningSuggestionsService }) => {
@@ -1059,8 +1096,7 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
+                    lastResponseMode={lastResponseMode}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
@@ -1094,8 +1130,7 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
+                    lastResponseMode={lastResponseMode}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}

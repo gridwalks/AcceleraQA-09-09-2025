@@ -1,6 +1,8 @@
 
 import { neon, neonConfig } from '@neondatabase/serverless';
 
+import { uploadDocumentToS3 } from '../lib/s3-helper.js';
+
 export const config = {
   nodeRuntime: 'nodejs18.x',
 };
@@ -13,6 +15,82 @@ const headers = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json',
+};
+
+const getS3BucketName = () =>
+  process.env.RAG_S3_BUCKET ||
+  process.env.S3_BUCKET ||
+  process.env.AWS_S3_BUCKET ||
+  process.env.AWS_BUCKET_NAME ||
+  '';
+
+const getS3KeyPrefix = () => {
+  const candidates = [
+    process.env.RAG_S3_PREFIX,
+    process.env.S3_KEY_PREFIX,
+    process.env.AWS_S3_PREFIX,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+
+    const trimmed = candidate.trim().replace(/^\/+|\/+$/g, '');
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return 'rag-documents';
+};
+
+const isAccessDeniedError = (error) => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = error.name || error.Code || error.code;
+  const status = error.$metadata?.httpStatusCode || error.statusCode;
+  const message = typeof error.message === 'string' ? error.message : '';
+
+  return (
+    code === 'AccessDenied' ||
+    code === 'Forbidden' ||
+    status === 403 ||
+    /access\s*denied/i.test(message)
+  );
+};
+
+const buildS3UploadError = (error) => {
+  const bucket = getS3BucketName();
+  const prefix = getS3KeyPrefix();
+  const accessDenied = isAccessDeniedError(error);
+  const baseMessage = accessDenied
+    ? 'Access denied when uploading document to S3.'
+    : 'Failed to upload document to S3.';
+
+  const guidanceParts = [];
+  if (bucket) {
+    guidanceParts.push(`bucket "${bucket}"`);
+  }
+  if (prefix) {
+    guidanceParts.push(`prefix "${prefix}"`);
+  }
+
+  const guidance = guidanceParts.length
+    ? ` Confirm the configured IAM role allows s3:PutObject on ${guidanceParts.join(' and ')}.`
+    : '';
+
+  const detail = error && typeof error.message === 'string' && error.message
+    ? ` Details: ${error.message}`
+    : '';
+
+  const friendlyError = new Error(`${baseMessage}${guidance}${detail}`.trim());
+  const fallbackStatus = error?.$metadata?.httpStatusCode || error?.statusCode || 502;
+  const normalizedStatus = Number.isFinite(fallbackStatus) ? Number(fallbackStatus) : 502;
+  friendlyError.statusCode = accessDenied ? 403 : Math.min(Math.max(normalizedStatus, 400), 599);
+  return friendlyError;
 };
 
 let sqlClientPromise = null;
@@ -375,6 +453,13 @@ function normalizeDocumentRow(row) {
     metadata.fileName = row.filename;
   }
 
+  const storageLocation =
+    metadata.storage && typeof metadata.storage === 'object' ? { ...metadata.storage } : null;
+
+  if (storageLocation) {
+    metadata.storage = storageLocation;
+  }
+
   const resolvedTitle = getFirstNonEmptyString(
     row.title,
     metadata.title,
@@ -417,7 +502,8 @@ function normalizeDocumentRow(row) {
     updatedAt: row.updated_at,
     metadata,
     chunkCount: row.chunk_count != null ? Number(row.chunk_count) : undefined,
-    storage: 'neon-postgresql',
+    storage: storageLocation?.provider || 'neon-postgresql',
+    storageLocation,
   };
 }
 
@@ -911,6 +997,63 @@ async function handleUpload(sql, userId, payload = {}) {
     metadata.version = metadata.version || normalizedVersion;
   }
 
+  const encoding = typeof document.encoding === 'string' ? document.encoding.trim().toLowerCase() : '';
+  let contentBuffer = null;
+  if (typeof document.content === 'string' && document.content.trim()) {
+    if (encoding && encoding !== 'base64') {
+      const error = new Error(`Unsupported document encoding: ${encoding}`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    try {
+      contentBuffer = Buffer.from(document.content.trim(), 'base64');
+    } catch (bufferError) {
+      const error = new Error('Failed to decode document content');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  let storageLocation = null;
+  if (contentBuffer && contentBuffer.length > 0) {
+    try {
+      storageLocation = await uploadDocumentToS3({
+        body: contentBuffer,
+        contentType: mimeType || 'application/octet-stream',
+        userId,
+        documentId: document.documentId || document.id || payload.documentId || filename,
+        filename,
+        metadata: {
+          'x-user-id': userId,
+          'x-document-filename': filename,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to upload document content to S3', error);
+      if (isAccessDeniedError(error)) {
+        console.error(
+          'If the policy is scoped to arn:aws:s3:::acceleraqa-kb/uploads/* but your app is writing to rag-documents/, S3 will return Access Denied'
+        );
+      }
+      throw buildS3UploadError(error);
+    }
+
+    metadata.storage = {
+      provider: 's3',
+      bucket: storageLocation.bucket,
+      region: storageLocation.region,
+      key: storageLocation.key,
+      url: storageLocation.url,
+      etag: storageLocation.etag || null,
+      size: storageLocation.size ?? contentBuffer.length,
+    };
+  }
+
+  const resolvedFileSize = Number.isFinite(document.size)
+    ? Number(document.size)
+    : storageLocation?.size ?? (contentBuffer ? contentBuffer.length : null);
+
   const metadataJson = JSON.stringify(metadata);
 
   const chunkSize = Number.isFinite(document.chunkSize) ? document.chunkSize : DEFAULT_CHUNK_SIZE;
@@ -941,7 +1084,7 @@ async function handleUpload(sql, userId, payload = {}) {
         ${filename},
         ${normalizedOriginalFilename || filename},
         ${normalizedDocumentType},
-        ${Number.isFinite(document.size) ? Number(document.size) : null},
+        ${resolvedFileSize},
         ${text},
         ${metadataJson}::jsonb,
         ${normalizedTitle || null},
@@ -1000,6 +1143,7 @@ async function handleUpload(sql, userId, payload = {}) {
       message: 'Document stored',
       document: responseDocument,
       chunks: chunks.length,
+      storageLocation: responseDocument.storageLocation || storageLocation,
     }),
   };
 }
@@ -1174,4 +1318,9 @@ export const handler = async (event) => {
       }),
     };
   }
+};
+
+export const __testHelpers = {
+  handleUpload,
+  normalizeDocumentRow,
 };

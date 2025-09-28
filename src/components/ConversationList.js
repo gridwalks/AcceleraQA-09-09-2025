@@ -59,8 +59,12 @@ const ConversationList = memo(({ conversations = [], onSelect = () => {} }) => {
       {conversations.map((conv) => {
         const threadMessages = toThreadMessages(conv);
         const timestampLabel = formatTimestamp(conv.timestamp);
-        const exchangeLabel = conv.conversationCount > 1
-          ? `${conv.conversationCount} exchanges`
+        const exchangeCount = Math.max(
+          threadMessages.length,
+          conv.conversationCount || 0,
+        );
+        const exchangeLabel = exchangeCount > 1
+          ? `${exchangeCount} exchanges`
           : 'Single exchange';
 
         return (

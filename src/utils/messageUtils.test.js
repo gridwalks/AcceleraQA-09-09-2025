@@ -1,4 +1,8 @@
-import { buildChatHistory, groupConversationsByThread } from './messageUtils';
+import {
+  buildChatHistory,
+  combineMessagesIntoConversations,
+  groupConversationsByThread,
+} from './messageUtils';
 
 describe('buildChatHistory', () => {
   it('filters conversation to user and assistant roles in order', () => {
@@ -39,6 +43,44 @@ describe('buildChatHistory', () => {
       { role: 'user', content: 'Prior question?' },
       { role: 'assistant', content: 'Prior answer.' },
     ]);
+  });
+});
+
+describe('combineMessagesIntoConversations', () => {
+  it('carries forward conversation ids from raw messages', () => {
+    const messages = [
+      {
+        id: 'user-1',
+        role: 'user',
+        type: 'user',
+        timestamp: '2024-03-01T12:00:00.000Z',
+        content: 'Hi',
+        conversationId: 'conv-123',
+      },
+      {
+        id: 'ai-1',
+        role: 'assistant',
+        type: 'ai',
+        timestamp: '2024-03-01T12:00:10.000Z',
+        content: 'Hello!',
+        conversationId: 'conv-123',
+      },
+      {
+        id: 'ai-2',
+        role: 'assistant',
+        type: 'ai',
+        timestamp: '2024-03-01T12:00:20.000Z',
+        content: 'Need anything else?',
+        conversation: { id: 'conv-456' },
+      },
+    ];
+
+    const combined = combineMessagesIntoConversations(messages);
+
+    expect(combined).toHaveLength(2);
+    expect(combined[0].conversationId).toBe('conv-123');
+    expect(combined[0].originalAiMessage.conversationId).toBe('conv-123');
+    expect(combined[1].conversationId).toBe('conv-456');
   });
 });
 
@@ -122,6 +164,7 @@ describe('groupConversationsByThread', () => {
 
     expect(grouped).toHaveLength(2);
     expect(grouped[0].id).toBe('conv-2');
+    expect(grouped[0].conversationId).toBe('conv-2');
     expect(grouped[0].userContent).toBe('Another thread question');
     expect(grouped[0].resources).toEqual([{ id: 'res-3', title: 'Doc 3' }]);
     expect(grouped[0].threadMessages).toHaveLength(1);
@@ -129,6 +172,7 @@ describe('groupConversationsByThread', () => {
 
     const conv1 = grouped.find((item) => item.id === 'conv-1');
     expect(conv1).toBeDefined();
+    expect(conv1.conversationId).toBe('conv-1');
     expect(conv1.userContent).toBe('Follow-up question');
     expect(conv1.aiContent).toBe('Follow-up answer');
     expect(conv1.conversationCount).toBe(2);
@@ -163,6 +207,7 @@ describe('groupConversationsByThread', () => {
         originalAiMessage: { id: 'solo-ai', type: 'ai' },
         isCurrent: false,
         isStored: false,
+        conversationId: null,
         conversationCount: 1,
         threadMessages: [
           {
@@ -176,9 +221,44 @@ describe('groupConversationsByThread', () => {
             originalAiMessage: { id: 'solo-ai', type: 'ai' },
             isCurrent: false,
             isStored: false,
+            conversationId: null,
           },
         ],
       },
     ]);
+  });
+
+  it('groups cards when conversation id only exists on the combined entry', () => {
+    const conversations = [
+      {
+        id: 'pair-1',
+        conversationId: 'thread-1',
+        userContent: 'First question',
+        aiContent: 'First answer',
+        timestamp: '2024-02-01T10:00:00.000Z',
+        resources: [],
+        isStored: true,
+        isCurrent: false,
+      },
+      {
+        id: 'pair-2',
+        conversationId: 'thread-1',
+        userContent: 'Second question',
+        aiContent: 'Second answer',
+        timestamp: '2024-02-01T10:05:00.000Z',
+        resources: [],
+        isStored: true,
+        isCurrent: false,
+      },
+    ];
+
+    const grouped = groupConversationsByThread(conversations);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].id).toBe('thread-1');
+    expect(grouped[0].conversationCount).toBe(2);
+    expect(grouped[0].threadMessages).toHaveLength(2);
+    expect(grouped[0].threadMessages[0].conversationId).toBe('thread-1');
+    expect(grouped[0].threadMessages[1].conversationId).toBe('thread-1');
   });
 });

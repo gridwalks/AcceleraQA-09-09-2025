@@ -198,6 +198,12 @@ export function combineMessagesIntoConversations(messages) {
     return t === 'assistant' ? 'ai' : t;
   };
 
+  const resolveConversationId = (message, fallback) =>
+    message?.conversationId ||
+    message?.conversation?.id ||
+    fallback ||
+    null;
+
   return messages.reduce((acc, message, index, array) => {
     const messageType = getType(message);
 
@@ -209,6 +215,9 @@ export function combineMessagesIntoConversations(messages) {
     // Combine AI message with preceding user message
     if (messageType === 'ai' && index > 0 && getType(array[index - 1]) === 'user') {
       const userMessage = array[index - 1];
+      const conversationId =
+        resolveConversationId(message, null) ||
+        resolveConversationId(userMessage, null);
       const combinedMessage = {
         id: `${userMessage.id}-${message.id}`,
         userContent: userMessage.content,
@@ -220,12 +229,14 @@ export function combineMessagesIntoConversations(messages) {
         originalAiMessage: message,
         // Preserve current session and stored flags
         isCurrent: message.isCurrent || userMessage.isCurrent || false,
-        isStored: message.isStored && userMessage.isStored
+        isStored: message.isStored && userMessage.isStored,
+        conversationId,
       };
       acc.push(combinedMessage);
     }
     // Handle standalone AI messages (like welcome messages)
     else if (messageType === 'ai') {
+      const conversationId = resolveConversationId(message, null);
       const combinedMessage = {
         id: message.id,
         userContent: null,
@@ -235,12 +246,14 @@ export function combineMessagesIntoConversations(messages) {
         isStudyNotes: message.isStudyNotes || false,
         originalAiMessage: message,
         isCurrent: message.isCurrent || false,
-        isStored: message.isStored || false
+        isStored: message.isStored || false,
+        conversationId,
       };
       acc.push(combinedMessage);
     }
     // Handle standalone user messages (unlikely but possible)
     else if (messageType === 'user') {
+      const conversationId = resolveConversationId(message, null);
       const combinedMessage = {
         id: message.id,
         userContent: message.content,
@@ -250,7 +263,8 @@ export function combineMessagesIntoConversations(messages) {
         isStudyNotes: false,
         originalUserMessage: message,
         isCurrent: message.isCurrent || false,
-        isStored: message.isStored || false
+        isStored: message.isStored || false,
+        conversationId,
       };
       acc.push(combinedMessage);
     }
@@ -262,6 +276,9 @@ export function combineMessagesIntoConversations(messages) {
 const resolveConversationThreadId = (conversation) =>
   conversation?.originalAiMessage?.conversationId ||
   conversation?.originalUserMessage?.conversationId ||
+  conversation?.conversationId ||
+  conversation?.originalAiMessage?.conversation?.id ||
+  conversation?.originalUserMessage?.conversation?.id ||
   null;
 
 const resolveConversationTimestamp = (conversation) => {
@@ -295,6 +312,13 @@ const normalizeConversationPreview = (conversation) => ({
   originalAiMessage: conversation.originalAiMessage,
   isCurrent: Boolean(conversation.isCurrent),
   isStored: Boolean(conversation.isStored),
+  conversationId:
+    conversation.conversationId ||
+    conversation.originalAiMessage?.conversationId ||
+    conversation.originalUserMessage?.conversationId ||
+    conversation.originalAiMessage?.conversation?.id ||
+    conversation.originalUserMessage?.conversation?.id ||
+    null,
 });
 
 const resolveThreadFlags = (messages = []) => {

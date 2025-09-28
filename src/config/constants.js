@@ -7,7 +7,7 @@ export const APP_CONFIG = {
 
 // OpenAI Configuration
 export const OPENAI_CONFIG = {
-  MODEL: 'chatgpt-4.1',
+  MODEL: 'gpt-4o',
   SUGGESTIONS_MODEL: 'gpt-4.1-mini',
   MAX_TOKENS: 1200,
   TEMPERATURE: 0.7,

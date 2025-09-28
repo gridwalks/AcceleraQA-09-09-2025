@@ -353,6 +353,62 @@ async function ensureRagSchema() {
   return ragSchemaPromise;
 }
 
+let ragSchemaPromise = null;
+async function ensureRagSchema() {
+  if (!ragSchemaPromise) {
+    ragSchemaPromise = (async () => {
+      const sql = await getSql();
+
+      await sql`
+        CREATE TABLE IF NOT EXISTS rag_documents (
+          id BIGSERIAL PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          original_filename TEXT,
+          file_type TEXT,
+          file_size BIGINT,
+          text_content TEXT,
+          metadata JSONB DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await sql`
+        CREATE TABLE IF NOT EXISTS rag_document_chunks (
+          id BIGSERIAL PRIMARY KEY,
+          document_id BIGINT NOT NULL REFERENCES rag_documents(id) ON DELETE CASCADE,
+          chunk_index INTEGER NOT NULL,
+          chunk_text TEXT NOT NULL,
+          word_count INTEGER,
+          character_count INTEGER,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_documents_user_id
+          ON rag_documents(user_id)
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_document_id
+          ON rag_document_chunks(document_id)
+      `;
+
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_rag_document_chunks_document_index
+          ON rag_document_chunks(document_id, chunk_index)
+      `;
+    })().catch(error => {
+      ragSchemaPromise = null;
+      throw error;
+    });
+  }
+
+  return ragSchemaPromise;
+}
+
 function chunkText(text, size = 800) {
   const chunks = [];
   let index = 0;

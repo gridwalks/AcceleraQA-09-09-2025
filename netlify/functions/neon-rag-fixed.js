@@ -276,6 +276,7 @@ async function handleUpload(sql, userId, payload = {}) {
 
   const metadata = parseMetadata(document.metadata);
   metadata.processingMode = 'neon-postgresql';
+  const metadataJson = JSON.stringify(metadata);
 
   const chunkSize = Number.isFinite(document.chunkSize) ? document.chunkSize : DEFAULT_CHUNK_SIZE;
   const chunks = chunkText(text, chunkSize);
@@ -298,7 +299,7 @@ async function handleUpload(sql, userId, payload = {}) {
         ${document.type || document.fileType || null},
         ${Number.isFinite(document.size) ? Number(document.size) : null},
         ${text},
-        ${sql.json(metadata)}
+        ${metadataJson}::jsonb
       )
       RETURNING id,
                 filename,

@@ -552,13 +552,24 @@ function App() {
 
       if (!preparedFile) {
         documentSearchAttempted = true;
-        const ragResponse = await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory);
-        const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
-        const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
+        setRAGEnabled(true);
 
-        if (ragAnswer || ragSources.length > 0) {
-          response = ragResponse;
-          modeUsed = 'Document Search';
+        try {
+          const ragResponse = await ragSearch(
+            rawInput,
+            user?.sub,
+            ragSearchOptions,
+            conversationHistory
+          );
+          const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
+          const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
+
+          if (ragAnswer || ragSources.length > 0) {
+            response = ragResponse;
+            modeUsed = 'Document Search';
+          }
+        } catch (ragError) {
+          console.error('Document search failed, falling back to AI Knowledge:', ragError);
         }
       }
 
@@ -572,6 +583,11 @@ function App() {
         );
 
         modeUsed = documentSearchAttempted ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
+        if (documentSearchAttempted) {
+          setRAGEnabled(false);
+        }
+      } else if (!ragEnabled) {
+        setRAGEnabled(true);
       }
 
       const combinedInternalResources = buildInternalResources({
@@ -693,7 +709,8 @@ function App() {
     user?.sub,
     activeDocument,
     adminResources,
-    setRAGEnabled,
+    ragEnabled,
+    usesNeonBackend,
   ]);
 
   const handleKeyPress = useCallback(
@@ -1080,6 +1097,7 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
+                    ragEnabled={ragEnabled}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
@@ -1113,6 +1131,7 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
+                    ragEnabled={ragEnabled}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}

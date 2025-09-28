@@ -160,6 +160,7 @@ export const uploadDocumentToS3 = async ({
       : typeof body === 'string'
         ? Buffer.byteLength(body)
         : null;
+  
   const putObjectCommand = new PutObjectCommand({
     Bucket: bucket,
     Key: key,

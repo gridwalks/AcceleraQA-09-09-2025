@@ -1,5 +1,12 @@
 import { UI_CONFIG, APP_CONFIG } from '../config/constants';
-import { validateMessage, repairMessage, deriveThreadIdAssignments } from './messageUtils';
+import {
+  validateMessage,
+  repairMessage,
+  deriveThreadIdAssignments,
+  mergeCurrentAndStoredMessages,
+  combineMessagesIntoConversations,
+  groupConversationsByThread,
+} from './messageUtils';
 
 // Storage keys and configuration
 const STORAGE_KEYS = {
@@ -142,6 +149,84 @@ export function validateStorageData(data) {
   return true;
 }
 
+function buildThreadSnapshotsForStorage(messages) {
+  const toTimestampValue = (value) => {
+    if (value == null) {
+      return null;
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+
+  const safeMessages = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  if (!safeMessages.length) {
+    return [];
+  }
+
+  const normalizedMessages = mergeCurrentAndStoredMessages([], safeMessages);
+  const combined = combineMessagesIntoConversations(normalizedMessages);
+  const grouped = groupConversationsByThread(combined);
+
+  const resolveIsoTimestamp = (conversation) => {
+    if (!conversation) {
+      return null;
+    }
+
+    const candidates = [
+      conversation.timestamp,
+      conversation.originalAiMessage?.timestamp,
+      conversation.originalUserMessage?.timestamp,
+    ];
+
+    const timestampValue = candidates
+      .map(toTimestampValue)
+      .find((value) => value != null);
+
+    return timestampValue != null ? new Date(timestampValue).toISOString() : null;
+  };
+
+  return grouped
+    .map((thread) => {
+      const threadMessages = Array.isArray(thread.threadMessages) ? thread.threadMessages : [];
+
+      const sortedMessages = threadMessages
+        .slice()
+        .sort((a, b) => {
+          const timeA = toTimestampValue(a.timestamp) ?? toTimestampValue(a.originalAiMessage?.timestamp) ?? toTimestampValue(a.originalUserMessage?.timestamp);
+          const timeB = toTimestampValue(b.timestamp) ?? toTimestampValue(b.originalAiMessage?.timestamp) ?? toTimestampValue(b.originalUserMessage?.timestamp);
+          return (timeA ?? Infinity) - (timeB ?? Infinity);
+        });
+
+      const firstMessage = sortedMessages[0] || null;
+      const lastMessage = sortedMessages.length
+        ? sortedMessages[sortedMessages.length - 1]
+        : null;
+
+      return {
+        id: thread.threadId || thread.conversationId || thread.id,
+        conversationId: thread.conversationId || thread.threadId || thread.id,
+        threadId: thread.threadId || thread.conversationId || thread.id,
+        conversationCount: thread.conversationCount || threadMessages.length,
+        messageCount: threadMessages.length,
+        resources: thread.resources || [],
+        messages: threadMessages,
+        firstTimestamp: resolveIsoTimestamp(firstMessage),
+        lastTimestamp: resolveIsoTimestamp(lastMessage),
+        isCurrent: thread.isCurrent,
+        isStored: thread.isStored,
+      };
+    })
+    .sort((a, b) => {
+      const timeA = a.lastTimestamp ? toTimestampValue(a.lastTimestamp) : -Infinity;
+      const timeB = b.lastTimestamp ? toTimestampValue(b.lastTimestamp) : -Infinity;
+      return timeB - timeA;
+    });
+}
 
 /**
  * FIXED: Enhanced message loading with better error handling
@@ -366,76 +451,7 @@ export async function saveMessagesToStorage(userId, messages) {
       cleanupOldMessages(userId);
     }
     
-    const toTimestampValue = (value) => {
-      if (value == null) {
-        return null;
-      }
-
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return value;
-      }
-
-      const parsed = Date.parse(value);
-      return Number.isNaN(parsed) ? null : parsed;
-    };
-
-    const threads = (() => {
-      const map = new Map();
-      let fallbackCounter = 0;
-
-      validMessages.forEach((message, index) => {
-        if (!message) {
-          return;
-        }
-
-        const rawThreadId =
-          message.threadId ||
-          message.conversationThreadId ||
-          message.conversationId ||
-          (message.id ? `local-thread-${message.id}` : null);
-        const threadId = rawThreadId || `local-thread-${++fallbackCounter}-${index}`;
-        const timestampValue = toTimestampValue(message.timestamp);
-
-        if (!map.has(threadId)) {
-          map.set(threadId, {
-            id: threadId,
-            messages: [],
-            firstTimestamp: timestampValue,
-            lastTimestamp: timestampValue,
-            messageCount: 0,
-          });
-        }
-
-        const entry = map.get(threadId);
-        entry.messages.push(message);
-        entry.messageCount += 1;
-
-        if (timestampValue != null) {
-          if (entry.firstTimestamp == null || timestampValue < entry.firstTimestamp) {
-            entry.firstTimestamp = timestampValue;
-          }
-          if (entry.lastTimestamp == null || timestampValue > entry.lastTimestamp) {
-            entry.lastTimestamp = timestampValue;
-          }
-        }
-      });
-
-      return Array.from(map.values())
-        .map((thread) => ({
-          ...thread,
-          firstTimestamp: thread.firstTimestamp != null
-            ? new Date(thread.firstTimestamp).toISOString()
-            : null,
-          lastTimestamp: thread.lastTimestamp != null
-            ? new Date(thread.lastTimestamp).toISOString()
-            : null,
-        }))
-        .sort((a, b) => {
-          const timeA = a.lastTimestamp ? Date.parse(a.lastTimestamp) : -Infinity;
-          const timeB = b.lastTimestamp ? Date.parse(b.lastTimestamp) : -Infinity;
-          return timeB - timeA;
-        });
-    })();
+    const threads = buildThreadSnapshotsForStorage(validMessages);
 
     // Prepare data for storage
     const storageData = {
@@ -525,76 +541,7 @@ function cleanupOldMessages(userId, maxMessages = STORAGE_CONFIG.MAX_MESSAGES_PE
       };
     });
 
-    const toTimestampValue = (value) => {
-      if (value == null) {
-        return null;
-      }
-
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return value;
-      }
-
-      const parsed = Date.parse(value);
-      return Number.isNaN(parsed) ? null : parsed;
-    };
-
-    const cleanedThreads = (() => {
-      const map = new Map();
-      let fallbackCounter = 0;
-
-      recentWithThreads.forEach((message, index) => {
-        if (!message) {
-          return;
-        }
-
-        const rawThreadId =
-          message.threadId ||
-          message.conversationThreadId ||
-          message.conversationId ||
-          (message.id ? `local-thread-${message.id}` : null);
-        const threadId = rawThreadId || `local-thread-${++fallbackCounter}-${index}`;
-        const timestampValue = toTimestampValue(message.timestamp);
-
-        if (!map.has(threadId)) {
-          map.set(threadId, {
-            id: threadId,
-            messages: [],
-            firstTimestamp: timestampValue,
-            lastTimestamp: timestampValue,
-            messageCount: 0,
-          });
-        }
-
-        const entry = map.get(threadId);
-        entry.messages.push(message);
-        entry.messageCount += 1;
-
-        if (timestampValue != null) {
-          if (entry.firstTimestamp == null || timestampValue < entry.firstTimestamp) {
-            entry.firstTimestamp = timestampValue;
-          }
-          if (entry.lastTimestamp == null || timestampValue > entry.lastTimestamp) {
-            entry.lastTimestamp = timestampValue;
-          }
-        }
-      });
-
-      return Array.from(map.values())
-        .map((thread) => ({
-          ...thread,
-          firstTimestamp: thread.firstTimestamp != null
-            ? new Date(thread.firstTimestamp).toISOString()
-            : null,
-          lastTimestamp: thread.lastTimestamp != null
-            ? new Date(thread.lastTimestamp).toISOString()
-            : null,
-        }))
-        .sort((a, b) => {
-          const timeA = a.lastTimestamp ? Date.parse(a.lastTimestamp) : -Infinity;
-          const timeB = b.lastTimestamp ? Date.parse(b.lastTimestamp) : -Infinity;
-          return timeB - timeA;
-        });
-    })();
+    const cleanedThreads = buildThreadSnapshotsForStorage(recentWithThreads);
 
     // Save cleaned data
     const cleanedData = {

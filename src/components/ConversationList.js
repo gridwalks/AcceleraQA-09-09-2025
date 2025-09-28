@@ -47,7 +47,9 @@ const ConversationList = memo(({ conversations = [], onSelect = () => {} }) => {
 
     const conversationId =
       identifierSource?.originalAiMessage?.conversationId ||
-      identifierSource?.originalUserMessage?.conversationId;
+      identifierSource?.originalUserMessage?.conversationId ||
+      conv.conversationId ||
+      conv.threadId;
 
     if (conversationId) {
       onSelect(conversationId);

@@ -111,6 +111,44 @@ describe('mergeCurrentAndStoredMessages', () => {
     expect(assistantMessage.isCurrent).toBe(true);
     expect(assistantMessage.sources).toEqual([{ documentId: 'doc-1' }]);
   });
+
+  it('annotates conversation and thread identifiers when missing', () => {
+    const stored = [
+      {
+        id: 'u-1',
+        role: 'user',
+        type: 'user',
+        content: 'Hello there',
+        timestamp: '2024-06-01T10:00:00.000Z',
+      },
+      {
+        id: 'a-1',
+        role: 'assistant',
+        type: 'ai',
+        content: 'Hi! How can I help?',
+        timestamp: '2024-06-01T10:00:05.000Z',
+      },
+      {
+        id: 'a-2',
+        role: 'assistant',
+        type: 'ai',
+        content: 'Any other questions?',
+        timestamp: '2024-06-01T10:01:00.000Z',
+      },
+    ];
+
+    const merged = mergeCurrentAndStoredMessages([], stored);
+
+    expect(merged).toHaveLength(3);
+    const conversationIds = new Set(merged.map((msg) => msg.conversationId));
+    expect(conversationIds.size).toBe(1);
+    const [conversationId] = conversationIds;
+    expect(conversationId).toBeTruthy();
+    merged.forEach((message) => {
+      expect(message.threadId).toBe(conversationId);
+      expect(message.conversationThreadId).toBe(conversationId);
+    });
+  });
 });
 
 describe('combineMessagesIntoConversations', () => {

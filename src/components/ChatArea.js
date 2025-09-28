@@ -684,7 +684,7 @@ const ChatArea = ({
   handleSendMessage,
   handleKeyPress,
   messagesEndRef,
-  ragEnabled,
+  lastResponseMode,
   isSaving,
   uploadedFile,
   setUploadedFile,
@@ -710,6 +710,10 @@ const ChatArea = ({
     }
   }, []);
 
+  const normalizedResponseMode =
+    lastResponseMode === 'ai-knowledge' ? 'ai-knowledge' : 'document-search';
+  const usedFallback = normalizedResponseMode === 'ai-knowledge';
+
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden bg-white rounded-lg shadow-sm border border-gray-200">
       {/* Chat Header */}
@@ -732,9 +736,9 @@ const ChatArea = ({
         <div className="mt-2 text-sm text-purple-600 bg-purple-50 px-3 py-1 rounded-md flex items-center space-x-2">
           <Database className="h-3 w-3" />
           <span>
-            {ragEnabled
-              ? 'Document Search is prioritized with automatic fallback to AI Knowledge when needed.'
-              : 'AI Knowledge responded automatically when no document answer was found. Document Search will be retried on your next message.'}
+            {usedFallback
+              ? 'AI Knowledge responded automatically when no document answer was found. Document Search will be retried on your next message.'
+              : 'Document Search is prioritized with automatic fallback to AI Knowledge when needed.'}
           </span>
         </div>
       </div>

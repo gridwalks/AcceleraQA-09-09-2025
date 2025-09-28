@@ -150,6 +150,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [lastResponseMode, setLastResponseMode] = useState('document-search');
   const [uploadedFile, setUploadedFile] = useState(null);
   const [activeDocument, setActiveDocument] = useState(null);
   const [cooldown, setCooldown] = useState(0);
@@ -183,6 +184,7 @@ function App() {
     setIsAuthenticated(false);
     setUser(null);
     setLearningSuggestions([]);
+    setLastResponseMode('document-search');
     setShowRAGConfig(false);
     setShowAdmin(false);
     setShowNotebook(false);
@@ -553,7 +555,6 @@ function App() {
       if (!preparedFile) {
         documentSearchAttempted = true;
         setRAGEnabled(true);
-
         try {
           const ragResponse = await ragSearch(
             rawInput,
@@ -583,11 +584,9 @@ function App() {
         );
 
         modeUsed = documentSearchAttempted ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
-        if (documentSearchAttempted) {
-          setRAGEnabled(false);
-        }
-      } else if (!ragEnabled) {
-        setRAGEnabled(true);
+        setLastResponseMode('ai-knowledge');
+      } else {
+        setLastResponseMode('document-search');
       }
 
       const combinedInternalResources = buildInternalResources({
@@ -709,7 +708,6 @@ function App() {
     user?.sub,
     activeDocument,
     adminResources,
-    ragEnabled,
     usesNeonBackend,
   ]);
 
@@ -743,6 +741,7 @@ function App() {
     setInputMessage('');
     setUploadedFile(null);
     setActiveDocument(null);
+    setLastResponseMode('document-search');
     // Refresh suggestions when chat is cleared (might reveal different patterns)
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
       setTimeout(() => {
@@ -757,6 +756,7 @@ function App() {
     setActiveDocument(null);
     setSelectedMessages(new Set());
     setThirtyDayMessages([]);
+    setLastResponseMode('document-search');
     // Clear learning suggestions cache when all conversations are cleared
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && user?.sub) {
       import('./services/learningSuggestionsService').then(({ default: learningSuggestionsService }) => {
@@ -1097,7 +1097,7 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
+                    lastResponseMode={lastResponseMode}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
@@ -1131,7 +1131,7 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
+                    lastResponseMode={lastResponseMode}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}

@@ -684,8 +684,7 @@ const ChatArea = ({
   handleSendMessage,
   handleKeyPress,
   messagesEndRef,
-  ragEnabled,
-  setRAGEnabled,
+  lastResponseMode,
   isSaving,
   uploadedFile,
   setUploadedFile,
@@ -711,9 +710,14 @@ const ChatArea = ({
     }
   }, []);
 
+  const normalizedResponseMode =
+    lastResponseMode === 'document-search' ? 'document-search' : 'ai-knowledge';
+  const usedFallback = lastResponseMode === 'ai-knowledge-auto';
+  const manualOverrideActive = lastResponseMode === 'ai-knowledge-manual';
+
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden bg-white rounded-lg shadow-sm border border-gray-200">
-      {/* Chat Header with RAG Toggle */}
+      {/* Chat Header */}
       <div className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -727,42 +731,19 @@ const ChatArea = ({
               </div>
             )}
           </div>
-
-          {/* RAG Toggle Switch */}
-          <label
-            className="flex items-center space-x-2 cursor-pointer"
-            title={ragEnabled ? 'RAG enabled - searching uploaded documents' : 'RAG disabled - AI knowledge only'}
-          >
-            <input
-              type="checkbox"
-              className="sr-only"
-              checked={ragEnabled}
-              onChange={() => setRAGEnabled(!ragEnabled)}
-            />
-            <span
-              className={`relative inline-block h-5 w-10 rounded-full transition-colors ${
-                ragEnabled ? 'bg-purple-600' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`absolute left-1 top-1 h-3 w-3 rounded-full bg-white transition-transform ${
-                  ragEnabled ? 'translate-x-5' : ''
-                }`}
-              />
-            </span>
-            <span className="hidden sm:inline text-sm">
-              {ragEnabled ? 'Document Search' : 'AI Knowledge'}
-            </span>
-          </label>
         </div>
 
-        {/* RAG Status Description */}
-        {ragEnabled && (
-          <div className="mt-2 text-sm text-purple-600 bg-purple-50 px-3 py-1 rounded-md flex items-center space-x-2">
-            <Database className="h-3 w-3" />
-            <span>Searching uploaded documents for relevant context</span>
-          </div>
-        )}
+        {/* Document search status description */}
+        <div className="mt-2 text-sm text-purple-600 bg-purple-50 px-3 py-1 rounded-md flex items-center space-x-2">
+          <Database className="h-3 w-3" />
+          <span>
+            {manualOverrideActive
+              ? 'AI Knowledge is responding because Document Search has been manually disabled.'
+              : usedFallback
+                ? 'AI Knowledge responded automatically when no document answer was found. Document Search will be retried on your next message.'
+                : 'Document Search is prioritized with automatic fallback to AI Knowledge when needed.'}
+          </span>
+        </div>
       </div>
 
       {/* Messages Container */}

@@ -49,6 +49,51 @@ import {
 const COOLDOWN_SECONDS = 10;
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
+const getGlobalScope = () => {
+  if (typeof window !== 'undefined') {
+    return window;
+  }
+
+  if (typeof globalThis !== 'undefined') {
+    return globalThis;
+  }
+
+  return null;
+};
+
+const bootstrapDeprecatedRagApi = () => {
+  const scope = getGlobalScope();
+  if (!scope) {
+    return;
+  }
+
+  if (typeof scope.setRAGEnabled !== 'function') {
+    scope.setRAGEnabled = (nextEnabled) => {
+      const normalized = nextEnabled !== false;
+      scope.__pendingRagEnabled = normalized;
+      console.warn(
+        'setRAGEnabled is deprecated. Document Search now prioritizes automatically; the preference will sync once the application finishes loading.'
+      );
+    };
+  }
+
+  if (typeof scope.getRAGEnabled !== 'function') {
+    scope.getRAGEnabled = () => {
+      if (typeof scope.__ragEnabled === 'boolean') {
+        return scope.__ragEnabled;
+      }
+
+      if (typeof scope.__pendingRagEnabled === 'boolean') {
+        return scope.__pendingRagEnabled;
+      }
+
+      return true;
+    };
+  }
+};
+
+bootstrapDeprecatedRagApi();
+
 const normalizeValue = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 const conversationIdMatchesMessage = (conversationId, messageId) => {
@@ -150,7 +195,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [ragEnabled, setRAGEnabled] = useState(true);
+  const [lastResponseMode, setLastResponseMode] = useState('document-search');
   const [uploadedFile, setUploadedFile] = useState(null);
   const [activeDocument, setActiveDocument] = useState(null);
   const [cooldown, setCooldown] = useState(0);
@@ -179,16 +224,90 @@ function App() {
   const adminResourcesLoadedRef = useRef(false);
   const inactivityTimerRef = useRef(null);
   const usesNeonBackend = useMemo(() => ragService.isNeonBackend(), []);
+  const ragManualOverrideRef = useRef(true);
+
+  const updateGlobalRagFlag = useCallback((enabled) => {
+    const globalScope = getGlobalScope();
+
+    if (!globalScope) {
+      return;
+    }
+
+    if (enabled === undefined) {
+      if ('__ragEnabled' in globalScope) {
+        delete globalScope.__ragEnabled;
+      }
+    } else {
+      globalScope.__ragEnabled = enabled;
+    }
+  }, []);
+
+  useEffect(() => {
+    const globalScope = getGlobalScope();
+
+    if (!globalScope) {
+      return undefined;
+    }
+
+    const pendingValue = typeof globalScope.__pendingRagEnabled === 'boolean'
+      ? globalScope.__pendingRagEnabled
+      : ragManualOverrideRef.current;
+
+    ragManualOverrideRef.current = pendingValue;
+    updateGlobalRagFlag(pendingValue);
+
+    if (pendingValue === false) {
+      setLastResponseMode('ai-knowledge-manual');
+    }
+
+    if ('__pendingRagEnabled' in globalScope) {
+      delete globalScope.__pendingRagEnabled;
+    }
+
+    const deprecatedSetter = (nextEnabled) => {
+      const normalized = nextEnabled !== false;
+      ragManualOverrideRef.current = normalized;
+      updateGlobalRagFlag(normalized);
+
+      if (!normalized) {
+        console.warn(
+          'setRAGEnabled is deprecated. Document Search now runs automatically and falls back to AI Knowledge when no document answer is found.'
+        );
+        setLastResponseMode('ai-knowledge-manual');
+      } else {
+        setLastResponseMode('document-search');
+      }
+    };
+
+    const deprecatedGetter = () => ragManualOverrideRef.current;
+
+    globalScope.setRAGEnabled = deprecatedSetter;
+    globalScope.getRAGEnabled = deprecatedGetter;
+
+    return () => {
+      if (globalScope.setRAGEnabled === deprecatedSetter) {
+        delete globalScope.setRAGEnabled;
+      }
+      if (globalScope.getRAGEnabled === deprecatedGetter) {
+        delete globalScope.getRAGEnabled;
+      }
+      updateGlobalRagFlag(undefined);
+      bootstrapDeprecatedRagApi();
+    };
+  }, [setLastResponseMode, updateGlobalRagFlag]);
 
   const handleLogoutComplete = useCallback(() => {
+    ragManualOverrideRef.current = true;
+    updateGlobalRagFlag(true);
     setIsAuthenticated(false);
     setUser(null);
     setLearningSuggestions([]);
+    setLastResponseMode('document-search');
     setShowRAGConfig(false);
     setShowAdmin(false);
     setShowNotebook(false);
     setShowSupport(false);
-  }, []);
+  }, [updateGlobalRagFlag]);
 
   const handleAutoLogout = useCallback(async () => {
     console.log('User inactive for 15 minutes - logging out');
@@ -547,15 +666,56 @@ function App() {
         ? { vectorStoreIds: [activeDocument.vectorStoreId] }
         : undefined;
 
-      const response = ragEnabled && !preparedFile
-        ? await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory)
-        : await openaiService.getChatResponse(
+      let response = null;
+      let modeUsed = 'AI Knowledge';
+      let documentSearchAttempted = false;
+      const manualOverrideDisabled = ragManualOverrideRef.current === false;
+
+      if (!preparedFile && !manualOverrideDisabled) {
+        documentSearchAttempted = true;
+        try {
+          const ragResponse = await ragSearch(
             rawInput,
-            preparedFile,
-            conversationHistory,
-            undefined,
-            vectorStoreIdToUse
+            user?.sub,
+            ragSearchOptions,
+            conversationHistory
           );
+          const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
+          const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
+
+          if (ragAnswer || ragSources.length > 0) {
+            response = ragResponse;
+            modeUsed = 'Document Search';
+          }
+        } catch (ragError) {
+          console.error('Document search failed, falling back to AI Knowledge:', ragError);
+        }
+      } else if (!preparedFile && manualOverrideDisabled) {
+        modeUsed = 'AI Knowledge (manual override)';
+      }
+
+      if (!response) {
+        response = await openaiService.getChatResponse(
+          rawInput,
+          preparedFile,
+          conversationHistory,
+          undefined,
+          vectorStoreIdToUse
+        );
+
+        if (documentSearchAttempted) {
+          modeUsed = 'AI Knowledge (automatic fallback)';
+          setLastResponseMode('ai-knowledge-auto');
+        } else if (manualOverrideDisabled && !preparedFile) {
+          modeUsed = 'AI Knowledge (manual override)';
+          setLastResponseMode('ai-knowledge-manual');
+        } else {
+          modeUsed = 'AI Knowledge';
+          setLastResponseMode('ai-knowledge');
+        }
+      } else {
+        setLastResponseMode('document-search');
+      }
 
       const combinedInternalResources = buildInternalResources({
         attachments,
@@ -574,7 +734,11 @@ function App() {
         id: uuidv4(),
         role: 'assistant',
         type: 'ai',
-        content: response.answer,
+        content: (() => {
+          const answerText = typeof response.answer === 'string' ? response.answer.trim() : '';
+          const modeLine = `Mode used: ${modeUsed}`;
+          return answerText ? `${answerText}\n\n_${modeLine}_` : `_${modeLine}_`;
+        })(),
         timestamp: Date.now(),
         sources: response.sources || [],
         resources: mergedResources,
@@ -666,13 +830,13 @@ function App() {
   }, [
     inputMessage,
     uploadedFile,
-    ragEnabled,
     messages,
     refreshLearningSuggestions,
     cooldown,
     user?.sub,
     activeDocument,
     adminResources,
+    usesNeonBackend,
   ]);
 
   const handleKeyPress = useCallback(
@@ -705,6 +869,7 @@ function App() {
     setInputMessage('');
     setUploadedFile(null);
     setActiveDocument(null);
+    setLastResponseMode('document-search');
     // Refresh suggestions when chat is cleared (might reveal different patterns)
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS) {
       setTimeout(() => {
@@ -719,6 +884,7 @@ function App() {
     setActiveDocument(null);
     setSelectedMessages(new Set());
     setThirtyDayMessages([]);
+    setLastResponseMode('document-search');
     // Clear learning suggestions cache when all conversations are cleared
     if (FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && user?.sub) {
       import('./services/learningSuggestionsService').then(({ default: learningSuggestionsService }) => {
@@ -1059,8 +1225,7 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
+                    lastResponseMode={lastResponseMode}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
@@ -1094,8 +1259,7 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
+                    lastResponseMode={lastResponseMode}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}

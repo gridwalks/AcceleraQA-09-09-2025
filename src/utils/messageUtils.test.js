@@ -2,6 +2,7 @@ import {
   buildChatHistory,
   combineMessagesIntoConversations,
   groupConversationsByThread,
+  mergeCurrentAndStoredMessages,
 } from './messageUtils';
 
 describe('buildChatHistory', () => {
@@ -43,6 +44,72 @@ describe('buildChatHistory', () => {
       { role: 'user', content: 'Prior question?' },
       { role: 'assistant', content: 'Prior answer.' },
     ]);
+  });
+});
+
+describe('mergeCurrentAndStoredMessages', () => {
+  it('assigns fallback ids for stored messages missing identifiers', () => {
+    const stored = [
+      {
+        role: 'user',
+        type: 'user',
+        content: 'What regulations apply to GMP?',
+        timestamp: '2024-02-01T12:00:00.000Z',
+        conversationId: 'conv-fallback-1',
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        type: 'ai',
+        content: '21 CFR Parts 210 and 211 govern GMP compliance.',
+        timestamp: '2024-02-01T12:00:05.000Z',
+        conversationId: 'conv-fallback-1',
+      },
+    ];
+
+    const merged = mergeCurrentAndStoredMessages([], stored);
+    expect(merged).toHaveLength(2);
+
+    const userMessage = merged.find((msg) => msg.role === 'user');
+    expect(userMessage).toBeDefined();
+    expect(userMessage.id).toBeTruthy();
+    expect(userMessage.id.startsWith('fallback:')).toBe(true);
+    expect(userMessage.isStored).toBe(true);
+    expect(userMessage.isCurrent).toBe(false);
+  });
+
+  it('deduplicates messages by generated key while preserving stored flags', () => {
+    const stored = [
+      {
+        role: 'assistant',
+        type: 'ai',
+        content: 'Here is the latest CAPA guidance.',
+        timestamp: '2024-02-02T08:15:10.000Z',
+        conversationId: 'conv-fallback-2',
+        resources: [{ id: 'doc-1' }],
+      },
+    ];
+
+    const current = [
+      {
+        role: 'assistant',
+        type: 'ai',
+        content: 'Here is the latest CAPA guidance.',
+        timestamp: '2024-02-02T08:15:10.000Z',
+        conversationId: 'conv-fallback-2',
+        resources: [{ id: 'doc-1' }],
+        sources: [{ documentId: 'doc-1' }],
+      },
+    ];
+
+    const merged = mergeCurrentAndStoredMessages(current, stored);
+    expect(merged).toHaveLength(1);
+
+    const assistantMessage = merged[0];
+    expect(assistantMessage.id.startsWith('fallback:')).toBe(true);
+    expect(assistantMessage.isStored).toBe(true);
+    expect(assistantMessage.isCurrent).toBe(true);
+    expect(assistantMessage.sources).toEqual([{ documentId: 'doc-1' }]);
   });
 });
 

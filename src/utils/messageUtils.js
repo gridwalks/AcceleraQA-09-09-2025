@@ -124,62 +124,64 @@ export function getMessagesByDays(messages, days = UI_CONFIG.MESSAGE_HISTORY_DAY
  * @returns {Object[]} - Merged and deduplicated messages
  */
 export function mergeCurrentAndStoredMessages(currentMessages, storedMessages) {
-  if (!Array.isArray(currentMessages)) currentMessages = [];
-  if (!Array.isArray(storedMessages)) storedMessages = [];
-  
-  // Debug logging
+  const safeCurrent = Array.isArray(currentMessages)
+    ? currentMessages.filter(Boolean)
+    : [];
+  const safeStored = Array.isArray(storedMessages)
+    ? storedMessages.filter(Boolean)
+    : [];
+
   if (process.env.NODE_ENV === 'development') {
     console.log('=== MERGE FUNCTION DEBUG ===');
-    console.log('Current messages input:', currentMessages.length);
-    console.log('Stored messages input:', storedMessages.length);
+    console.log('Current messages input:', safeCurrent.length);
+    console.log('Stored messages input:', safeStored.length);
   }
-  
+
   const messageMap = new Map();
-  
-  // Add stored messages first (mark them properly)
-  storedMessages.forEach(msg => {
-    if (msg && msg.id) {
-      messageMap.set(msg.id, { 
-        ...msg, 
-        isStored: true, 
-        isCurrent: false 
-      });
+
+  const assignMessage = (message, { isCurrentMessage }) => {
+    if (!message || typeof message !== 'object') {
+      return;
     }
-  });
-  
-  // Add current messages (will override any duplicates, mark as current)
-  currentMessages.forEach(msg => {
-    if (msg && msg.id) {
-      messageMap.set(msg.id, { 
-        ...msg, 
-        isStored: false, 
-        isCurrent: true 
-      });
-    }
-  });
-  
-  // Convert back to array and sort by timestamp
+
+    const key = getMessageMergeKey(message) || `generated:${messageMap.size}`;
+    const existing = messageMap.get(key);
+
+    const mergedFlags = {
+      isCurrent: isCurrentMessage || Boolean(message.isCurrent) || Boolean(existing?.isCurrent),
+      isStored: (!isCurrentMessage && (message.isStored ?? true)) || Boolean(existing?.isStored),
+    };
+
+    messageMap.set(key, {
+      ...(existing || {}),
+      ...message,
+      id: message.id || existing?.id || key,
+      ...mergedFlags,
+    });
+  };
+
+  safeStored.forEach((msg) => assignMessage(msg, { isCurrentMessage: false }));
+  safeCurrent.forEach((msg) => assignMessage(msg, { isCurrentMessage: true }));
+
   const result = Array.from(messageMap.values())
-    .filter(msg => msg && msg.timestamp) // Ensure we have valid messages
+    .filter((msg) => msg && msg.timestamp)
     .sort((a, b) => {
       const dateA = new Date(a.timestamp);
       const dateB = new Date(b.timestamp);
-      
-      // Handle invalid dates
-      if (isNaN(dateA.getTime())) return 1;
-      if (isNaN(dateB.getTime())) return -1;
-      
+
+      if (Number.isNaN(dateA.getTime())) return 1;
+      if (Number.isNaN(dateB.getTime())) return -1;
+
       return dateA - dateB;
     });
-  
-  // Debug logging
+
   if (process.env.NODE_ENV === 'development') {
     console.log('Merged result count:', result.length);
     console.log('Result breakdown:');
-    console.log('- Current messages:', result.filter(m => m.isCurrent).length);
-    console.log('- Stored messages:', result.filter(m => m.isStored && !m.isCurrent).length);
+    console.log('- Current messages:', result.filter((m) => m.isCurrent).length);
+    console.log('- Stored messages:', result.filter((m) => m.isStored && !m.isCurrent).length);
   }
-  
+
   return result;
 }
 
@@ -320,6 +322,87 @@ const normalizeConversationPreview = (conversation) => ({
     conversation.originalUserMessage?.conversation?.id ||
     null,
 });
+
+const createContentFingerprint = (message) => {
+  if (!message || typeof message !== 'object') {
+    return 'no-content';
+  }
+
+  const { content } = message;
+
+  if (content == null) {
+    return 'no-content';
+  }
+
+  if (typeof content === 'string') {
+    const trimmed = content.trim();
+    return trimmed ? trimmed.slice(0, 60) : 'no-content';
+  }
+
+  if (Array.isArray(content)) {
+    const joined = content
+      .map((part) => {
+        if (typeof part === 'string') {
+          return part.trim();
+        }
+
+        if (part == null) {
+          return '';
+        }
+
+        try {
+          return JSON.stringify(part);
+        } catch (error) {
+          return String(part);
+        }
+      })
+      .filter(Boolean)
+      .join(' ');
+
+    return joined ? joined.slice(0, 60) : 'no-content';
+  }
+
+  try {
+    const serialized = JSON.stringify(content);
+    return serialized ? serialized.slice(0, 60) : 'no-content';
+  } catch (error) {
+    const coerced = String(content);
+    return coerced ? coerced.slice(0, 60) : 'no-content';
+  }
+};
+
+const buildConversationIdentifierCandidates = (message = {}) => [
+  message.conversationId,
+  message.conversation?.id,
+  message.threadId,
+  message.thread_id,
+  message.parentConversationId,
+  message.metadata?.conversationId,
+  message.metadata?.threadId,
+  message.metadata?.thread_id,
+].filter(Boolean);
+
+const getMessageMergeKey = (message) => {
+  if (!message || typeof message !== 'object') {
+    return null;
+  }
+
+  if (message.id) {
+    return message.id;
+  }
+
+  const conversationKey = buildConversationIdentifierCandidates(message)[0] || 'no-conversation';
+  const timestampValue = getTimestampValue(message.timestamp);
+  const timestampKey = timestampValue != null
+    ? String(timestampValue)
+    : (typeof message.timestamp === 'string' && message.timestamp.trim())
+      ? message.timestamp.trim()
+      : 'no-timestamp';
+  const roleKey = message.role || message.type || 'unknown-role';
+  const contentKey = createContentFingerprint(message);
+
+  return `fallback:${conversationKey}:${roleKey}:${timestampKey}:${contentKey}`;
+};
 
 const resolveThreadFlags = (messages = []) => {
   const flags = {

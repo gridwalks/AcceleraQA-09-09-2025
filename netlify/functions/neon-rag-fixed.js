@@ -593,6 +593,16 @@ async function handleUpload(sql, userId, payload = {}) {
 
   metadata.fileName = metadata.fileName || filename;
 
+  const normalizedOriginalFilename = getFirstNonEmptyString(
+    document.originalFilename,
+    metadata.originalFilename,
+    metadata.fileName,
+    filename,
+  );
+
+  if (normalizedOriginalFilename) {
+    metadata.originalFilename = metadata.originalFilename || normalizedOriginalFilename;
+  }
   const normalizedTitle = getFirstNonEmptyString(
     document.title,
     metadata.title,
@@ -657,7 +667,7 @@ async function handleUpload(sql, userId, payload = {}) {
       ) VALUES (
         ${userId},
         ${filename},
-        ${document.originalFilename || null},
+        ${normalizedOriginalFilename || filename},
         ${normalizedDocumentType},
         ${Number.isFinite(document.size) ? Number(document.size) : null},
         ${text},

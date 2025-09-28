@@ -191,6 +191,7 @@ describe('combineMessagesIntoConversations', () => {
     expect(combined[1].conversationId).toBe('conv-456');
     expect(combined[1].threadId).toBe('conv-456');
   });
+
   it('creates deterministic thread ids when metadata is missing', () => {
     const messages = [
       { id: 'local-user-1', role: 'user', type: 'user', timestamp: '2024-05-01T10:00:00.000Z', content: 'Hi there' },
@@ -515,5 +516,39 @@ describe('expandConversationThread', () => {
   it('returns empty array for invalid input', () => {
     expect(expandConversationThread(null)).toEqual([]);
     expect(expandConversationThread(undefined)).toEqual([]);
+  });
+
+  it('groups cards when conversation id only exists on the combined entry', () => {
+    const conversations = [
+      {
+        id: 'pair-1',
+        conversationId: 'thread-1',
+        userContent: 'First question',
+        aiContent: 'First answer',
+        timestamp: '2024-02-01T10:00:00.000Z',
+        resources: [],
+        isStored: true,
+        isCurrent: false,
+      },
+      {
+        id: 'pair-2',
+        conversationId: 'thread-1',
+        userContent: 'Second question',
+        aiContent: 'Second answer',
+        timestamp: '2024-02-01T10:05:00.000Z',
+        resources: [],
+        isStored: true,
+        isCurrent: false,
+      },
+    ];
+
+    const grouped = groupConversationsByThread(conversations);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].id).toBe('thread-1');
+    expect(grouped[0].conversationCount).toBe(2);
+    expect(grouped[0].threadMessages).toHaveLength(2);
+    expect(grouped[0].threadMessages[0].conversationId).toBe('thread-1');
+    expect(grouped[0].threadMessages[1].conversationId).toBe('thread-1');
   });
 });

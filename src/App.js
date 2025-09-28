@@ -547,15 +547,49 @@ function App() {
         ? { vectorStoreIds: [activeDocument.vectorStoreId] }
         : undefined;
 
-      const response = ragEnabled && !preparedFile
-        ? await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory)
-        : await openaiService.getChatResponse(
+      let response = null;
+      let modeUsed = 'AI Knowledge';
+      let documentSearchAttempted = false;
+
+      if (!preparedFile) {
+        documentSearchAttempted = true;
+        setRAGEnabled(true);
+
+        try {
+          const ragResponse = await ragSearch(
             rawInput,
-            preparedFile,
-            conversationHistory,
-            undefined,
-            vectorStoreIdToUse
+            user?.sub,
+            ragSearchOptions,
+            conversationHistory
           );
+          const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
+          const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
+
+          if (ragAnswer || ragSources.length > 0) {
+            response = ragResponse;
+            modeUsed = 'Document Search';
+          }
+        } catch (ragError) {
+          console.error('Document search failed, falling back to AI Knowledge:', ragError);
+        }
+      }
+
+      if (!response) {
+        response = await openaiService.getChatResponse(
+          rawInput,
+          preparedFile,
+          conversationHistory,
+          undefined,
+          vectorStoreIdToUse
+        );
+
+        modeUsed = documentSearchAttempted ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
+        if (documentSearchAttempted) {
+          setRAGEnabled(false);
+        }
+      } else if (!ragEnabled) {
+        setRAGEnabled(true);
+      }
 
       const combinedInternalResources = buildInternalResources({
         attachments,
@@ -574,7 +608,11 @@ function App() {
         id: uuidv4(),
         role: 'assistant',
         type: 'ai',
-        content: response.answer,
+        content: (() => {
+          const answerText = typeof response.answer === 'string' ? response.answer.trim() : '';
+          const modeLine = `Mode used: ${modeUsed}`;
+          return answerText ? `${answerText}\n\n_${modeLine}_` : `_${modeLine}_`;
+        })(),
         timestamp: Date.now(),
         sources: response.sources || [],
         resources: mergedResources,
@@ -666,13 +704,14 @@ function App() {
   }, [
     inputMessage,
     uploadedFile,
-    ragEnabled,
     messages,
     refreshLearningSuggestions,
     cooldown,
     user?.sub,
     activeDocument,
     adminResources,
+    ragEnabled,
+    usesNeonBackend,
   ]);
 
   const handleKeyPress = useCallback(
@@ -1060,7 +1099,6 @@ function App() {
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
                     ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
@@ -1095,7 +1133,6 @@ function App() {
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
                     ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}

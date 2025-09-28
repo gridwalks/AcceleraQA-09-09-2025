@@ -603,7 +603,6 @@ async function handleUpload(sql, userId, payload = {}) {
   if (normalizedOriginalFilename) {
     metadata.originalFilename = metadata.originalFilename || normalizedOriginalFilename;
   }
-
   const normalizedTitle = getFirstNonEmptyString(
     document.title,
     metadata.title,

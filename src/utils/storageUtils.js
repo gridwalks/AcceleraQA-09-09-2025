@@ -228,7 +228,6 @@ function buildThreadSnapshotsForStorage(messages) {
     });
 }
 
-
 /**
  * FIXED: Enhanced message loading with better error handling
  * @param {string} userId - User identifier

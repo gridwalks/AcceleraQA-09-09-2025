@@ -3,38 +3,24 @@ import { UI_CONFIG } from '../config/constants';
 const DEFAULT_THREAD_GAP_MS = 1000 * 60 * 30; // 30 minutes
 
 const getTimestampValue = (timestamp) => {
-  if (timestamp == null) {
-    return null;
-  }
+  if (timestamp == null) return null;
 
-  if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
-    return timestamp;
-  }
+  if (typeof timestamp === 'number' && Number.isFinite(timestamp)) return timestamp;
 
   if (typeof timestamp === 'string') {
     const parsed = Date.parse(timestamp);
-    if (!Number.isNaN(parsed)) {
-      return parsed;
-    }
+    if (!Number.isNaN(parsed)) return parsed;
   }
-
   return null;
 };
 
 const resolveMessageType = (msg) => {
-  if (!msg || typeof msg !== 'object') {
-    return null;
-  }
+  if (!msg || typeof msg !== 'object') return null;
 
   const type = msg.type || msg.role;
 
-  if (type === 'assistant') {
-    return 'ai';
-  }
-
-  if (type === 'system') {
-    return 'system';
-  }
+  if (type === 'assistant') return 'ai';
+  if (type === 'system') return 'system';
 
   return type || null;
 };
@@ -43,7 +29,6 @@ const mergeResourceArrays = (existing = [], incoming = []) => {
   if (!Array.isArray(existing) || existing.length === 0) {
     return Array.isArray(incoming) ? incoming.filter(Boolean) : [];
   }
-
   if (!Array.isArray(incoming) || incoming.length === 0) {
     return existing.filter(Boolean);
   }
@@ -52,27 +37,14 @@ const mergeResourceArrays = (existing = [], incoming = []) => {
   const seen = new Set();
 
   normalized.forEach((resource) => {
-    if (!resource) {
-      return;
-    }
-
-    if (resource.id) {
-      seen.add(`id:${resource.id}`);
-    }
-
-    if (resource.url) {
-      seen.add(`url:${resource.url}`);
-    }
-
-    if (resource.title) {
-      seen.add(`title:${resource.title}`);
-    }
+    if (!resource) return;
+    if (resource.id) seen.add(`id:${resource.id}`);
+    if (resource.url) seen.add(`url:${resource.url}`);
+    if (resource.title) seen.add(`title:${resource.title}`);
   });
 
   incoming.forEach((resource) => {
-    if (!resource) {
-      return;
-    }
+    if (!resource) return;
 
     const candidates = [
       resource.id ? `id:${resource.id}` : null,
@@ -80,11 +52,10 @@ const mergeResourceArrays = (existing = [], incoming = []) => {
       resource.title ? `title:${resource.title}` : null,
     ].filter(Boolean);
 
-    const isDuplicate = candidates.some((candidate) => seen.has(candidate));
-
+    const isDuplicate = candidates.some((c) => seen.has(c));
     if (!isDuplicate) {
       normalized.push(resource);
-      candidates.forEach((candidate) => seen.add(candidate));
+      candidates.forEach((c) => seen.add(c));
     }
   });
 
@@ -94,7 +65,7 @@ const mergeResourceArrays = (existing = [], incoming = []) => {
 /**
  * Filters messages from the specified number of days ago
  * @param {Object[]} messages - Array of message objects
- * @param {number} days - Number of days to look back (default: 30)
+ * @param {number} days - Number of days to look back (default from UI_CONFIG)
  * @returns {Object[]} - Filtered messages
  */
 export function getMessagesByDays(messages, days = UI_CONFIG.MESSAGE_HISTORY_DAYS) {
@@ -107,8 +78,8 @@ export function getMessagesByDays(messages, days = UI_CONFIG.MESSAGE_HISTORY_DAY
 
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
-  
-  const result = messages.filter(msg => {
+
+  const result = messages.filter((msg) => {
     if (!msg.timestamp) {
       if (process.env.NODE_ENV === 'development') {
         console.log('getMessagesByDays: Message missing timestamp:', msg);
@@ -117,23 +88,25 @@ export function getMessagesByDays(messages, days = UI_CONFIG.MESSAGE_HISTORY_DAY
     }
     const messageDate = new Date(msg.timestamp);
     const isValid = messageDate >= cutoffDate && !isNaN(messageDate.getTime());
-    
+
     if (!isValid && process.env.NODE_ENV === 'development') {
       console.log('getMessagesByDays: Message filtered out:', {
         id: msg.id,
         timestamp: msg.timestamp,
         messageDate: messageDate.toString(),
-        cutoffDate: cutoffDate.toString()
+        cutoffDate: cutoffDate.toString(),
       });
     }
-    
+
     return isValid;
   });
-  
+
   if (process.env.NODE_ENV === 'development') {
-    console.log(`getMessagesByDays: Filtered ${messages.length} to ${result.length} messages within ${days} days`);
+    console.log(
+      `getMessagesByDays: Filtered ${messages.length} to ${result.length} messages within ${days} days`
+    );
   }
-  
+
   return result;
 }
 
@@ -144,12 +117,8 @@ export function getMessagesByDays(messages, days = UI_CONFIG.MESSAGE_HISTORY_DAY
  * @returns {Object[]} - Merged and deduplicated messages
  */
 export function mergeCurrentAndStoredMessages(currentMessages, storedMessages) {
-  const safeCurrent = Array.isArray(currentMessages)
-    ? currentMessages.filter(Boolean)
-    : [];
-  const safeStored = Array.isArray(storedMessages)
-    ? storedMessages.filter(Boolean)
-    : [];
+  const safeCurrent = Array.isArray(currentMessages) ? currentMessages.filter(Boolean) : [];
+  const safeStored = Array.isArray(storedMessages) ? storedMessages.filter(Boolean) : [];
 
   if (process.env.NODE_ENV === 'development') {
     console.log('=== MERGE FUNCTION DEBUG ===');
@@ -160,9 +129,7 @@ export function mergeCurrentAndStoredMessages(currentMessages, storedMessages) {
   const messageMap = new Map();
 
   const assignMessage = (message, { isCurrentMessage }) => {
-    if (!message || typeof message !== 'object') {
-      return;
-    }
+    if (!message || typeof message !== 'object') return;
 
     const key = getMessageMergeKey(message) || `generated:${messageMap.size}`;
     const existing = messageMap.get(key);
@@ -198,12 +165,10 @@ export function mergeCurrentAndStoredMessages(currentMessages, storedMessages) {
   const { assignments: mergeAssignments } = deriveThreadIdAssignments(sortedMessages);
 
   const normalizedMessages = sortedMessages.map((message, index) => {
-    const assignedThreadId = mergeAssignments[index] || message.threadId || message.conversationThreadId || null;
+    const assignedThreadId =
+      mergeAssignments[index] || message.threadId || message.conversationThreadId || null;
     const canonicalConversationId =
-      message.conversationId ||
-      message.conversation?.id ||
-      assignedThreadId ||
-      null;
+      message.conversationId || message.conversation?.id || assignedThreadId || null;
 
     return {
       ...message,
@@ -235,11 +200,8 @@ export function combineMessagesIntoConversations(messages) {
 
   const { assignments: threadAssignments } = deriveThreadIdAssignments(messages);
 
-  const resolveConversationIdentifier = (message, fallback) =>
-    message?.conversationId ||
-    message?.conversation?.id ||
-    fallback ||
-    null;
+  const resolveConversationId = (message, fallback) =>
+    message?.conversationId || message?.conversation?.id || fallback || null;
 
   const resolveThreadIdForIndex = (idx) => threadAssignments[idx] || null;
 
@@ -247,7 +209,11 @@ export function combineMessagesIntoConversations(messages) {
     const messageType = resolveMessageType(message);
 
     // Skip user messages that have a following AI message (they'll be combined)
-    if (messageType === 'user' && index < array.length - 1 && resolveMessageType(array[index + 1]) === 'ai') {
+    if (
+      messageType === 'user' &&
+      index < array.length - 1 &&
+      resolveMessageType(array[index + 1]) === 'ai'
+    ) {
       return acc;
     }
 
@@ -256,24 +222,26 @@ export function combineMessagesIntoConversations(messages) {
       const userMessage = array[index - 1];
       const threadId = resolveThreadIdForIndex(index) || resolveThreadIdForIndex(index - 1);
       const conversationId =
-        resolveConversationIdentifier(message, null) ||
-        resolveConversationIdentifier(userMessage, null) ||
-        threadId;
+        resolveConversationId(message, null) || resolveConversationId(userMessage, null) || threadId;
+
       const normalizedThreadId = threadId || conversationId || null;
+
       const normalizedUserMessage = userMessage
         ? {
             ...userMessage,
-            conversationId: resolveConversationIdentifier(userMessage, conversationId),
+            conversationId: resolveConversationId(userMessage, conversationId),
             threadId: normalizedThreadId,
             conversationThreadId: normalizedThreadId,
           }
         : null;
+
       const normalizedAiMessage = {
         ...message,
-        conversationId: resolveConversationIdentifier(message, conversationId),
+        conversationId: resolveConversationId(message, conversationId),
         threadId: normalizedThreadId,
         conversationThreadId: normalizedThreadId,
       };
+
       const combinedMessage = {
         id: `${userMessage.id}-${message.id}`,
         userContent: userMessage.content,
@@ -290,19 +258,22 @@ export function combineMessagesIntoConversations(messages) {
         threadId: normalizedThreadId,
         conversationThreadId: normalizedThreadId,
       };
+
       acc.push(combinedMessage);
     }
     // Handle standalone AI messages (like welcome messages)
     else if (messageType === 'ai') {
       const threadId = resolveThreadIdForIndex(index);
-      const conversationId = resolveConversationIdentifier(message, threadId);
+      const conversationId = resolveConversationId(message, threadId);
       const normalizedThreadId = threadId || conversationId || null;
+
       const normalizedAiMessage = {
         ...message,
         conversationId,
         threadId: normalizedThreadId,
         conversationThreadId: normalizedThreadId,
       };
+
       const combinedMessage = {
         id: message.id,
         userContent: null,
@@ -317,19 +288,22 @@ export function combineMessagesIntoConversations(messages) {
         threadId: normalizedThreadId,
         conversationThreadId: normalizedThreadId,
       };
+
       acc.push(combinedMessage);
     }
     // Handle standalone user messages (unlikely but possible)
     else if (messageType === 'user') {
       const threadId = resolveThreadIdForIndex(index);
-      const conversationId = resolveConversationIdentifier(message, threadId);
+      const conversationId = resolveConversationId(message, threadId);
       const normalizedThreadId = threadId || conversationId || null;
+
       const normalizedUserMessage = {
         ...message,
         conversationId,
         threadId: normalizedThreadId,
         conversationThreadId: normalizedThreadId,
       };
+
       const combinedMessage = {
         id: message.id,
         userContent: message.content,
@@ -344,6 +318,7 @@ export function combineMessagesIntoConversations(messages) {
         threadId: normalizedThreadId,
         conversationThreadId: normalizedThreadId,
       };
+
       acc.push(combinedMessage);
     }
 
@@ -364,19 +339,13 @@ const resolveConversationThreadId = (conversation) =>
   null;
 
 const resolveConversationTimestamp = (conversation) => {
-  if (!conversation || typeof conversation !== 'object') {
-    return null;
-  }
+  if (!conversation || typeof conversation !== 'object') return null;
 
   const directTimestamp = getTimestampValue(conversation.timestamp);
-  if (directTimestamp != null) {
-    return directTimestamp;
-  }
+  if (directTimestamp != null) return directTimestamp;
 
   const aiTimestamp = getTimestampValue(conversation.originalAiMessage?.timestamp);
-  if (aiTimestamp != null) {
-    return aiTimestamp;
-  }
+  if (aiTimestamp != null) return aiTimestamp;
 
   return getTimestampValue(conversation.originalUserMessage?.timestamp);
 };
@@ -386,9 +355,7 @@ const normalizeConversationPreview = (conversation) => ({
   userContent: conversation.userContent,
   aiContent: conversation.aiContent,
   timestamp: conversation.timestamp,
-  resources: Array.isArray(conversation.resources)
-    ? conversation.resources.filter(Boolean)
-    : [],
+  resources: Array.isArray(conversation.resources) ? conversation.resources.filter(Boolean) : [],
   isStudyNotes: Boolean(conversation.isStudyNotes),
   originalUserMessage: conversation.originalUserMessage,
   originalAiMessage: conversation.originalAiMessage,
@@ -416,15 +383,10 @@ const normalizeConversationPreview = (conversation) => ({
 });
 
 const createContentFingerprint = (message) => {
-  if (!message || typeof message !== 'object') {
-    return 'no-content';
-  }
+  if (!message || typeof message !== 'object') return 'no-content';
 
   const { content } = message;
-
-  if (content == null) {
-    return 'no-content';
-  }
+  if (content == null) return 'no-content';
 
   if (typeof content === 'string') {
     const trimmed = content.trim();
@@ -434,65 +396,60 @@ const createContentFingerprint = (message) => {
   if (Array.isArray(content)) {
     const joined = content
       .map((part) => {
-        if (typeof part === 'string') {
-          return part.trim();
-        }
-
-        if (part == null) {
-          return '';
-        }
-
+        if (typeof part === 'string') return part.trim();
+        if (part == null) return '';
         try {
           return JSON.stringify(part);
-        } catch (error) {
+        } catch {
           return String(part);
         }
       })
       .filter(Boolean)
       .join(' ');
-
     return joined ? joined.slice(0, 60) : 'no-content';
   }
 
   try {
     const serialized = JSON.stringify(content);
     return serialized ? serialized.slice(0, 60) : 'no-content';
-  } catch (error) {
+  } catch {
     const coerced = String(content);
     return coerced ? coerced.slice(0, 60) : 'no-content';
   }
 };
 
-const buildConversationIdentifierCandidates = (message = {}) => [
-  message.conversationId,
-  message.conversation?.id,
-  message.conversationThreadId,
-  message.threadId,
-  message.thread_id,
-  message.parentConversationId,
-  message.metadata?.conversationId,
-  message.metadata?.threadId,
-  message.metadata?.thread_id,
-  message.sessionId,
-  message.session_id,
-  message.metadata?.sessionId,
-  message.metadata?.session_id,
-].filter(Boolean);
+const buildConversationIdentifierCandidates = (message = {}) =>
+  [
+    message.conversationId,
+    message.conversation?.id,
+    message.conversationThreadId,
+    message.threadId,
+    message.thread_id,
+    message.parentConversationId,
+    message.metadata?.conversationId,
+    message.metadata?.threadId,
+    message.metadata?.thread_id,
+    message.sessionId,
+    message.session_id,
+    message.metadata?.sessionId,
+    message.metadata?.session_id,
+  ].filter(Boolean);
 
-const buildThreadGroupingCandidates = (message = {}) => [
-  message.threadId,
-  message.conversationThreadId,
-  message.conversationId,
-  message.conversation?.id,
-  message.parentConversationId,
-  message.metadata?.threadId,
-  message.metadata?.conversationId,
-  message.metadata?.sessionId,
-  message.metadata?.thread_id,
-  message.metadata?.session_id,
-  message.sessionId,
-  message.session_id,
-].filter(Boolean);
+const buildThreadGroupingCandidates = (message = {}) =>
+  [
+    message.threadId,
+    message.conversationThreadId,
+    message.conversationId,
+    message.conversation?.id,
+    message.parentConversationId,
+    message.metadata?.threadId,
+    message.metadata?.conversationId,
+    message.metadata?.sessionId,
+    message.metadata?.thread_id,
+    message.metadata?.session_id,
+    message.sessionId,
+    message.session_id,
+  ].filter(Boolean);
 
 const deriveThreadIdAssignments = (messages, { threadGapMs = DEFAULT_THREAD_GAP_MS } = {}) => {
   const safeMessages = Array.isArray(messages) ? messages : [];
@@ -507,9 +464,7 @@ const deriveThreadIdAssignments = (messages, { threadGapMs = DEFAULT_THREAD_GAP_
     const timestampValue = getTimestampValue(message?.timestamp);
     const timestampPart = timestampValue != null ? timestampValue : `idx-${index}`;
     const idPart =
-      (typeof message?.id === 'string' && message.id.trim())
-        ? message.id.trim()
-        : `seq-${fallbackCounter + 1}`;
+      typeof message?.id === 'string' && message.id.trim() ? message.id.trim() : `seq-${fallbackCounter + 1}`;
 
     fallbackCounter += 1;
     return `local-thread-${timestampPart}-${idPart}`;
@@ -553,13 +508,8 @@ const deriveThreadIdAssignments = (messages, { threadGapMs = DEFAULT_THREAD_GAP_
     assignments[index] = resolvedThreadId;
     previousThreadId = resolvedThreadId;
 
-    if (timestampValue != null) {
-      previousTimestamp = timestampValue;
-    }
-
-    if (currentSessionId) {
-      previousSessionId = currentSessionId;
-    }
+    if (timestampValue != null) previousTimestamp = timestampValue;
+    if (currentSessionId) previousSessionId = currentSessionId;
 
     if (
       resolvedThreadId &&
@@ -590,19 +540,16 @@ const deriveThreadIdAssignments = (messages, { threadGapMs = DEFAULT_THREAD_GAP_
 export { deriveThreadIdAssignments };
 
 const getMessageMergeKey = (message) => {
-  if (!message || typeof message !== 'object') {
-    return null;
-  }
+  if (!message || typeof message !== 'object') return null;
 
-  if (message.id) {
-    return message.id;
-  }
+  if (message.id) return message.id;
 
   const conversationKey = buildConversationIdentifierCandidates(message)[0] || 'no-conversation';
   const timestampValue = getTimestampValue(message.timestamp);
-  const timestampKey = timestampValue != null
-    ? String(timestampValue)
-    : (typeof message.timestamp === 'string' && message.timestamp.trim())
+  const timestampKey =
+    timestampValue != null
+      ? String(timestampValue)
+      : typeof message.timestamp === 'string' && message.timestamp.trim()
       ? message.timestamp.trim()
       : 'no-timestamp';
   const roleKey = message.role || message.type || 'unknown-role';
@@ -612,15 +559,10 @@ const getMessageMergeKey = (message) => {
 };
 
 const resolveThreadFlags = (messages = []) => {
-  const flags = {
-    isCurrent: false,
-    isStored: false,
-  };
+  const flags = { isCurrent: false, isStored: false };
 
   messages.forEach((message) => {
-    if (!message) {
-      return;
-    }
+    if (!message) return;
 
     if (
       message.isCurrent ||
@@ -643,13 +585,8 @@ const resolveThreadFlags = (messages = []) => {
 };
 
 const buildThreadMessages = (existingMessages = [], nextMessage) => {
-  const validExisting = Array.isArray(existingMessages)
-    ? existingMessages.filter(Boolean)
-    : [];
-
-  if (!nextMessage || !nextMessage.id) {
-    return [...validExisting];
-  }
+  const validExisting = Array.isArray(existingMessages) ? existingMessages.filter(Boolean) : [];
+  if (!nextMessage || !nextMessage.id) return [...validExisting];
 
   const messageMap = new Map();
 
@@ -676,9 +613,7 @@ export function groupConversationsByThread(conversations) {
   const threads = new Map();
 
   conversations.forEach((conversation) => {
-    if (!conversation) {
-      return;
-    }
+    if (!conversation) return;
 
     const threadId = resolveConversationThreadId(conversation);
     const normalizedConversation = normalizeConversationPreview(conversation);
@@ -688,7 +623,8 @@ export function groupConversationsByThread(conversations) {
       const existing = threads.get(normalizedConversation.id);
       const nextMessages = buildThreadMessages(existing?.threadMessages, normalizedConversation);
       const latestMessage = nextMessages[nextMessages.length - 1] || normalizedConversation;
-      const latestTimestamp = resolveConversationTimestamp(latestMessage) ?? timestampValue ?? -Infinity;
+      const latestTimestamp =
+        resolveConversationTimestamp(latestMessage) ?? timestampValue ?? -Infinity;
       const threadFlags = resolveThreadFlags(nextMessages);
 
       threads.set(normalizedConversation.id, {
@@ -711,6 +647,7 @@ export function groupConversationsByThread(conversations) {
     if (!existing) {
       const threadMessages = buildThreadMessages([], normalizedConversation);
       const threadFlags = resolveThreadFlags(threadMessages);
+
       threads.set(threadId, {
         ...normalizedConversation,
         id: threadId,
@@ -727,7 +664,11 @@ export function groupConversationsByThread(conversations) {
     const mergedResources = mergeResourceArrays(existing.resources, normalizedConversation.resources);
     const nextThreadMessages = buildThreadMessages(existing.threadMessages, normalizedConversation);
     const latestMessage = nextThreadMessages[nextThreadMessages.length - 1] || normalizedConversation;
-    const latestTimestamp = resolveConversationTimestamp(latestMessage) ?? existing.sortTimestamp ?? timestampValue ?? -Infinity;
+    const latestTimestamp =
+      resolveConversationTimestamp(latestMessage) ??
+      existing.sortTimestamp ??
+      timestampValue ??
+      -Infinity;
     const threadFlags = resolveThreadFlags(nextThreadMessages);
 
     threads.set(threadId, {
@@ -771,24 +712,19 @@ export function getRecentConversations(messages) {
  * @returns {Object[]} - Sanitized history with role/content pairs
  */
 export function buildChatHistory(messages) {
-  if (!Array.isArray(messages)) {
-    return [];
-  }
+  if (!Array.isArray(messages)) return [];
 
   return messages
-    .filter(msg => {
-      if (!msg || typeof msg !== 'object') {
-        return false;
-      }
+    .filter((msg) => {
+      if (!msg || typeof msg !== 'object') return false;
+      if (msg.isResource || msg.isStudyNotes || msg.isLocalOnly) return false;
 
-      if (msg.isResource || msg.isStudyNotes || msg.isLocalOnly) {
-        return false;
-      }
-
-      const role = msg.role || (msg.type === 'ai' ? 'assistant' : msg.type === 'user' ? 'user' : null);
+      const role =
+        msg.role ||
+        (msg.type === 'ai' ? 'assistant' : msg.type === 'user' ? 'user' : null);
       return role === 'user' || role === 'assistant';
     })
-    .map(msg => {
+    .map((msg) => {
       const role = msg.role || (msg.type === 'ai' ? 'assistant' : 'user');
       let content = msg.content;
 
@@ -801,9 +737,7 @@ export function buildChatHistory(messages) {
       }
 
       const trimmed = typeof content === 'string' ? content.trim() : '';
-      if (!trimmed) {
-        return null;
-      }
+      if (!trimmed) return null;
 
       return { role, content: trimmed };
     })
@@ -816,9 +750,8 @@ export function buildChatHistory(messages) {
  * @returns {Object} - Object with current and stored conversation arrays
  */
 export function separateCurrentAndStoredConversations(conversations) {
-  const current = conversations.filter(conv => conv.isCurrent);
-  const stored = conversations.filter(conv => !conv.isCurrent);
-  
+  const current = conversations.filter((conv) => conv.isCurrent);
+  const stored = conversations.filter((conv) => !conv.isCurrent);
   return { current, stored };
 }
 
@@ -829,14 +762,11 @@ export function separateCurrentAndStoredConversations(conversations) {
  * @returns {Object[]} - Filtered messages
  */
 export function searchMessages(messages, searchTerm) {
-  if (!messages || !searchTerm || searchTerm.trim() === '') {
-    return messages;
-  }
+  if (!messages || !searchTerm || searchTerm.trim() === '') return messages;
 
   const lowerSearchTerm = searchTerm.toLowerCase();
-  
-  return messages.filter(msg => 
-    msg.content && msg.content.toLowerCase().includes(lowerSearchTerm)
+  return messages.filter(
+    (msg) => msg.content && msg.content.toLowerCase().includes(lowerSearchTerm)
   );
 }
 
@@ -846,11 +776,8 @@ export function searchMessages(messages, searchTerm) {
  * @returns {Object[]} - Messages that are study notes
  */
 export function getStudyNotes(messages) {
-  if (!messages || !Array.isArray(messages)) {
-    return [];
-  }
-
-  return messages.filter(msg => msg.isStudyNotes === true);
+  if (!messages || !Array.isArray(messages)) return [];
+  return messages.filter((msg) => msg.isStudyNotes === true);
 }
 
 /**
@@ -859,12 +786,9 @@ export function getStudyNotes(messages) {
  * @returns {Object[]} - Messages that have resources
  */
 export function getMessagesWithResources(messages) {
-  if (!messages || !Array.isArray(messages)) {
-    return [];
-  }
-
-  return messages.filter(msg => 
-    msg.resources && Array.isArray(msg.resources) && msg.resources.length > 0
+  if (!messages || !Array.isArray(messages)) return [];
+  return messages.filter(
+    (msg) => msg.resources && Array.isArray(msg.resources) && msg.resources.length > 0
   );
 }
 
@@ -880,11 +804,9 @@ export function createMessage(type, content, resources = [], isStudyNotes = fals
   if (!type || !content) {
     throw new Error('Message type and content are required');
   }
-
   if (type !== 'user' && type !== 'ai') {
     throw new Error('Message type must be "user" or "ai"');
   }
-
   if (typeof content !== 'string' || content.trim() === '') {
     throw new Error('Message content must be a non-empty string');
   }
@@ -906,8 +828,7 @@ export function createMessage(type, content, resources = [], isStudyNotes = fals
     isStudyNotes: Boolean(isStudyNotes),
     isCurrent: true, // Mark as current session message
     isStored: false, // Not yet stored
-    // Add version for future migrations
-    version: '1.0.0'
+    version: '1.0.0',
   };
 }
 
@@ -917,63 +838,48 @@ export function createMessage(type, content, resources = [], isStudyNotes = fals
  * @returns {boolean} - Whether the message is valid
  */
 export function validateMessage(message) {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
+  if (!message || typeof message !== 'object') return false;
 
   // Required fields for all messages
   const requiredFields = ['id', 'type', 'content', 'timestamp'];
-  const hasRequiredFields = requiredFields.every(field => 
-    message.hasOwnProperty(field) && message[field] != null
+  const hasRequiredFields = requiredFields.every(
+    (field) => Object.prototype.hasOwnProperty.call(message, field) && message[field] != null
   );
-
-  if (!hasRequiredFields) {
-    return false;
-  }
+  if (!hasRequiredFields) return false;
 
   // Validate message type
-  if (message.type !== 'user' && message.type !== 'ai') {
-    return false;
-  }
+  if (message.type !== 'user' && message.type !== 'ai') return false;
 
-  if (message.role && message.role !== 'user' && message.role !== 'assistant') {
-    return false;
-  }
+  if (message.role && message.role !== 'user' && message.role !== 'assistant') return false;
 
   // Validate content
-  if (typeof message.content !== 'string' || message.content.trim() === '') {
-    return false;
-  }
+  if (typeof message.content !== 'string' || message.content.trim() === '') return false;
 
   // Validate timestamp
   const date = new Date(message.timestamp);
-  if (isNaN(date.getTime())) {
-    return false;
-  }
+  if (isNaN(date.getTime())) return false;
 
   // Validate resources array if present
-  if (message.resources && !Array.isArray(message.resources)) {
-    return false;
-  }
+  if (message.resources && !Array.isArray(message.resources)) return false;
 
   // Validate resources structure if present
   if (message.resources && Array.isArray(message.resources)) {
-    const invalidResource = message.resources.find(resource => {
+    const invalidResource = message.resources.find((resource) => {
       if (!resource || typeof resource !== 'object') return true;
       if (!resource.title || !resource.url || !resource.type) return true;
-      if (typeof resource.title !== 'string' || typeof resource.url !== 'string' || typeof resource.type !== 'string') return true;
+      if (
+        typeof resource.title !== 'string' ||
+        typeof resource.url !== 'string' ||
+        typeof resource.type !== 'string'
+      )
+        return true;
       return false;
     });
-    
-    if (invalidResource) {
-      return false;
-    }
+    if (invalidResource) return false;
   }
 
   // Validate study notes data if present
-  if (message.studyNotesData && typeof message.studyNotesData !== 'object') {
-    return false;
-  }
+  if (message.studyNotesData && typeof message.studyNotesData !== 'object') return false;
 
   // Check for reasonable content length (prevent storage abuse)
   if (message.content.length > 50000) {
@@ -990,9 +896,7 @@ export function validateMessage(message) {
  * @returns {Object|null} - Repaired message or null if unrepairable
  */
 export function repairMessage(message) {
-  if (!message || typeof message !== 'object') {
-    return null;
-  }
+  if (!message || typeof message !== 'object') return null;
 
   try {
     const repaired = { ...message };
@@ -1023,15 +927,9 @@ export function repairMessage(message) {
 
     if (Array.isArray(repairedContent)) {
       repairedContent = repairedContent
-        .map(part => {
-          if (typeof part === 'string') {
-            return part.trim();
-          }
-
-          if (part == null) {
-            return '';
-          }
-
+        .map((part) => {
+          if (typeof part === 'string') return part.trim();
+          if (part == null) return '';
           try {
             return JSON.stringify(part);
           } catch (jsonError) {
@@ -1049,17 +947,15 @@ export function repairMessage(message) {
 
     if (!repairedContent) {
       const fallbackFields = ['message', 'text', 'body', 'answer', 'summary'];
-
       for (const field of fallbackFields) {
         const value = repaired[field];
 
         if (Array.isArray(value)) {
           const joined = value
-            .map(part => (typeof part === 'string' ? part.trim() : String(part || '')))
+            .map((part) => (typeof part === 'string' ? part.trim() : String(part || '')))
             .filter(Boolean)
             .join(' ')
             .trim();
-
           if (joined) {
             repairedContent = joined;
             break;
@@ -1117,7 +1013,6 @@ export function repairMessage(message) {
       console.warn('Could not repair message:', message);
       return null;
     }
-
   } catch (error) {
     console.error('Error repairing message:', error);
     return null;
@@ -1130,9 +1025,7 @@ export function repairMessage(message) {
  * @returns {Object[]} - Array of valid messages
  */
 export function validateAndRepairMessages(messages) {
-  if (!Array.isArray(messages)) {
-    return [];
-  }
+  if (!Array.isArray(messages)) return [];
 
   const validMessages = [];
 
@@ -1160,9 +1053,7 @@ export function validateAndRepairMessages(messages) {
  * @returns {string} - Sanitized content
  */
 export function sanitizeMessageContent(content) {
-  if (!content || typeof content !== 'string') {
-    return '';
-  }
+  if (!content || typeof content !== 'string') return '';
 
   return content
     .trim()
@@ -1189,25 +1080,27 @@ export function getMessageStats(messages) {
       oldestMessage: null,
       newestMessage: null,
       averageContentLength: 0,
-      totalContentLength: 0
+      totalContentLength: 0,
     };
   }
 
-  const userMessages = messages.filter(msg => msg.type === 'user');
-  const aiMessages = messages.filter(msg => msg.type === 'ai');
-  const studyNotes = messages.filter(msg => msg.isStudyNotes);
-  const withResources = messages.filter(msg => 
-    msg.resources && Array.isArray(msg.resources) && msg.resources.length > 0
+  const userMessages = messages.filter((msg) => msg.type === 'user');
+  const aiMessages = messages.filter((msg) => msg.type === 'ai');
+  const studyNotes = messages.filter((msg) => msg.isStudyNotes);
+  const withResources = messages.filter(
+    (msg) => msg.resources && Array.isArray(msg.resources) && msg.resources.length > 0
   );
-  const currentSession = messages.filter(msg => msg.isCurrent);
-  const stored = messages.filter(msg => msg.isStored);
+  const currentSession = messages.filter((msg) => msg.isCurrent);
+  const stored = messages.filter((msg) => msg.isStored);
   const conversations = combineMessagesIntoConversations(messages);
 
   const totalContentLength = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
   const averageContentLength = messages.length > 0 ? Math.round(totalContentLength / messages.length) : 0;
 
   // Find oldest and newest messages
-  const timestamps = messages.map(msg => new Date(msg.timestamp)).filter(date => !isNaN(date.getTime()));
+  const timestamps = messages
+    .map((msg) => new Date(msg.timestamp))
+    .filter((date) => !isNaN(date.getTime()));
   const oldestMessage = timestamps.length > 0 ? new Date(Math.min(...timestamps)) : null;
   const newestMessage = timestamps.length > 0 ? new Date(Math.max(...timestamps)) : null;
 
@@ -1223,7 +1116,7 @@ export function getMessageStats(messages) {
     oldestMessage,
     newestMessage,
     averageContentLength,
-    totalContentLength
+    totalContentLength,
   };
 }
 
@@ -1234,14 +1127,8 @@ export function getMessageStats(messages) {
  * @returns {string} - Truncated content
  */
 export function truncateContent(content, maxLength = 100) {
-  if (!content || typeof content !== 'string') {
-    return '';
-  }
-
-  if (content.length <= maxLength) {
-    return content;
-  }
-
+  if (!content || typeof content !== 'string') return '';
+  if (content.length <= maxLength) return content;
   return content.substring(0, maxLength - 3) + '...';
 }
 
@@ -1251,22 +1138,20 @@ export function truncateContent(content, maxLength = 100) {
  * @returns {Object} - Messages grouped by date
  */
 export function groupMessagesByDate(messages) {
-  if (!messages || !Array.isArray(messages)) {
-    return {};
-  }
+  if (!messages || !Array.isArray(messages)) return {};
 
   return messages.reduce((groups, message) => {
     if (!message.timestamp) return groups;
-    
+
     const date = new Date(message.timestamp);
     if (isNaN(date.getTime())) return groups;
-    
+
     const dateKey = date.toDateString();
-    
+
     if (!groups[dateKey]) {
       groups[dateKey] = [];
     }
-    
+
     groups[dateKey].push(message);
     return groups;
   }, {});
@@ -1283,13 +1168,13 @@ export function findMessagesByKeywords(messages, keywords) {
     return [];
   }
 
-  const lowerKeywords = keywords.map(keyword => keyword.toLowerCase());
+  const lowerKeywords = keywords.map((keyword) => keyword.toLowerCase());
 
-  return messages.filter(message => {
+  return messages.filter((message) => {
     if (!message.content) return false;
-    
+
     const lowerContent = message.content.toLowerCase();
-    return lowerKeywords.some(keyword => lowerContent.includes(keyword));
+    return lowerKeywords.some((keyword) => lowerContent.includes(keyword));
   });
 }
 
@@ -1299,18 +1184,12 @@ export function findMessagesByKeywords(messages, keywords) {
  * @returns {Object[]} - Deduplicated messages
  */
 export function deduplicateMessages(messages) {
-  if (!messages || !Array.isArray(messages)) {
-    return [];
-  }
+  if (!messages || !Array.isArray(messages)) return [];
 
   const seen = new Set();
-  return messages.filter(message => {
+  return messages.filter((message) => {
     if (!message.id) return false;
-    
-    if (seen.has(message.id)) {
-      return false;
-    }
-    
+    if (seen.has(message.id)) return false;
     seen.add(message.id);
     return true;
   });
@@ -1323,12 +1202,9 @@ export function deduplicateMessages(messages) {
  * @returns {Object[]} - Current session conversations
  */
 export function getCurrentSessionConversations(conversations, currentMessageIds) {
-  if (!conversations || !Array.isArray(conversations) || !currentMessageIds) {
-    return [];
-  }
+  if (!conversations || !Array.isArray(conversations) || !currentMessageIds) return [];
 
-  return conversations.filter(conv => {
-    // Check if any message in this conversation is from current session
+  return conversations.filter((conv) => {
     if (conv.originalUserMessage && currentMessageIds.has(conv.originalUserMessage.id)) return true;
     if (conv.originalAiMessage && currentMessageIds.has(conv.originalAiMessage.id)) return true;
     return false;

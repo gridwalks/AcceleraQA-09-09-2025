@@ -814,6 +814,7 @@ function App() {
           contentSections.push(`_${modeLine}_`);
 
           return contentSections.filter(Boolean).join('\n\n');
+
         })(),
         timestamp: Date.now(),
         sources: response.sources || [],

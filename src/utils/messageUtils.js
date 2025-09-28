@@ -297,6 +297,63 @@ const normalizeConversationPreview = (conversation) => ({
   isStored: Boolean(conversation.isStored),
 });
 
+const resolveThreadFlags = (messages = []) => {
+  const flags = {
+    isCurrent: false,
+    isStored: false,
+  };
+
+  messages.forEach((message) => {
+    if (!message) {
+      return;
+    }
+
+    if (
+      message.isCurrent ||
+      message.originalAiMessage?.isCurrent ||
+      message.originalUserMessage?.isCurrent
+    ) {
+      flags.isCurrent = true;
+    }
+
+    if (
+      message.isStored ||
+      message.originalAiMessage?.isStored ||
+      message.originalUserMessage?.isStored
+    ) {
+      flags.isStored = true;
+    }
+  });
+
+  return flags;
+};
+
+const buildThreadMessages = (existingMessages = [], nextMessage) => {
+  const validExisting = Array.isArray(existingMessages)
+    ? existingMessages.filter(Boolean)
+    : [];
+
+  if (!nextMessage || !nextMessage.id) {
+    return [...validExisting];
+  }
+
+  const messageMap = new Map();
+
+  validExisting.forEach((message) => {
+    if (message?.id && !messageMap.has(message.id)) {
+      messageMap.set(message.id, message);
+    }
+  });
+
+  messageMap.set(nextMessage.id, nextMessage);
+
+  return Array.from(messageMap.values()).sort((a, b) => {
+    const timeA = resolveConversationTimestamp(a) ?? -Infinity;
+    const timeB = resolveConversationTimestamp(b) ?? -Infinity;
+    return timeA - timeB;
+  });
+};
+
 export function groupConversationsByThread(conversations) {
   if (!Array.isArray(conversations) || conversations.length === 0) {
     return [];
@@ -315,48 +372,60 @@ export function groupConversationsByThread(conversations) {
 
     if (!threadId) {
       const existing = threads.get(normalizedConversation.id);
-      if (!existing || (timestampValue != null && timestampValue > existing.sortTimestamp)) {
-        threads.set(normalizedConversation.id, {
-          ...normalizedConversation,
-          conversationCount: 1,
-          sortTimestamp: timestampValue ?? -Infinity,
-        });
-      }
+      const nextMessages = buildThreadMessages(existing?.threadMessages, normalizedConversation);
+      const latestMessage = nextMessages[nextMessages.length - 1] || normalizedConversation;
+      const latestTimestamp = resolveConversationTimestamp(latestMessage) ?? timestampValue ?? -Infinity;
+      const threadFlags = resolveThreadFlags(nextMessages);
+
+      threads.set(normalizedConversation.id, {
+        ...latestMessage,
+        id: normalizedConversation.id,
+        conversationCount: nextMessages.length || 1,
+        sortTimestamp: latestTimestamp,
+        resources: nextMessages.reduce(
+          (acc, message) => mergeResourceArrays(acc, message.resources),
+          []
+        ),
+        threadMessages: nextMessages,
+        isCurrent: threadFlags.isCurrent,
+        isStored: threadFlags.isStored,
+      });
       return;
     }
 
     const existing = threads.get(threadId);
     if (!existing) {
+      const threadMessages = buildThreadMessages([], normalizedConversation);
+      const threadFlags = resolveThreadFlags(threadMessages);
       threads.set(threadId, {
         ...normalizedConversation,
         id: threadId,
         sortTimestamp: timestampValue ?? -Infinity,
-        conversationCount: 1,
+        conversationCount: threadMessages.length,
+        resources: normalizedConversation.resources || [],
+        threadMessages,
+        isCurrent: threadFlags.isCurrent,
+        isStored: threadFlags.isStored,
       });
       return;
     }
 
     const mergedResources = mergeResourceArrays(existing.resources, normalizedConversation.resources);
-    const nextCount = (existing.conversationCount || 1) + 1;
+    const nextThreadMessages = buildThreadMessages(existing.threadMessages, normalizedConversation);
+    const latestMessage = nextThreadMessages[nextThreadMessages.length - 1] || normalizedConversation;
+    const latestTimestamp = resolveConversationTimestamp(latestMessage) ?? existing.sortTimestamp ?? timestampValue ?? -Infinity;
+    const threadFlags = resolveThreadFlags(nextThreadMessages);
 
-    const shouldUseNewPreview =
-      timestampValue != null && timestampValue >= existing.sortTimestamp;
-
-    const updated = shouldUseNewPreview
-      ? {
-          ...normalizedConversation,
-          id: threadId,
-          sortTimestamp: timestampValue ?? existing.sortTimestamp,
-          conversationCount: nextCount,
-          resources: mergedResources,
-        }
-      : {
-          ...existing,
-          conversationCount: nextCount,
-          resources: mergedResources,
-        };
-
-    threads.set(threadId, updated);
+    threads.set(threadId, {
+      ...latestMessage,
+      id: threadId,
+      sortTimestamp: latestTimestamp,
+      conversationCount: nextThreadMessages.length,
+      resources: mergedResources,
+      threadMessages: nextThreadMessages,
+      isCurrent: threadFlags.isCurrent,
+      isStored: threadFlags.isStored,
+    });
   });
 
   return Array.from(threads.values())

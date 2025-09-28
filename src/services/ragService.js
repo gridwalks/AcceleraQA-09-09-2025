@@ -248,7 +248,9 @@ class RAGService {
       }
     }
 
-    ['fileName', 'title', 'description', 'category', 'version'].forEach(field => {
+    const textFields = ['fileName', 'fileTitle', 'title', 'description', 'summary', 'category', 'version'];
+
+    textFields.forEach(field => {
       if (typeof sanitized[field] === 'string') {
         sanitized[field] = sanitized[field].trim();
         if (!sanitized[field]) {
@@ -256,6 +258,47 @@ class RAGService {
         }
       }
     });
+
+    if (sanitized.summary && !sanitized.description) {
+      sanitized.description = sanitized.summary;
+    }
+
+    if (sanitized.description && !sanitized.summary) {
+      sanitized.summary = sanitized.description;
+    }
+
+    const resolvedTitle = getFirstNonEmptyString(
+      sanitized.title,
+      sanitized.fileTitle,
+      sanitized.documentTitle,
+      sanitized.displayTitle,
+    );
+
+    if (resolvedTitle) {
+      if (!sanitized.title) {
+        sanitized.title = resolvedTitle;
+      }
+      if (!sanitized.fileTitle) {
+        sanitized.fileTitle = resolvedTitle;
+      }
+      if (!sanitized.documentTitle) {
+        sanitized.documentTitle = resolvedTitle;
+      }
+      if (!sanitized.displayTitle) {
+        sanitized.displayTitle = resolvedTitle;
+      }
+    }
+
+    if (!sanitized.fileName) {
+      const fallbackFileName = getFirstNonEmptyString(
+        sanitized.filename,
+        sanitized.file_name,
+        sanitized.name,
+      );
+      if (fallbackFileName) {
+        sanitized.fileName = fallbackFileName;
+      }
+    }
 
     return sanitized;
   }
@@ -650,6 +693,46 @@ class RAGService {
       }
 
       const textContent = await this.extractTextFromFile(file);
+      const baseMetadata = {
+        ...sanitizedMetadata,
+      };
+
+      const normalizedTitle = getFirstNonEmptyString(
+        baseMetadata.title,
+        baseMetadata.fileTitle,
+        baseMetadata.documentTitle,
+        baseMetadata.displayTitle,
+        file.name,
+      );
+
+      const normalizedSummary = getFirstNonEmptyString(
+        baseMetadata.summary,
+        baseMetadata.description,
+      );
+
+      const normalizedVersion = getFirstNonEmptyString(
+        baseMetadata.version,
+        baseMetadata.documentVersion,
+      );
+
+      if (normalizedTitle) {
+        baseMetadata.title = baseMetadata.title || normalizedTitle;
+        baseMetadata.fileTitle = baseMetadata.fileTitle || normalizedTitle;
+        baseMetadata.documentTitle = baseMetadata.documentTitle || normalizedTitle;
+        baseMetadata.displayTitle = baseMetadata.displayTitle || normalizedTitle;
+      }
+
+      if (normalizedSummary) {
+        baseMetadata.summary = baseMetadata.summary || normalizedSummary;
+        baseMetadata.description = baseMetadata.description || normalizedSummary;
+      }
+
+      if (normalizedVersion) {
+        baseMetadata.version = baseMetadata.version || normalizedVersion;
+      }
+
+      baseMetadata.fileName = baseMetadata.fileName || file.name;
+
       const documentPayload = {
         filename: file.name,
         size: file.size,
@@ -657,9 +740,21 @@ class RAGService {
         text: textContent,
         metadata: {
           processingMode: 'neon-postgresql',
-          ...sanitizedMetadata,
+          ...baseMetadata,
         },
       };
+
+      if (normalizedTitle) {
+        documentPayload.title = normalizedTitle;
+      }
+
+      if (normalizedSummary) {
+        documentPayload.summary = normalizedSummary;
+      }
+
+      if (normalizedVersion) {
+        documentPayload.version = normalizedVersion;
+      }
 
       const response = await this.makeNeonRequest('upload', userId, {
         document: documentPayload,
@@ -669,9 +764,23 @@ class RAGService {
         this.clearDocumentMetadataCache(userId);
       }
 
+      const persistedDocument =
+        response?.document && typeof response.document === 'object'
+          ? response.document
+          : null;
+
+      const persistedMetadata =
+        persistedDocument?.metadata && typeof persistedDocument.metadata === 'object'
+          ? persistedDocument.metadata
+          : documentPayload.metadata;
+
       return {
         ...response,
-        metadata: documentPayload.metadata,
+        document: persistedDocument || {
+          ...documentPayload,
+          metadata: documentPayload.metadata,
+        },
+        metadata: persistedMetadata,
         storage: 'neon-postgresql',
       };
     }
@@ -838,23 +947,29 @@ class RAGService {
       throw new Error('documentId is required to update metadata');
     }
 
-    if (this.isNeonBackend()) {
-      throw new Error('Document metadata editing is not supported when using the Neon backend');
-    }
-
     const resolvedUserId = userId || (await getUserId());
     if (!resolvedUserId) {
       throw new Error('User ID is required to update document metadata');
     }
 
     const { sanitizedMetadata, clearFields } = this.prepareMetadataUpdate(metadataUpdates || {});
-    const payload = {
-      documentId,
-      metadata: sanitizedMetadata,
-    };
+    const payload = { documentId, metadata: sanitizedMetadata };
 
     if (clearFields.length > 0) {
       payload.clearFields = clearFields;
+    }
+
+    if (this.isNeonBackend()) {
+      const response = await this.makeNeonRequest('update_metadata', resolvedUserId, payload);
+      const updatedDocument = response?.document;
+
+      if (!updatedDocument) {
+        const errorMessage = response?.error || 'Failed to update document metadata';
+        throw new Error(errorMessage);
+      }
+
+      this.clearDocumentMetadataCache(resolvedUserId);
+      return updatedDocument;
     }
 
     const response = await this.makeDocumentMetadataRequest('update_document', resolvedUserId, payload);

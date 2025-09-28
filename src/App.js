@@ -32,6 +32,7 @@ import {
   mergeCurrentAndStoredMessages,
   combineMessagesIntoConversations,
   buildChatHistory,
+  expandConversationThread,
 } from './utils/messageUtils';
 import {
   detectDocumentExportIntent,
@@ -389,13 +390,57 @@ function App() {
   }, [user]);
 
   // Load a previous conversation into the chat window
-  const handleConversationSelect = useCallback((conversationId) => {
-    const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
-    const convMessages = merged.filter(m => m.conversationId === conversationId);
-    if (convMessages.length) {
-      setMessages(convMessages.map(m => ({ ...m, isCurrent: true })));
+  const handleConversationSelect = useCallback((selectedConversation) => {
+    if (!selectedConversation) {
+      return;
     }
-  }, [messages, thirtyDayMessages]);
+
+    if (typeof selectedConversation === 'object') {
+      const expandedMessages = expandConversationThread(selectedConversation);
+
+      if (expandedMessages.length) {
+        setMessages(
+          expandedMessages.map((message) => {
+            const derivedType = message.type || (message.role === 'assistant'
+              ? 'ai'
+              : message.role === 'system'
+              ? 'system'
+              : 'user');
+            const derivedRole = message.role || (derivedType === 'ai'
+              ? 'assistant'
+              : derivedType === 'system'
+              ? 'system'
+              : 'user');
+
+            return {
+              ...message,
+              role: derivedRole,
+              type: derivedType,
+              isCurrent: true,
+            };
+          })
+        );
+        return;
+      }
+    }
+
+    const fallbackConversationId = typeof selectedConversation === 'string'
+      ? selectedConversation
+      : selectedConversation.conversationId ||
+        selectedConversation.threadId ||
+        selectedConversation.id ||
+        null;
+
+    if (!fallbackConversationId) {
+      return;
+    }
+
+    const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
+    const convMessages = merged.filter((m) => m.conversationId === fallbackConversationId);
+    if (convMessages.length) {
+      setMessages(convMessages.map((m) => ({ ...m, isCurrent: true })));
+    }
+  }, [messages, thirtyDayMessages, expandConversationThread]);
 
   // Auto-scroll messages
   useEffect(() => {

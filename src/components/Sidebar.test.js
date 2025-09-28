@@ -20,13 +20,11 @@ jest.mock('../services/ragService', () => ({
 describe('Sidebar resource extraction', () => {
   let container;
   const baseProps = {
-    thirtyDayMessages: [],
     user: null,
     learningSuggestions: [],
     isLoadingSuggestions: false,
     onSuggestionsUpdate: () => {},
     onAddResource: () => {},
-    onConversationSelect: () => {},
   };
 
   beforeEach(() => {

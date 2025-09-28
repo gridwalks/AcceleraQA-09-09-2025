@@ -32,7 +32,6 @@ import {
   mergeCurrentAndStoredMessages,
   combineMessagesIntoConversations,
   buildChatHistory,
-  expandConversationThread,
 } from './utils/messageUtils';
 import {
   detectDocumentExportIntent,
@@ -388,59 +387,6 @@ function App() {
       console.error('Error refreshing learning suggestions:', error);
     }
   }, [user]);
-
-  // Load a previous conversation into the chat window
-  const handleConversationSelect = useCallback((selectedConversation) => {
-    if (!selectedConversation) {
-      return;
-    }
-
-    if (typeof selectedConversation === 'object') {
-      const expandedMessages = expandConversationThread(selectedConversation);
-
-      if (expandedMessages.length) {
-        setMessages(
-          expandedMessages.map((message) => {
-            const derivedType = message.type || (message.role === 'assistant'
-              ? 'ai'
-              : message.role === 'system'
-              ? 'system'
-              : 'user');
-            const derivedRole = message.role || (derivedType === 'ai'
-              ? 'assistant'
-              : derivedType === 'system'
-              ? 'system'
-              : 'user');
-
-            return {
-              ...message,
-              role: derivedRole,
-              type: derivedType,
-              isCurrent: true,
-            };
-          })
-        );
-        return;
-      }
-    }
-
-    const fallbackConversationId = typeof selectedConversation === 'string'
-      ? selectedConversation
-      : selectedConversation.conversationId ||
-        selectedConversation.threadId ||
-        selectedConversation.id ||
-        null;
-
-    if (!fallbackConversationId) {
-      return;
-    }
-
-    const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
-    const convMessages = merged.filter((m) => m.conversationId === fallbackConversationId);
-    if (convMessages.length) {
-      setMessages(convMessages.map((m) => ({ ...m, isCurrent: true })));
-    }
-  }, [messages, thirtyDayMessages, expandConversationThread]);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -1127,13 +1073,11 @@ function App() {
                 <div className="flex-shrink-0 border-t bg-white max-h-60 overflow-hidden">
                   <Sidebar
                     messages={messages}
-                    thirtyDayMessages={thirtyDayMessages}
                     user={user}
                     learningSuggestions={learningSuggestions}
                     isLoadingSuggestions={isLoadingSuggestions}
                     onSuggestionsUpdate={handleSuggestionsUpdate}
                     onAddResource={handleAddResourceToNotebook}
-                    onConversationSelect={handleConversationSelect}
                   />
                 </div>
               </div>
@@ -1164,13 +1108,11 @@ function App() {
                 <div className="w-80 xl:w-96 flex-shrink-0 h-full border-l bg-white p-6 pb-0">
                   <Sidebar
                     messages={messages}
-                    thirtyDayMessages={thirtyDayMessages}
                     user={user}
                     learningSuggestions={learningSuggestions}
                     isLoadingSuggestions={isLoadingSuggestions}
                     onSuggestionsUpdate={handleSuggestionsUpdate}
                     onAddResource={handleAddResourceToNotebook}
-                    onConversationSelect={handleConversationSelect}
                   />
                 </div>
               </div>

@@ -547,15 +547,38 @@ function App() {
         ? { vectorStoreIds: [activeDocument.vectorStoreId] }
         : undefined;
 
-      const response = ragEnabled && !preparedFile
-        ? await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory)
-        : await openaiService.getChatResponse(
-            rawInput,
-            preparedFile,
-            conversationHistory,
-            undefined,
-            vectorStoreIdToUse
-          );
+      let response = null;
+      let modeUsed = 'AI Knowledge';
+      let shouldDisableRag = false;
+
+      if (ragEnabled && !preparedFile) {
+        const ragResponse = await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory);
+        const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
+        const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
+
+        if (ragAnswer || ragSources.length > 0) {
+          response = ragResponse;
+          modeUsed = 'Document Search';
+        } else {
+          shouldDisableRag = true;
+        }
+      }
+
+      if (!response) {
+        response = await openaiService.getChatResponse(
+          rawInput,
+          preparedFile,
+          conversationHistory,
+          undefined,
+          vectorStoreIdToUse
+        );
+
+        modeUsed = shouldDisableRag ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
+
+        if (shouldDisableRag) {
+          setRAGEnabled(false);
+        }
+      }
 
       const combinedInternalResources = buildInternalResources({
         attachments,
@@ -574,7 +597,11 @@ function App() {
         id: uuidv4(),
         role: 'assistant',
         type: 'ai',
-        content: response.answer,
+        content: (() => {
+          const answerText = typeof response.answer === 'string' ? response.answer.trim() : '';
+          const modeLine = `Mode used: ${modeUsed}`;
+          return answerText ? `${answerText}\n\n_${modeLine}_` : `_${modeLine}_`;
+        })(),
         timestamp: Date.now(),
         sources: response.sources || [],
         resources: mergedResources,
@@ -673,6 +700,7 @@ function App() {
     user?.sub,
     activeDocument,
     adminResources,
+    setRAGEnabled,
   ]);
 
   const handleKeyPress = useCallback(

@@ -150,7 +150,6 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [ragEnabled, setRAGEnabled] = useState(true);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [activeDocument, setActiveDocument] = useState(null);
   const [cooldown, setCooldown] = useState(0);
@@ -549,9 +548,10 @@ function App() {
 
       let response = null;
       let modeUsed = 'AI Knowledge';
-      let shouldDisableRag = false;
+      let documentSearchAttempted = false;
 
-      if (ragEnabled && !preparedFile) {
+      if (!preparedFile) {
+        documentSearchAttempted = true;
         const ragResponse = await ragSearch(rawInput, user?.sub, ragSearchOptions, conversationHistory);
         const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
         const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
@@ -559,8 +559,6 @@ function App() {
         if (ragAnswer || ragSources.length > 0) {
           response = ragResponse;
           modeUsed = 'Document Search';
-        } else {
-          shouldDisableRag = true;
         }
       }
 
@@ -573,11 +571,7 @@ function App() {
           vectorStoreIdToUse
         );
 
-        modeUsed = shouldDisableRag ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
-
-        if (shouldDisableRag) {
-          setRAGEnabled(false);
-        }
+        modeUsed = documentSearchAttempted ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
       }
 
       const combinedInternalResources = buildInternalResources({
@@ -693,7 +687,6 @@ function App() {
   }, [
     inputMessage,
     uploadedFile,
-    ragEnabled,
     messages,
     refreshLearningSuggestions,
     cooldown,
@@ -1087,8 +1080,6 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}
@@ -1122,8 +1113,6 @@ function App() {
                     handleSendMessage={handleSendMessage}
                     handleKeyPress={handleKeyPress}
                     messagesEndRef={messagesEndRef}
-                    ragEnabled={ragEnabled}
-                    setRAGEnabled={setRAGEnabled}
                     isSaving={isSaving}
                     uploadedFile={uploadedFile}
                     setUploadedFile={setUploadedFile}

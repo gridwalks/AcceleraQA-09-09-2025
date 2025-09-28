@@ -309,14 +309,12 @@ const AdminScreen = ({ user, onBack }) => {
     try {
       const testResults = await Promise.allSettled([
         ragService.testUpload(user?.sub),
-        ragService.testSearch(user?.sub),
-        conversationService.isServiceAvailable()
+        ragService.testSearch(user?.sub)
       ]);
 
       const results = {
         ragUpload: testResults[0],
         ragSearch: testResults[1],
-        backend: testResults[2],
         timestamp: new Date().toISOString()
       };
 

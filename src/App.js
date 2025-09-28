@@ -49,6 +49,51 @@ import {
 const COOLDOWN_SECONDS = 10;
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
+const getGlobalScope = () => {
+  if (typeof window !== 'undefined') {
+    return window;
+  }
+
+  if (typeof globalThis !== 'undefined') {
+    return globalThis;
+  }
+
+  return null;
+};
+
+const bootstrapDeprecatedRagApi = () => {
+  const scope = getGlobalScope();
+  if (!scope) {
+    return;
+  }
+
+  if (typeof scope.setRAGEnabled !== 'function') {
+    scope.setRAGEnabled = (nextEnabled) => {
+      const normalized = nextEnabled !== false;
+      scope.__pendingRagEnabled = normalized;
+      console.warn(
+        'setRAGEnabled is deprecated. Document Search now prioritizes automatically; the preference will sync once the application finishes loading.'
+      );
+    };
+  }
+
+  if (typeof scope.getRAGEnabled !== 'function') {
+    scope.getRAGEnabled = () => {
+      if (typeof scope.__ragEnabled === 'boolean') {
+        return scope.__ragEnabled;
+      }
+
+      if (typeof scope.__pendingRagEnabled === 'boolean') {
+        return scope.__pendingRagEnabled;
+      }
+
+      return true;
+    };
+  }
+};
+
+bootstrapDeprecatedRagApi();
+
 const normalizeValue = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 const conversationIdMatchesMessage = (conversationId, messageId) => {
@@ -179,8 +224,81 @@ function App() {
   const adminResourcesLoadedRef = useRef(false);
   const inactivityTimerRef = useRef(null);
   const usesNeonBackend = useMemo(() => ragService.isNeonBackend(), []);
+  const ragManualOverrideRef = useRef(true);
+
+  const updateGlobalRagFlag = useCallback((enabled) => {
+    const globalScope = getGlobalScope();
+
+    if (!globalScope) {
+      return;
+    }
+
+    if (enabled === undefined) {
+      if ('__ragEnabled' in globalScope) {
+        delete globalScope.__ragEnabled;
+      }
+    } else {
+      globalScope.__ragEnabled = enabled;
+    }
+  }, []);
+
+  useEffect(() => {
+    const globalScope = getGlobalScope();
+
+    if (!globalScope) {
+      return undefined;
+    }
+
+    const pendingValue = typeof globalScope.__pendingRagEnabled === 'boolean'
+      ? globalScope.__pendingRagEnabled
+      : ragManualOverrideRef.current;
+
+    ragManualOverrideRef.current = pendingValue;
+    updateGlobalRagFlag(pendingValue);
+
+    if (pendingValue === false) {
+      setLastResponseMode('ai-knowledge-manual');
+    }
+
+    if ('__pendingRagEnabled' in globalScope) {
+      delete globalScope.__pendingRagEnabled;
+    }
+
+    const deprecatedSetter = (nextEnabled) => {
+      const normalized = nextEnabled !== false;
+      ragManualOverrideRef.current = normalized;
+      updateGlobalRagFlag(normalized);
+
+      if (!normalized) {
+        console.warn(
+          'setRAGEnabled is deprecated. Document Search now runs automatically and falls back to AI Knowledge when no document answer is found.'
+        );
+        setLastResponseMode('ai-knowledge-manual');
+      } else {
+        setLastResponseMode('document-search');
+      }
+    };
+
+    const deprecatedGetter = () => ragManualOverrideRef.current;
+
+    globalScope.setRAGEnabled = deprecatedSetter;
+    globalScope.getRAGEnabled = deprecatedGetter;
+
+    return () => {
+      if (globalScope.setRAGEnabled === deprecatedSetter) {
+        delete globalScope.setRAGEnabled;
+      }
+      if (globalScope.getRAGEnabled === deprecatedGetter) {
+        delete globalScope.getRAGEnabled;
+      }
+      updateGlobalRagFlag(undefined);
+      bootstrapDeprecatedRagApi();
+    };
+  }, [setLastResponseMode, updateGlobalRagFlag]);
 
   const handleLogoutComplete = useCallback(() => {
+    ragManualOverrideRef.current = true;
+    updateGlobalRagFlag(true);
     setIsAuthenticated(false);
     setUser(null);
     setLearningSuggestions([]);
@@ -189,7 +307,7 @@ function App() {
     setShowAdmin(false);
     setShowNotebook(false);
     setShowSupport(false);
-  }, []);
+  }, [updateGlobalRagFlag]);
 
   const handleAutoLogout = useCallback(async () => {
     console.log('User inactive for 15 minutes - logging out');
@@ -551,10 +669,10 @@ function App() {
       let response = null;
       let modeUsed = 'AI Knowledge';
       let documentSearchAttempted = false;
+      const manualOverrideDisabled = ragManualOverrideRef.current === false;
 
-      if (!preparedFile) {
+      if (!preparedFile && !manualOverrideDisabled) {
         documentSearchAttempted = true;
-        setRAGEnabled(true);
         try {
           const ragResponse = await ragSearch(
             rawInput,
@@ -571,7 +689,8 @@ function App() {
           }
         } catch (ragError) {
           console.error('Document search failed, falling back to AI Knowledge:', ragError);
-        }
+      } else if (!preparedFile && manualOverrideDisabled) {
+        modeUsed = 'AI Knowledge (manual override)';
       }
 
       if (!response) {
@@ -583,8 +702,16 @@ function App() {
           vectorStoreIdToUse
         );
 
-        modeUsed = documentSearchAttempted ? 'AI Knowledge (automatic fallback)' : 'AI Knowledge';
-        setLastResponseMode('ai-knowledge');
+        if (documentSearchAttempted) {
+          modeUsed = 'AI Knowledge (automatic fallback)';
+          setLastResponseMode('ai-knowledge-auto');
+        } else if (manualOverrideDisabled && !preparedFile) {
+          modeUsed = 'AI Knowledge (manual override)';
+          setLastResponseMode('ai-knowledge-manual');
+        } else {
+          modeUsed = 'AI Knowledge';
+          setLastResponseMode('ai-knowledge');
+        }
       } else {
         setLastResponseMode('document-search');
       }

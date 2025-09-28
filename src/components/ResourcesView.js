@@ -379,10 +379,20 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const filteredConversations = useMemo(() => {
     if (!conversationSearchTerm.trim()) return conversations;
     const term = conversationSearchTerm.trim().toLowerCase();
-    return conversations.filter(conv =>
-      (typeof conv.userContent === 'string' && conv.userContent.toLowerCase().includes(term)) ||
-      (typeof conv.aiContent === 'string' && conv.aiContent.toLowerCase().includes(term))
-    );
+
+    const matchesThread = (conversation) => {
+      const threadMessages = Array.isArray(conversation.threadMessages) && conversation.threadMessages.length
+        ? conversation.threadMessages
+        : [conversation];
+
+      return threadMessages.some((message) => {
+        const userText = typeof message.userContent === 'string' ? message.userContent.toLowerCase() : '';
+        const aiText = typeof message.aiContent === 'string' ? message.aiContent.toLowerCase() : '';
+        return userText.includes(term) || aiText.includes(term);
+      });
+    };
+
+    return conversations.filter(matchesThread);
   }, [conversations, conversationSearchTerm]);
 
   const getResourceKey = useCallback((resource, index = 0) => {

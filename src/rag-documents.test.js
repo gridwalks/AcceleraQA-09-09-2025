@@ -1,7 +1,45 @@
-import { __testHelpers } from '../netlify/functions/rag-documents.js';
 import { jest } from '@jest/globals';
 
-const { downloadDocumentContentFromOpenAI } = __testHelpers;
+const uploadDocumentToS3Mock = jest.fn();
+
+let downloadDocumentContentFromOpenAI;
+let handleSaveDocument;
+
+const loadModule = async () => {
+  jest.resetModules();
+  uploadDocumentToS3Mock.mockReset();
+  uploadDocumentToS3Mock.mockResolvedValue({
+    bucket: 'test-bucket',
+    region: 'us-east-1',
+    key: 'rag-documents/user/doc-1',
+    url: 'https://test-bucket.s3.amazonaws.com/rag-documents/user/doc-1',
+    etag: 'etag-123',
+    size: 4,
+  });
+
+  process.env.RAG_S3_BUCKET = 'test-bucket';
+  process.env.RAG_S3_REGION = 'us-east-1';
+  global.__UPLOAD_DOCUMENT_TO_S3_MOCK__ = uploadDocumentToS3Mock;
+
+  const module = await import('../netlify/functions/rag-documents.js');
+  downloadDocumentContentFromOpenAI = module.__testHelpers.downloadDocumentContentFromOpenAI;
+  handleSaveDocument = module.__testHelpers.handleSaveDocument;
+};
+
+beforeEach(async () => {
+  jest.resetAllMocks();
+  await loadModule();
+});
+
+afterEach(() => {
+  delete global.fetch;
+  delete process.env.RAG_S3_BUCKET;
+  delete process.env.RAG_S3_REGION;
+  delete process.env.RAG_S3_PREFIX;
+  delete process.env.S3_KEY_PREFIX;
+  delete process.env.AWS_S3_PREFIX;
+  delete global.__UPLOAD_DOCUMENT_TO_S3_MOCK__;
+});
 
 const createMockResponse = ({
   ok = true,
@@ -53,15 +91,67 @@ const createMockResponse = ({
   return response;
 };
 
+describe('rag-documents S3 integration', () => {
+  test('handleSaveDocument uploads content to S3 and stores metadata reference', async () => {
+    const insertedRows = [];
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ');
+      if (query.includes('INSERT INTO rag_user_documents')) {
+        const [documentId, userId, fileId, filename, contentType, size, metadata] = values;
+        insertedRows.push({ documentId, userId, fileId, filename, contentType, size, metadata });
+        return [
+          {
+            document_id: documentId,
+            file_id: fileId,
+            filename,
+            content_type: contentType,
+            size,
+            metadata,
+            chunks: values[7],
+            vector_store_id: values[8],
+            created_at: '2024-01-01T00:00:00.000Z',
+            updated_at: '2024-01-01T00:00:00.000Z',
+          },
+        ];
+      }
+      return [];
+    });
+
+    const response = await handleSaveDocument(sqlMock, 'user-123', {
+      document: {
+        id: 'doc-1',
+        fileId: 'doc-1',
+        filename: 'Policy.pdf',
+        type: 'application/pdf',
+        content: Buffer.from('fake').toString('base64'),
+        encoding: 'base64',
+        metadata: { category: 'Policy' },
+      },
+    });
+
+    expect(uploadDocumentToS3Mock).toHaveBeenCalledTimes(1);
+    const uploadArgs = uploadDocumentToS3Mock.mock.calls[0][0];
+    expect(uploadArgs.filename).toBe('Policy.pdf');
+    expect(Buffer.isBuffer(uploadArgs.body)).toBe(true);
+    expect(uploadArgs.body.equals(Buffer.from('fake'))).toBe(true);
+    expect(uploadArgs.userId).toBe('user-123');
+
+    expect(insertedRows).toHaveLength(1);
+    expect(insertedRows[0].metadata.storage).toEqual(
+      expect.objectContaining({ provider: 's3', bucket: 'test-bucket', key: expect.stringContaining('rag-documents/user') })
+    );
+
+    const parsed = JSON.parse(response.body);
+    expect(parsed.storageLocation).toEqual(
+      expect.objectContaining({ bucket: 'test-bucket', key: expect.stringContaining('rag-documents/user') })
+    );
+    expect(parsed.document.metadata.storage).toEqual(
+      expect.objectContaining({ provider: 's3', url: expect.stringContaining('https://test-bucket.s3.amazonaws.com') })
+    );
+  });
+});
+
 describe('downloadDocumentContentFromOpenAI', () => {
-  beforeEach(() => {
-    jest.resetAllMocks();
-  });
-
-  afterEach(() => {
-    delete global.fetch;
-  });
-
   test('falls back to file endpoint when vector store endpoint returns JSON payload', async () => {
     const vectorStoreJson = {
       object: 'vector_store.file_content',

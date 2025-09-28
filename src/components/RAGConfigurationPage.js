@@ -1177,6 +1177,28 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                                           <span className="font-medium text-gray-600">Original:</span> {doc.metadata.originalFilename} (converted from {describeConversionSource(doc.metadata.conversion) || 'the uploaded format'})
                                         </p>
                                       )}
+                                      {doc.metadata?.storage && (
+                                        <p className="text-xs text-gray-500 mt-1 space-y-0.5">
+                                          <span className="font-medium text-gray-600">Storage:</span>{' '}
+                                          {doc.metadata.storage.url ? (
+                                            <a
+                                              href={doc.metadata.storage.url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-blue-600 hover:text-blue-500 underline"
+                                            >
+                                              View object
+                                            </a>
+                                          ) : (
+                                            <span className="text-gray-600">S3 object</span>
+                                          )}
+                                          {doc.metadata.storage.key && (
+                                            <span className="block text-[11px] text-gray-400 break-all">
+                                              Key: {doc.metadata.storage.key}
+                                            </span>
+                                          )}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                 </td>

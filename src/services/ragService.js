@@ -10,7 +10,6 @@ const MAX_PERSISTED_CONTENT_BYTES = 6 * 1024 * 1024; // 6 MB raw capture limit
 const DEFAULT_NEON_ENDPOINTS = Array.from(new Set([
   NEON_RAG_FUNCTION,
   '/.netlify/functions/neon-rag-fixed',
-  '/.netlify/functions/neon-rag',
 ]));
 
 const getFirstNonEmptyString = (...values) => {

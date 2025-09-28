@@ -21,7 +21,11 @@ import {
 import learningSuggestionsService from '../services/learningSuggestionsService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import ConversationList from './ConversationList';
-import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
+import {
+  combineMessagesIntoConversations,
+  mergeCurrentAndStoredMessages,
+  groupConversationsByThread,
+} from '../utils/messageUtils';
 import ragService from '../services/ragService';
 
 const isGzipCompressed = (bytes) =>
@@ -367,7 +371,9 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
   const conversations = useMemo(() => {
     const merged = mergeCurrentAndStoredMessages(messages, thirtyDayMessages);
-    return combineMessagesIntoConversations(merged).slice(-20).reverse();
+    const combined = combineMessagesIntoConversations(merged);
+    const threaded = groupConversationsByThread(combined);
+    return threaded.slice(0, 20);
   }, [messages, thirtyDayMessages]);
 
   const filteredConversations = useMemo(() => {

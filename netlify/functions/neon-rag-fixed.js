@@ -41,9 +41,6 @@ function resolveConnectionString() {
     error.statusCode = 500;
     throw error;
   }
-  return userId;
-}
-
   if (!/sslmode=/i.test(connectionString)) {
     console.warn('Connection string missing sslmode parameter; Neon recommends sslmode=require');
   }
@@ -215,8 +212,6 @@ function normalizeDocumentTypeValue({ mimeType, filename, allowedTypes }) {
     xml: 'xml',
     'application/xml': 'xml',
   };
-}
-
   for (const candidate of mimeCandidates) {
     const mapped = canonicalMap[candidate];
     if (mapped && allowedTypes.includes(mapped)) {
@@ -257,17 +252,29 @@ function requireUserId(event) {
   return userId;
 }
 
+function sanitizeTextForPostgres(text) {
+  if (typeof text !== 'string') {
+    return '';
+  }
+
+  // PostgreSQL does not allow the null byte (\u0000) in text columns.
+  // Strip them proactively so uploads containing binary remnants don't fail.
+  return text.replace(/\u0000/g, '');
+}
+
 function chunkText(text, chunkSize = DEFAULT_CHUNK_SIZE) {
   if (typeof text !== 'string') {
     return [];
   }
 
+  const safeText = sanitizeTextForPostgres(text);
+
   const normalizedSize = Math.max(200, Math.min(chunkSize, 2000));
   const chunks = [];
   let index = 0;
 
-  for (let offset = 0; offset < text.length; offset += normalizedSize) {
-    const chunkTextValue = text.slice(offset, offset + normalizedSize);
+  for (let offset = 0; offset < safeText.length; offset += normalizedSize) {
+    const chunkTextValue = safeText.slice(offset, offset + normalizedSize);
     chunks.push({
       index: index++,
       text: chunkTextValue,
@@ -410,7 +417,7 @@ async function handleUpload(sql, userId, payload = {}) {
 
   const document = payload.document || {};
   const filename = typeof document.filename === 'string' ? document.filename.trim() : '';
-  const text = typeof document.text === 'string' ? document.text : '';
+  const text = typeof document.text === 'string' ? sanitizeTextForPostgres(document.text) : '';
   const mimeType = [
     document.mimeType,
     document.type,

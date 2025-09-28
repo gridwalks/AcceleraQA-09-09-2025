@@ -8,7 +8,6 @@ export const config = {
 const DEFAULT_CHUNK_SIZE = 800;
 const MAX_CHUNKS = 5000;
 const MAX_TEXT_LENGTH = DEFAULT_CHUNK_SIZE * MAX_CHUNKS;
-
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
@@ -19,44 +18,16 @@ const headers = {
 let sqlClientPromise = null;
 let ensuredSchemaPromise = null;
 let documentTypeOptionsPromise = null;
-let fetchPolyfillPromise = null;
-
-async function ensureFetchAvailable() {
+function ensureFetchAvailable() {
   if (typeof globalThis.fetch === 'function') {
     return;
   }
 
-  if (!fetchPolyfillPromise) {
-    fetchPolyfillPromise = import('node-fetch')
-      .then(module => {
-        const fetchImpl = module.default || module;
-        if (typeof fetchImpl !== 'function') {
-          throw new Error('node-fetch did not provide a fetch implementation');
-        }
-
-        globalThis.fetch = fetchImpl;
-
-        const { Headers, Request, Response } = module;
-        if (typeof globalThis.Headers !== 'function' && Headers) {
-          globalThis.Headers = Headers;
-        }
-        if (typeof globalThis.Request !== 'function' && Request) {
-          globalThis.Request = Request;
-        }
-        if (typeof globalThis.Response !== 'function' && Response) {
-          globalThis.Response = Response;
-        }
-      })
-      .catch(error => {
-        console.error('Failed to load fetch polyfill for Neon client', error);
-        const wrapped = new Error('Fetch API is required for Neon queries');
-        wrapped.statusCode = 500;
-        fetchPolyfillPromise = null;
-        throw wrapped;
-      });
-  }
-
-  return fetchPolyfillPromise;
+  const error = new Error(
+    'Fetch API is not available in this runtime. Please upgrade to Node.js 18+ or provide a compatible global fetch implementation.'
+  );
+  error.statusCode = 500;
+  throw error;
 }
 
 function resolveConnectionString() {
@@ -83,7 +54,7 @@ function resolveConnectionString() {
 async function getSqlClient() {
   if (!sqlClientPromise) {
     sqlClientPromise = (async () => {
-      await ensureFetchAvailable();
+      ensureFetchAvailable();
       const connectionString = resolveConnectionString();
       neonConfig.fetchConnectionCache = true;
       neonConfig.poolQueryViaFetch = true;

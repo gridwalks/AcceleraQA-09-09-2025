@@ -1,5 +1,7 @@
 import { UI_CONFIG } from '../config/constants';
 
+const DEFAULT_THREAD_GAP_MS = 1000 * 60 * 30; // 30 minutes
+
 const getTimestampValue = (timestamp) => {
   if (timestamp == null) {
     return null;
@@ -17,6 +19,24 @@ const getTimestampValue = (timestamp) => {
   }
 
   return null;
+};
+
+const resolveMessageType = (msg) => {
+  if (!msg || typeof msg !== 'object') {
+    return null;
+  }
+
+  const type = msg.type || msg.role;
+
+  if (type === 'assistant') {
+    return 'ai';
+  }
+
+  if (type === 'system') {
+    return 'system';
+  }
+
+  return type || null;
 };
 
 const mergeResourceArrays = (existing = [], incoming = []) => {
@@ -195,10 +215,15 @@ export function combineMessagesIntoConversations(messages) {
     return [];
   }
 
-  const getType = (msg) => {
-    const t = msg.type || msg.role;
-    return t === 'assistant' ? 'ai' : t;
-  };
+  const { assignments: threadAssignments } = deriveThreadIdAssignments(messages);
+
+  const resolveConversationId = (message, fallback) =>
+    message?.conversationId ||
+    message?.conversation?.id ||
+    fallback ||
+    null;
+
+  const resolveThreadIdForIndex = (idx) => threadAssignments[idx] || null;
 
   const resolveConversationId = (message, fallback) =>
     message?.conversationId ||
@@ -207,19 +232,36 @@ export function combineMessagesIntoConversations(messages) {
     null;
 
   return messages.reduce((acc, message, index, array) => {
-    const messageType = getType(message);
+    const messageType = resolveMessageType(message);
 
     // Skip user messages that have a following AI message (they'll be combined)
-    if (messageType === 'user' && index < array.length - 1 && getType(array[index + 1]) === 'ai') {
+    if (messageType === 'user' && index < array.length - 1 && resolveMessageType(array[index + 1]) === 'ai') {
       return acc;
     }
 
     // Combine AI message with preceding user message
-    if (messageType === 'ai' && index > 0 && getType(array[index - 1]) === 'user') {
+    if (messageType === 'ai' && index > 0 && resolveMessageType(array[index - 1]) === 'user') {
       const userMessage = array[index - 1];
+      const threadId = resolveThreadIdForIndex(index) || resolveThreadIdForIndex(index - 1);
       const conversationId =
         resolveConversationId(message, null) ||
-        resolveConversationId(userMessage, null);
+        resolveConversationId(userMessage, null) ||
+        threadId;
+      const normalizedThreadId = threadId || conversationId || null;
+      const normalizedUserMessage = userMessage
+        ? {
+            ...userMessage,
+            conversationId: resolveConversationId(userMessage, conversationId),
+            threadId: normalizedThreadId,
+            conversationThreadId: normalizedThreadId,
+          }
+        : null;
+      const normalizedAiMessage = {
+        ...message,
+        conversationId: resolveConversationId(message, conversationId),
+        threadId: normalizedThreadId,
+        conversationThreadId: normalizedThreadId,
+      };
       const combinedMessage = {
         id: `${userMessage.id}-${message.id}`,
         userContent: userMessage.content,
@@ -227,18 +269,28 @@ export function combineMessagesIntoConversations(messages) {
         timestamp: message.timestamp,
         resources: message.resources || [],
         isStudyNotes: message.isStudyNotes || false,
-        originalUserMessage: userMessage,
-        originalAiMessage: message,
+        originalUserMessage: normalizedUserMessage,
+        originalAiMessage: normalizedAiMessage,
         // Preserve current session and stored flags
         isCurrent: message.isCurrent || userMessage.isCurrent || false,
         isStored: message.isStored && userMessage.isStored,
         conversationId,
+        threadId: normalizedThreadId,
+        conversationThreadId: normalizedThreadId,
       };
       acc.push(combinedMessage);
     }
     // Handle standalone AI messages (like welcome messages)
     else if (messageType === 'ai') {
-      const conversationId = resolveConversationId(message, null);
+      const threadId = resolveThreadIdForIndex(index);
+      const conversationId = resolveConversationId(message, threadId);
+      const normalizedThreadId = threadId || conversationId || null;
+      const normalizedAiMessage = {
+        ...message,
+        conversationId,
+        threadId: normalizedThreadId,
+        conversationThreadId: normalizedThreadId,
+      };
       const combinedMessage = {
         id: message.id,
         userContent: null,
@@ -246,16 +298,26 @@ export function combineMessagesIntoConversations(messages) {
         timestamp: message.timestamp,
         resources: message.resources || [],
         isStudyNotes: message.isStudyNotes || false,
-        originalAiMessage: message,
+        originalAiMessage: normalizedAiMessage,
         isCurrent: message.isCurrent || false,
         isStored: message.isStored || false,
         conversationId,
+        threadId: normalizedThreadId,
+        conversationThreadId: normalizedThreadId,
       };
       acc.push(combinedMessage);
     }
     // Handle standalone user messages (unlikely but possible)
     else if (messageType === 'user') {
-      const conversationId = resolveConversationId(message, null);
+      const threadId = resolveThreadIdForIndex(index);
+      const conversationId = resolveConversationId(message, threadId);
+      const normalizedThreadId = threadId || conversationId || null;
+      const normalizedUserMessage = {
+        ...message,
+        conversationId,
+        threadId: normalizedThreadId,
+        conversationThreadId: normalizedThreadId,
+      };
       const combinedMessage = {
         id: message.id,
         userContent: message.content,
@@ -263,10 +325,12 @@ export function combineMessagesIntoConversations(messages) {
         timestamp: message.timestamp,
         resources: [],
         isStudyNotes: false,
-        originalUserMessage: message,
+        originalUserMessage: normalizedUserMessage,
         isCurrent: message.isCurrent || false,
         isStored: message.isStored || false,
         conversationId,
+        threadId: normalizedThreadId,
+        conversationThreadId: normalizedThreadId,
       };
       acc.push(combinedMessage);
     }
@@ -276,6 +340,10 @@ export function combineMessagesIntoConversations(messages) {
 }
 
 const resolveConversationThreadId = (conversation) =>
+  conversation?.threadId ||
+  conversation?.conversationThreadId ||
+  conversation?.originalAiMessage?.threadId ||
+  conversation?.originalUserMessage?.threadId ||
   conversation?.originalAiMessage?.conversationId ||
   conversation?.originalUserMessage?.conversationId ||
   conversation?.conversationId ||
@@ -314,6 +382,18 @@ const normalizeConversationPreview = (conversation) => ({
   originalAiMessage: conversation.originalAiMessage,
   isCurrent: Boolean(conversation.isCurrent),
   isStored: Boolean(conversation.isStored),
+  threadId:
+    conversation.threadId ||
+    conversation.conversationThreadId ||
+    conversation.originalAiMessage?.threadId ||
+    conversation.originalUserMessage?.threadId ||
+    conversation.conversationId ||
+    conversation.originalAiMessage?.conversationId ||
+    conversation.originalUserMessage?.conversationId ||
+    conversation.originalAiMessage?.conversation?.id ||
+    conversation.originalUserMessage?.conversation?.id ||
+    conversation.id ||
+    null,
   conversationId:
     conversation.conversationId ||
     conversation.originalAiMessage?.conversationId ||
@@ -374,13 +454,128 @@ const createContentFingerprint = (message) => {
 const buildConversationIdentifierCandidates = (message = {}) => [
   message.conversationId,
   message.conversation?.id,
+  message.conversationThreadId,
   message.threadId,
   message.thread_id,
   message.parentConversationId,
   message.metadata?.conversationId,
   message.metadata?.threadId,
   message.metadata?.thread_id,
+  message.sessionId,
+  message.session_id,
+  message.metadata?.sessionId,
+  message.metadata?.session_id,
 ].filter(Boolean);
+
+const buildThreadGroupingCandidates = (message = {}) => [
+  message.threadId,
+  message.conversationThreadId,
+  message.conversationId,
+  message.conversation?.id,
+  message.parentConversationId,
+  message.metadata?.threadId,
+  message.metadata?.conversationId,
+  message.metadata?.sessionId,
+  message.metadata?.thread_id,
+  message.metadata?.session_id,
+  message.sessionId,
+  message.session_id,
+].filter(Boolean);
+
+const deriveThreadIdAssignments = (messages, { threadGapMs = DEFAULT_THREAD_GAP_MS } = {}) => {
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  const assignments = new Array(safeMessages.length).fill(null);
+
+  let previousThreadId = null;
+  let previousTimestamp = null;
+  let previousSessionId = null;
+  let fallbackCounter = 0;
+
+  const createFallbackThreadId = (message, index) => {
+    const timestampValue = getTimestampValue(message?.timestamp);
+    const timestampPart = timestampValue != null ? timestampValue : `idx-${index}`;
+    const idPart =
+      (typeof message?.id === 'string' && message.id.trim())
+        ? message.id.trim()
+        : `seq-${fallbackCounter + 1}`;
+
+    fallbackCounter += 1;
+    return `local-thread-${timestampPart}-${idPart}`;
+  };
+
+  safeMessages.forEach((message, index) => {
+    if (!message || typeof message !== 'object') {
+      assignments[index] = previousThreadId;
+      return;
+    }
+
+    const messageType = resolveMessageType(message);
+    const timestampValue = getTimestampValue(message.timestamp);
+    const sessionCandidates = [
+      message.sessionId,
+      message.session_id,
+      message.metadata?.sessionId,
+      message.metadata?.session_id,
+    ].filter(Boolean);
+    const currentSessionId = sessionCandidates[0] || previousSessionId;
+    const candidateThreadIds = buildThreadGroupingCandidates(message);
+    let resolvedThreadId = candidateThreadIds[0] || null;
+
+    const previousAssignment = index > 0 ? assignments[index - 1] : null;
+    const previousMessageType = index > 0 ? resolveMessageType(safeMessages[index - 1]) : null;
+    const isNewSession =
+      Boolean(previousSessionId) && Boolean(currentSessionId) && previousSessionId !== currentSessionId;
+    const hasLargeGap =
+      timestampValue != null &&
+      previousTimestamp != null &&
+      Math.abs(timestampValue - previousTimestamp) > threadGapMs;
+
+    if (!resolvedThreadId) {
+      if (previousAssignment && !(isNewSession || hasLargeGap)) {
+        resolvedThreadId = previousAssignment;
+      } else {
+        resolvedThreadId = createFallbackThreadId(message, index);
+      }
+    }
+
+    assignments[index] = resolvedThreadId;
+    previousThreadId = resolvedThreadId;
+
+    if (timestampValue != null) {
+      previousTimestamp = timestampValue;
+    }
+
+    if (currentSessionId) {
+      previousSessionId = currentSessionId;
+    }
+
+    if (
+      resolvedThreadId &&
+      index > 0 &&
+      previousMessageType === 'user' &&
+      assignments[index - 1] &&
+      assignments[index - 1] !== resolvedThreadId
+    ) {
+      const previousCandidates = buildThreadGroupingCandidates(safeMessages[index - 1]);
+      if (previousCandidates.length === 0) {
+        assignments[index - 1] = resolvedThreadId;
+      }
+    }
+  });
+
+  return {
+    assignments,
+    byMessageId: safeMessages.reduce((acc, message, index) => {
+      const threadId = assignments[index];
+      if (threadId && message?.id) {
+        acc[message.id] = threadId;
+      }
+      return acc;
+    }, {}),
+  };
+};
+
+export { deriveThreadIdAssignments };
 
 const getMessageMergeKey = (message) => {
   if (!message || typeof message !== 'object') {

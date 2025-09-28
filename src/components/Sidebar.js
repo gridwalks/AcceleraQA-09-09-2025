@@ -6,13 +6,11 @@ import { FEATURE_FLAGS } from '../config/featureFlags';
 
 const Sidebar = ({
   messages,
-  thirtyDayMessages,
   user,
   learningSuggestions = [],
   isLoadingSuggestions = false,
   onSuggestionsUpdate,
-  onAddResource,
-  onConversationSelect
+  onAddResource
 }) => {
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 lg:min-h-0">
@@ -26,11 +24,8 @@ const Sidebar = ({
         <ResourcesView
           currentResources={extractResourcesFromMessages(messages)}
           user={user}
-          messages={messages}
-          thirtyDayMessages={thirtyDayMessages}
           onSuggestionsUpdate={onSuggestionsUpdate}
           onAddResource={onAddResource}
-          onConversationSelect={onConversationSelect}
         />
       </div>
 

@@ -1,4 +1,6 @@
-// src/services/trainingResourceService.js - Lightweight helper replacing Neon-based storage
+// src/services/trainingResourceService.js
+// External resource persistence has been disabled. All resources exist only in-memory
+// for the current session so that nothing is written to localStorage or remote services.
 
 const FORM_FIELDS = ['name', 'title', 'url', 'description', 'tag'];
 
@@ -18,6 +20,8 @@ const resolveResourceId = (resource, fallbackId = null) => {
   );
 };
 
+let inMemoryResources = [];
+
 class TrainingResourceService {
   constructor() {
     this.storageKey = 'trainingResources';
@@ -28,83 +32,40 @@ class TrainingResourceService {
       return [];
     }
 
-    const normalized = [];
-    let shouldPersist = false;
-    const timestampBase = Date.now();
+    return resources
+      .filter((resource) => resource && typeof resource === 'object')
+      .map((resource, index) => {
+        const normalized = { ...resource };
+        const resolvedId = resolveResourceId(normalized, `${Date.now()}-${index}`);
+        normalized.id = String(resolvedId);
 
-    resources.forEach((rawResource, index) => {
-      if (!rawResource || typeof rawResource !== 'object') {
-        shouldPersist = true;
-        return;
-      }
-
-      const resource = { ...rawResource };
-
-      const resolvedId = resolveResourceId(resource, `${timestampBase}-${index}`);
-      if (resolvedId !== resource.id) {
-        resource.id = resolvedId;
-        shouldPersist = true;
-      }
-
-      const nameCandidate = normalizeString(resource.name) || normalizeString(resource.title);
-      if (nameCandidate && nameCandidate !== resource.name) {
-        resource.name = nameCandidate;
-        shouldPersist = true;
-      }
-
-      if (nameCandidate && nameCandidate !== resource.title) {
-        resource.title = nameCandidate;
-        shouldPersist = true;
-      }
-
-      const normalizedUrl = normalizeString(resource.url);
-      if (normalizedUrl !== resource.url) {
-        resource.url = normalizedUrl;
-        shouldPersist = true;
-      }
-
-      const normalizedDescription = normalizeString(resource.description);
-      if (normalizedDescription !== resource.description) {
-        if (normalizedDescription) {
-          resource.description = normalizedDescription;
-        } else {
-          delete resource.description;
+        const nameCandidate = normalizeString(normalized.name) || normalizeString(normalized.title);
+        if (nameCandidate) {
+          normalized.name = nameCandidate;
+          normalized.title = nameCandidate;
         }
-        shouldPersist = true;
-      }
 
-      const normalizedTag = normalizeString(resource.tag);
-      if (normalizedTag !== resource.tag) {
-        if (normalizedTag) {
-          resource.tag = normalizedTag;
-        } else {
-          delete resource.tag;
+        const normalizedUrl = normalizeString(normalized.url);
+        normalized.url = normalizedUrl;
+
+        if (normalized.description) {
+          normalized.description = normalizeString(normalized.description);
         }
-        shouldPersist = true;
-      }
 
-      if (!resource.createdAt) {
-        resource.createdAt = timestampBase;
-        shouldPersist = true;
-      }
+        if (normalized.tag) {
+          normalized.tag = normalizeString(normalized.tag);
+        }
 
-      if (!resource.updatedAt) {
-        resource.updatedAt = resource.createdAt;
-        shouldPersist = true;
-      }
+        if (!normalized.createdAt) {
+          normalized.createdAt = Date.now();
+        }
 
-      normalized.push(resource);
-    });
+        if (!normalized.updatedAt) {
+          normalized.updatedAt = normalized.createdAt;
+        }
 
-    if (shouldPersist && typeof localStorage !== 'undefined') {
-      try {
-        localStorage.setItem(this.storageKey, JSON.stringify(normalized));
-      } catch (persistError) {
-        console.error('Failed to persist normalized external resources:', persistError);
-      }
-    }
-
-    return normalized;
+        return normalized;
+      });
   }
 
   sanitizePayload(resource = {}, { includeEmpty = false } = {}) {
@@ -134,179 +95,114 @@ class TrainingResourceService {
     return payload;
   }
 
-  /**
-   * Load external resources from localStorage
-   * @returns {Promise<Array>} array of resources
-   */
   async getTrainingResources() {
-    try {
-      if (typeof localStorage === 'undefined') {
-        return [];
-      }
-
-      const raw = localStorage.getItem(this.storageKey);
-      const storedResources = raw ? JSON.parse(raw) : [];
-      return this.normalizeLoadedResources(storedResources);
-    } catch (error) {
-      console.error('Failed to load external resources from storage:', error);
-      return [];
-    }
+    return this.normalizeLoadedResources(inMemoryResources);
   }
 
-  /**
-   * Synchronously load external resources from localStorage
-   * @returns {Array} array of resources
-   */
   getTrainingResourcesSync() {
-    try {
-      if (typeof localStorage === 'undefined') {
-        return [];
-      }
-
-      const raw = localStorage.getItem(this.storageKey);
-      const storedResources = raw ? JSON.parse(raw) : [];
-      return this.normalizeLoadedResources(storedResources);
-    } catch (error) {
-      console.error('Failed to load external resources from storage:', error);
-      return [];
-    }
+    return this.normalizeLoadedResources(inMemoryResources);
   }
 
-  /**
-   * Add an external resource to localStorage
-   * @param {Object} resource resource data
-   * @returns {Promise<Object>} newly stored resource with id
-   */
   async addTrainingResource(resource) {
-    try {
-      const payload = this.sanitizePayload(resource);
-      const name = normalizeString(payload.name);
-      const url = normalizeString(payload.url);
+    const payload = this.sanitizePayload(resource);
+    const name = normalizeString(payload.name);
+    const url = normalizeString(payload.url);
 
-      if (!name || !url) {
-        throw new Error('Name and URL are required to add an external resource.');
-      }
-
-      const resources = await this.getTrainingResources();
-      const timestamp = Date.now();
-
-      const newResource = {
-        id: `${timestamp}`,
-        name,
-        title: name,
-        url,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-
-      if (payload.description) {
-        newResource.description = payload.description;
-      }
-
-      if (payload.tag) {
-        newResource.tag = payload.tag;
-      }
-
-      resources.unshift(newResource);
-
-      if (typeof localStorage === 'undefined') {
-        throw new Error('localStorage is not available.');
-      }
-
-      localStorage.setItem(this.storageKey, JSON.stringify(resources));
-      return newResource;
-    } catch (error) {
-      console.error('Failed to save external resource:', error);
-      throw error;
+    if (!name || !url) {
+      throw new Error('Name and URL are required to add an external resource.');
     }
+
+    const timestamp = Date.now();
+    const newResource = {
+      id: `${timestamp}-${Math.random().toString(36).slice(2)}`,
+      name,
+      title: name,
+      url,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    if (payload.description) {
+      newResource.description = payload.description;
+    }
+
+    if (payload.tag) {
+      newResource.tag = payload.tag;
+    }
+
+    inMemoryResources = [newResource, ...inMemoryResources];
+    return newResource;
   }
 
-  /**
-   * Update an existing external resource in localStorage
-   * @param {string} resourceId identifier of the resource to update
-   * @param {Object} updates fields to update
-   * @returns {Promise<Object>} updated resource
-   */
   async updateTrainingResource(resourceId, updates = {}) {
     if (!resourceId) {
       throw new Error('Resource identifier is required to update an external resource.');
     }
 
-    try {
-      const resources = await this.getTrainingResources();
-
-      if (!Array.isArray(resources) || resources.length === 0) {
-        throw new Error('No external resources available to update.');
-      }
-
-      const normalizedId = String(resourceId);
-      const resourceIndex = resources.findIndex((item) => {
-        if (!item) {
-          return false;
-        }
-
-        const currentId = resolveResourceId(item);
-        if (currentId && String(currentId) === normalizedId) {
-          return true;
-        }
-
-        return item.url && String(item.url) === normalizedId;
-      });
-
-      if (resourceIndex === -1) {
-        throw new Error('External resource could not be located for update.');
-      }
-
-      const existingResource = resources[resourceIndex] || {};
-      const payload = this.sanitizePayload(updates, { includeEmpty: true });
-
-      const providedName = normalizeString(payload.name || payload.title);
-      const finalName = providedName || normalizeString(existingResource.name) || normalizeString(existingResource.title);
-      const providedUrl = normalizeString(payload.url);
-      const finalUrl = providedUrl || normalizeString(existingResource.url);
-
-      if (!finalName || !finalUrl) {
-        throw new Error('Name and URL are required to update an external resource.');
-      }
-
-      const updatedAt = Date.now();
-      const updatedResource = {
-        ...existingResource,
-        id: resolveResourceId(existingResource, normalizedId),
-        name: finalName,
-        title: finalName,
-        url: finalUrl,
-        updatedAt,
-      };
-
-      if ('description' in payload) {
-        if (payload.description) {
-          updatedResource.description = payload.description;
-        } else {
-          delete updatedResource.description;
-        }
-      }
-
-      if ('tag' in payload) {
-        if (payload.tag) {
-          updatedResource.tag = payload.tag;
-        } else {
-          delete updatedResource.tag;
-        }
-      }
-
-      resources[resourceIndex] = updatedResource;
-
-      if (typeof localStorage === 'undefined') {
-        throw new Error('localStorage is not available.');
-      }
-
-      localStorage.setItem(this.storageKey, JSON.stringify(resources));
-      return updatedResource;
-    } catch (error) {
-      console.error('Failed to update external resource:', error);
-      throw error;
+    const resources = [...inMemoryResources];
+    if (resources.length === 0) {
+      throw new Error('No external resources available to update.');
     }
+
+    const normalizedId = String(resourceId);
+    const resourceIndex = resources.findIndex((item) => {
+      if (!item) {
+        return false;
+      }
+
+      const currentId = resolveResourceId(item);
+      if (currentId && String(currentId) === normalizedId) {
+        return true;
+      }
+
+      return item.url && String(item.url) === normalizedId;
+    });
+
+    if (resourceIndex === -1) {
+      throw new Error('External resource could not be located for update.');
+    }
+
+    const existingResource = resources[resourceIndex] || {};
+    const payload = this.sanitizePayload(updates, { includeEmpty: true });
+
+    const providedName = normalizeString(payload.name || payload.title);
+    const finalName = providedName || normalizeString(existingResource.name) || normalizeString(existingResource.title);
+    const providedUrl = normalizeString(payload.url);
+    const finalUrl = providedUrl || normalizeString(existingResource.url);
+
+    if (!finalName || !finalUrl) {
+      throw new Error('Name and URL are required to update an external resource.');
+    }
+
+    const updatedAt = Date.now();
+    const updatedResource = {
+      ...existingResource,
+      id: resolveResourceId(existingResource, normalizedId),
+      name: finalName,
+      title: finalName,
+      url: finalUrl,
+      updatedAt,
+    };
+
+    if ('description' in payload) {
+      if (payload.description) {
+        updatedResource.description = payload.description;
+      } else {
+        delete updatedResource.description;
+      }
+    }
+
+    if ('tag' in payload) {
+      if (payload.tag) {
+        updatedResource.tag = payload.tag;
+      } else {
+        delete updatedResource.tag;
+      }
+    }
+
+    resources[resourceIndex] = updatedResource;
+    inMemoryResources = resources;
+    return updatedResource;
   }
 }
 

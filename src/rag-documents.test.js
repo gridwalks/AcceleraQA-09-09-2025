@@ -1,26 +1,26 @@
 import { jest } from '@jest/globals';
 
-const uploadDocumentToOneDriveMock = jest.fn();
+const uploadDocumentToS3Mock = jest.fn();
 
 let downloadDocumentContentFromOpenAI;
 let handleSaveDocument;
 
 const loadModule = async () => {
   jest.resetModules();
-  uploadDocumentToOneDriveMock.mockReset();
-  uploadDocumentToOneDriveMock.mockResolvedValue({
-    driveId: 'drive-123',
-    siteId: null,
-    path: 'rag-documents/user/doc-1',
-    itemId: 'item-456',
-    url: 'https://contoso.sharepoint.com/sites/site/Documents/rag-documents/user/doc-1',
+  uploadDocumentToS3Mock.mockReset();
+  uploadDocumentToS3Mock.mockResolvedValue({
+    bucket: 'bucket-123',
+    region: 'us-east-1',
+    key: 'rag-documents/user/doc-1',
+    url: 'https://bucket-123.s3.amazonaws.com/rag-documents/user/doc-1',
     etag: 'etag-123',
     size: 4,
+    versionId: 'version-1',
   });
 
-  process.env.RAG_ONEDRIVE_ACCESS_TOKEN = 'token';
-  process.env.RAG_ONEDRIVE_DRIVE_ID = 'drive-123';
-  global.__UPLOAD_DOCUMENT_TO_ONEDRIVE_MOCK__ = uploadDocumentToOneDriveMock;
+  process.env.RAG_S3_BUCKET = 'bucket-123';
+  process.env.RAG_S3_REGION = 'us-east-1';
+  global.__UPLOAD_DOCUMENT_TO_S3_MOCK__ = uploadDocumentToS3Mock;
 
   const module = await import('../netlify/functions/rag-documents.js');
   downloadDocumentContentFromOpenAI = module.__testHelpers.downloadDocumentContentFromOpenAI;
@@ -34,11 +34,11 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete global.fetch;
-  delete process.env.RAG_ONEDRIVE_ACCESS_TOKEN;
-  delete process.env.RAG_ONEDRIVE_DRIVE_ID;
-  delete process.env.RAG_ONEDRIVE_ROOT_PATH;
-  delete process.env.ONEDRIVE_ROOT_PATH;
-  delete global.__UPLOAD_DOCUMENT_TO_ONEDRIVE_MOCK__;
+  delete process.env.RAG_S3_BUCKET;
+  delete process.env.RAG_S3_REGION;
+  delete process.env.RAG_S3_PREFIX;
+  delete process.env.S3_PREFIX;
+  delete global.__UPLOAD_DOCUMENT_TO_S3_MOCK__;
 });
 
 const createMockResponse = ({
@@ -91,8 +91,8 @@ const createMockResponse = ({
   return response;
 };
 
-describe('rag-documents OneDrive integration', () => {
-  test('handleSaveDocument uploads content to OneDrive and stores metadata reference', async () => {
+describe('rag-documents S3 integration', () => {
+  test('handleSaveDocument uploads content to S3 and stores metadata reference', async () => {
     const insertedRows = [];
     const sqlMock = jest.fn(async (strings, ...values) => {
       const query = strings.join(' ');
@@ -129,8 +129,8 @@ describe('rag-documents OneDrive integration', () => {
       },
     });
 
-    expect(uploadDocumentToOneDriveMock).toHaveBeenCalledTimes(1);
-    const uploadArgs = uploadDocumentToOneDriveMock.mock.calls[0][0];
+    expect(uploadDocumentToS3Mock).toHaveBeenCalledTimes(1);
+    const uploadArgs = uploadDocumentToS3Mock.mock.calls[0][0];
     expect(uploadArgs.filename).toBe('Policy.pdf');
     expect(Buffer.isBuffer(uploadArgs.body)).toBe(true);
     expect(uploadArgs.body.equals(Buffer.from('fake'))).toBe(true);
@@ -138,15 +138,15 @@ describe('rag-documents OneDrive integration', () => {
 
     expect(insertedRows).toHaveLength(1);
     expect(insertedRows[0].metadata.storage).toEqual(
-      expect.objectContaining({ provider: 'onedrive', driveId: 'drive-123', path: expect.stringContaining('rag-documents/user') })
+      expect.objectContaining({ provider: 's3', bucket: 'bucket-123', key: expect.stringContaining('rag-documents/user') })
     );
 
     const parsed = JSON.parse(response.body);
     expect(parsed.storageLocation).toEqual(
-      expect.objectContaining({ driveId: 'drive-123', path: expect.stringContaining('rag-documents/user') })
+      expect.objectContaining({ bucket: 'bucket-123', key: expect.stringContaining('rag-documents/user') })
     );
     expect(parsed.document.metadata.storage).toEqual(
-      expect.objectContaining({ provider: 'onedrive', url: expect.stringContaining('https://contoso.sharepoint.com') })
+      expect.objectContaining({ provider: 's3', url: expect.stringContaining('https://bucket-123.s3.amazonaws.com') })
     );
   });
 });

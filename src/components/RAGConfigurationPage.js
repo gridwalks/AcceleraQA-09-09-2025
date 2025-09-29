@@ -1190,7 +1190,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                                               View item
                                             </a>
                                           ) : (
-                                            <span className="text-gray-600">OneDrive item</span>
+                                            <span className="text-gray-600">S3 object</span>
                                           )}
                                           {doc.metadata.storage.path && (
                                             <span className="block text-[11px] text-gray-400 break-all">

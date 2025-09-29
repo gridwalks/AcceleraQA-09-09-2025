@@ -88,6 +88,14 @@ REACT_APP_AUTH0_AUDIENCE=your_api_audience
 REACT_APP_AUTH0_ROLES_CLAIM=https://your-domain.com/roles
 REACT_APP_AUTH0_ORG_CLAIM=https://your-domain.com/org
 
+# S3 Storage (Required for document uploads)
+RAG_S3_BUCKET=your-documents-bucket           # accepts S3_BUCKET/AWS_S3_BUCKET/AWS_BUCKET_NAME fallbacks
+RAG_S3_REGION=us-east-1                       # accepts AWS_REGION/AWS_DEFAULT_REGION fallbacks
+RAG_S3_PREFIX=rag-documents                   # optional; accepts S3_KEY_PREFIX/AWS_S3_PREFIX fallbacks
+AWS_ACCESS_KEY_ID=your_access_key_id          # omit when using an IAM role
+AWS_SECRET_ACCESS_KEY=your_secret_access_key  # omit when using an IAM role
+AWS_SESSION_TOKEN=your_session_token          # only required for temporary credentials
+
 # Neon PostgreSQL (Document Metadata Persistence)
 NEON_DATABASE_URL=postgres://user:password@host:port/dbname
 REACT_APP_RAG_DOCS_FUNCTION=/.netlify/functions/rag-documents # optional override

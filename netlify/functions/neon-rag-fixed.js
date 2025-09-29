@@ -1,7 +1,7 @@
 
 import { neon, neonConfig } from '@neondatabase/serverless';
 
-import { uploadDocumentToS3 } from '../lib/s3-helper.js';
+import { uploadDocumentToOneDrive, __internal as onedriveInternal } from '../lib/onedrive-helper.js';
 
 export const config = {
   nodeRuntime: 'nodejs18.x',
@@ -17,33 +17,12 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-const getS3BucketName = () =>
-  process.env.RAG_S3_BUCKET ||
-  process.env.S3_BUCKET ||
-  process.env.AWS_S3_BUCKET ||
-  process.env.AWS_BUCKET_NAME ||
+const getDriveId = () =>
+  process.env.RAG_ONEDRIVE_DRIVE_ID ||
+  process.env.ONEDRIVE_DRIVE_ID ||
   '';
 
-const getS3KeyPrefix = () => {
-  const candidates = [
-    process.env.RAG_S3_PREFIX,
-    process.env.S3_KEY_PREFIX,
-    process.env.AWS_S3_PREFIX,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string') {
-      continue;
-    }
-
-    const trimmed = candidate.trim().replace(/^\/+|\/+$/g, '');
-    if (trimmed) {
-      return trimmed;
-    }
-  }
-
-  return 'rag-documents';
-};
+const getRootPath = () => onedriveInternal.getConfiguredRootPath();
 
 const isAccessDeniedError = (error) => {
   if (!error || typeof error !== 'object') {
@@ -62,24 +41,24 @@ const isAccessDeniedError = (error) => {
   );
 };
 
-const buildS3UploadError = (error) => {
-  const bucket = getS3BucketName();
-  const prefix = getS3KeyPrefix();
+const buildOneDriveUploadError = (error) => {
+  const driveId = getDriveId();
+  const rootPath = getRootPath();
   const accessDenied = isAccessDeniedError(error);
   const baseMessage = accessDenied
-    ? 'Access denied when uploading document to S3.'
-    : 'Failed to upload document to S3.';
+    ? 'Access denied when uploading document to OneDrive.'
+    : 'Failed to upload document to OneDrive.';
 
   const guidanceParts = [];
-  if (bucket) {
-    guidanceParts.push(`bucket "${bucket}"`);
+  if (driveId) {
+    guidanceParts.push(`drive "${driveId}"`);
   }
-  if (prefix) {
-    guidanceParts.push(`prefix "${prefix}"`);
+  if (rootPath) {
+    guidanceParts.push(`root path "${rootPath}"`);
   }
 
   const guidance = guidanceParts.length
-    ? ` Confirm the configured IAM role allows s3:PutObject on ${guidanceParts.join(' and ')}.`
+    ? ` Confirm the configured Microsoft Graph permissions allow uploading to ${guidanceParts.join(' and ')}.`
     : '';
 
   const detail = error && typeof error.message === 'string' && error.message
@@ -1018,7 +997,7 @@ async function handleUpload(sql, userId, payload = {}) {
   let storageLocation = null;
   if (contentBuffer && contentBuffer.length > 0) {
     try {
-      storageLocation = await uploadDocumentToS3({
+      storageLocation = await uploadDocumentToOneDrive({
         body: contentBuffer,
         contentType: mimeType || 'application/octet-stream',
         userId,
@@ -1030,20 +1009,16 @@ async function handleUpload(sql, userId, payload = {}) {
         },
       });
     } catch (error) {
-      console.error('Failed to upload document content to S3', error);
-      if (isAccessDeniedError(error)) {
-        console.error(
-          'If the policy is scoped to arn:aws:s3:::acceleraqa-kb/uploads/* but your app is writing to rag-documents/, S3 will return Access Denied'
-        );
-      }
-      throw buildS3UploadError(error);
+      console.error('Failed to upload document content to OneDrive', error);
+      throw buildOneDriveUploadError(error);
     }
 
     metadata.storage = {
-      provider: 's3',
-      bucket: storageLocation.bucket,
-      region: storageLocation.region,
-      key: storageLocation.key,
+      provider: 'onedrive',
+      driveId: storageLocation.driveId,
+      siteId: storageLocation.siteId,
+      path: storageLocation.path,
+      itemId: storageLocation.itemId,
       url: storageLocation.url,
       etag: storageLocation.etag || null,
       size: storageLocation.size ?? contentBuffer.length,

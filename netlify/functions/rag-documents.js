@@ -1,7 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import { randomUUID } from 'crypto';
 
-import { uploadDocumentToOneDrive, __internal as onedriveInternal } from '../lib/onedrive-helper.js';
+import { uploadDocumentToS3, __internal as s3Internal } from '../lib/s3-helper.js';
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -176,19 +176,27 @@ const isAccessDeniedError = (error) => {
   );
 };
 
-const logOneDrivePermissionHint = (error) => {
+const getBucketName = () =>
+  process.env.RAG_S3_BUCKET ||
+  process.env.S3_BUCKET ||
+  process.env.AWS_S3_BUCKET ||
+  '';
+
+const getPrefix = () => s3Internal.getConfiguredPrefix();
+
+const logS3PermissionHint = (error) => {
   if (isAccessDeniedError(error)) {
-    let driveId = 'configured drive';
-    let rootPath = onedriveInternal.getConfiguredRootPath();
+    let bucket = getBucketName() || 'configured bucket';
+    let prefix = getPrefix();
     try {
-      const config = onedriveInternal.resolveOneDriveConfig();
-      driveId = config.driveId;
-      rootPath = config.rootPath;
+      const config = s3Internal.resolveS3Config();
+      bucket = config.bucket;
+      prefix = config.prefix;
     } catch (configError) {
-      console.warn('Unable to resolve OneDrive configuration for permission hint:', configError);
+      console.warn('Unable to resolve S3 configuration for permission hint:', configError);
     }
     console.error(
-      `Ensure the configured Microsoft Graph application has write access to drive "${driveId}" and the path "${rootPath}".`
+      `Ensure the configured AWS credentials have write access to bucket "${bucket}" and the prefix "${prefix}".`
     );
   }
 };
@@ -428,7 +436,7 @@ const handleSaveDocument = async (sql, userId, payload) => {
 
   if (contentBuffer) {
     try {
-      storageLocation = await uploadDocumentToOneDrive({
+      storageLocation = await uploadDocumentToS3({
         body: contentBuffer,
         contentType: document.type || document.contentType || document.mimeType || 'application/octet-stream',
         documentId,
@@ -440,8 +448,8 @@ const handleSaveDocument = async (sql, userId, payload) => {
         },
       });
     } catch (uploadError) {
-      console.error('Failed to upload document content to OneDrive:', uploadError);
-      logOneDrivePermissionHint(uploadError);
+      console.error('Failed to upload document content to S3:', uploadError);
+      logS3PermissionHint(uploadError);
       storageLocation = null;
     }
   }
@@ -452,13 +460,13 @@ const handleSaveDocument = async (sql, userId, payload) => {
 
   if (storageLocation) {
     normalizedMetadata.storage = {
-      provider: 'onedrive',
-      driveId: storageLocation.driveId,
-      siteId: storageLocation.siteId,
-      path: storageLocation.path,
-      itemId: storageLocation.itemId,
+      provider: 's3',
+      bucket: storageLocation.bucket,
+      region: storageLocation.region,
+      key: storageLocation.key,
       url: storageLocation.url,
       etag: storageLocation.etag || null,
+      versionId: storageLocation.versionId || null,
       size: storageLocation.size ?? contentBuffer?.length ?? numericSize ?? null,
     };
   }

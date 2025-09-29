@@ -53,18 +53,18 @@ describe('ragService neon backend integration', () => {
           metadata: {
             ...payload.document.metadata,
             storage: {
-              provider: 's3',
-              bucket: 'bucket-name',
-              key: 'rag/doc-1',
-              url: 'https://bucket-name.s3.test-region.amazonaws.com/rag/doc-1',
+              provider: 'onedrive',
+              driveId: 'drive-123',
+              path: 'rag/doc-1',
+              url: 'https://contoso.sharepoint.com/sites/site/Documents/rag/doc-1',
             },
           },
         },
         storageLocation: {
-          provider: 's3',
-          bucket: 'bucket-name',
-          key: 'rag/doc-1',
-          url: 'https://bucket-name.s3.test-region.amazonaws.com/rag/doc-1',
+          provider: 'onedrive',
+          driveId: 'drive-123',
+          path: 'rag/doc-1',
+          url: 'https://contoso.sharepoint.com/sites/site/Documents/rag/doc-1',
         },
         message: 'stored',
       }),
@@ -103,16 +103,16 @@ describe('ragService neon backend integration', () => {
       })
     );
 
-    expect(result.storage).toBe('s3');
+    expect(result.storage).toBe('onedrive');
     expect(result.storageLocation).toEqual(
-      expect.objectContaining({ provider: 's3', bucket: 'bucket-name', key: 'rag/doc-1' })
+      expect.objectContaining({ provider: 'onedrive', driveId: 'drive-123', path: 'rag/doc-1' })
     );
     expect(result.metadata.title).toBe('Policy Overview');
     expect(result.metadata.summary).toBe('Summary of the quality policy.');
     expect(result.metadata.version).toBe('v1');
     expect(result.metadata.tags).toEqual(['gmp', 'qa']);
     expect(result.metadata.storage).toEqual(
-      expect.objectContaining({ provider: 's3', bucket: 'bucket-name', key: 'rag/doc-1' })
+      expect.objectContaining({ provider: 'onedrive', driveId: 'drive-123', path: 'rag/doc-1' })
     );
   });
 

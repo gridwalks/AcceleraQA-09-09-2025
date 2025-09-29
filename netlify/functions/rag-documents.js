@@ -1,7 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import { randomUUID } from 'crypto';
 
-import { uploadDocumentToS3 } from '../lib/s3-helper.js';
+import { uploadDocumentToOneDrive, __internal as onedriveInternal } from '../lib/onedrive-helper.js';
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -176,10 +176,19 @@ const isAccessDeniedError = (error) => {
   );
 };
 
-const logS3AccessDeniedHint = (error) => {
+const logOneDrivePermissionHint = (error) => {
   if (isAccessDeniedError(error)) {
+    let driveId = 'configured drive';
+    let rootPath = onedriveInternal.getConfiguredRootPath();
+    try {
+      const config = onedriveInternal.resolveOneDriveConfig();
+      driveId = config.driveId;
+      rootPath = config.rootPath;
+    } catch (configError) {
+      console.warn('Unable to resolve OneDrive configuration for permission hint:', configError);
+    }
     console.error(
-      'If the policy is scoped to arn:aws:s3:::acceleraqa-kb/uploads/* but your app is writing to rag-documents/, S3 will return Access Denied'
+      `Ensure the configured Microsoft Graph application has write access to drive "${driveId}" and the path "${rootPath}".`
     );
   }
 };
@@ -419,7 +428,7 @@ const handleSaveDocument = async (sql, userId, payload) => {
 
   if (contentBuffer) {
     try {
-      storageLocation = await uploadDocumentToS3({
+      storageLocation = await uploadDocumentToOneDrive({
         body: contentBuffer,
         contentType: document.type || document.contentType || document.mimeType || 'application/octet-stream',
         documentId,
@@ -431,8 +440,8 @@ const handleSaveDocument = async (sql, userId, payload) => {
         },
       });
     } catch (uploadError) {
-      console.error('Failed to upload document content to S3:', uploadError);
-      logS3AccessDeniedHint(uploadError);
+      console.error('Failed to upload document content to OneDrive:', uploadError);
+      logOneDrivePermissionHint(uploadError);
       storageLocation = null;
     }
   }
@@ -443,10 +452,11 @@ const handleSaveDocument = async (sql, userId, payload) => {
 
   if (storageLocation) {
     normalizedMetadata.storage = {
-      provider: 's3',
-      bucket: storageLocation.bucket,
-      region: storageLocation.region,
-      key: storageLocation.key,
+      provider: 'onedrive',
+      driveId: storageLocation.driveId,
+      siteId: storageLocation.siteId,
+      path: storageLocation.path,
+      itemId: storageLocation.itemId,
       url: storageLocation.url,
       etag: storageLocation.etag || null,
       size: storageLocation.size ?? contentBuffer?.length ?? numericSize ?? null,

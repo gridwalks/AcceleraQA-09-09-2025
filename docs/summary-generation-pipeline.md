@@ -22,7 +22,7 @@
 ```
 Client → API → Ingestion svc → Parser → Chunker → Indexer (pgvector/OpenAI File Search)
      → Retrieval svc → Orchestrator → LLM Workers → Citation Builder → Policy Guard
-     → Review Queue → Storage (NeonDB + S3/Blobs) → Exporters (Vault/Jira/GitHub)
+     → Review Queue → Storage (NeonDB + OneDrive/Blobs) → Exporters (Vault/Jira/GitHub)
 ```
 
 ---
@@ -31,7 +31,7 @@ Client → API → Ingestion svc → Parser → Chunker → Indexer (pgvector/Op
 
 ### 3.1 Ingestion Service
 - Source documents from OpenAI File Search, normalizing metadata: `doc_id`, `title`, `owner`, `version`, `effective_date`, `doc_type`, and `system_of_record`.
-- Persist raw bytes in object storage (Netlify Blobs or S3) and record hashes for deduplication.
+- Persist raw bytes in object storage (Netlify Blobs or OneDrive) and record hashes for deduplication.
 
 ### 3.2 Preprocessing & Chunking
 - Convert documents to rich text with heading, table, and caption structure while retaining page and paragraph anchors.

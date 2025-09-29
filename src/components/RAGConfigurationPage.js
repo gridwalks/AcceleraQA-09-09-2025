@@ -1187,14 +1187,14 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                                               rel="noopener noreferrer"
                                               className="text-blue-600 hover:text-blue-500 underline"
                                             >
-                                              View object
+                                              View item
                                             </a>
                                           ) : (
-                                            <span className="text-gray-600">S3 object</span>
+                                            <span className="text-gray-600">OneDrive item</span>
                                           )}
-                                          {doc.metadata.storage.key && (
+                                          {doc.metadata.storage.path && (
                                             <span className="block text-[11px] text-gray-400 break-all">
-                                              Key: {doc.metadata.storage.key}
+                                              Path: {doc.metadata.storage.path}
                                             </span>
                                           )}
                                         </p>

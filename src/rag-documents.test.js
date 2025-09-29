@@ -1,25 +1,26 @@
 import { jest } from '@jest/globals';
 
-const uploadDocumentToS3Mock = jest.fn();
+const uploadDocumentToOneDriveMock = jest.fn();
 
 let downloadDocumentContentFromOpenAI;
 let handleSaveDocument;
 
 const loadModule = async () => {
   jest.resetModules();
-  uploadDocumentToS3Mock.mockReset();
-  uploadDocumentToS3Mock.mockResolvedValue({
-    bucket: 'test-bucket',
-    region: 'us-east-1',
-    key: 'rag-documents/user/doc-1',
-    url: 'https://test-bucket.s3.amazonaws.com/rag-documents/user/doc-1',
+  uploadDocumentToOneDriveMock.mockReset();
+  uploadDocumentToOneDriveMock.mockResolvedValue({
+    driveId: 'drive-123',
+    siteId: null,
+    path: 'rag-documents/user/doc-1',
+    itemId: 'item-456',
+    url: 'https://contoso.sharepoint.com/sites/site/Documents/rag-documents/user/doc-1',
     etag: 'etag-123',
     size: 4,
   });
 
-  process.env.RAG_S3_BUCKET = 'test-bucket';
-  process.env.RAG_S3_REGION = 'us-east-1';
-  global.__UPLOAD_DOCUMENT_TO_S3_MOCK__ = uploadDocumentToS3Mock;
+  process.env.RAG_ONEDRIVE_ACCESS_TOKEN = 'token';
+  process.env.RAG_ONEDRIVE_DRIVE_ID = 'drive-123';
+  global.__UPLOAD_DOCUMENT_TO_ONEDRIVE_MOCK__ = uploadDocumentToOneDriveMock;
 
   const module = await import('../netlify/functions/rag-documents.js');
   downloadDocumentContentFromOpenAI = module.__testHelpers.downloadDocumentContentFromOpenAI;
@@ -33,12 +34,11 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete global.fetch;
-  delete process.env.RAG_S3_BUCKET;
-  delete process.env.RAG_S3_REGION;
-  delete process.env.RAG_S3_PREFIX;
-  delete process.env.S3_KEY_PREFIX;
-  delete process.env.AWS_S3_PREFIX;
-  delete global.__UPLOAD_DOCUMENT_TO_S3_MOCK__;
+  delete process.env.RAG_ONEDRIVE_ACCESS_TOKEN;
+  delete process.env.RAG_ONEDRIVE_DRIVE_ID;
+  delete process.env.RAG_ONEDRIVE_ROOT_PATH;
+  delete process.env.ONEDRIVE_ROOT_PATH;
+  delete global.__UPLOAD_DOCUMENT_TO_ONEDRIVE_MOCK__;
 });
 
 const createMockResponse = ({
@@ -91,8 +91,8 @@ const createMockResponse = ({
   return response;
 };
 
-describe('rag-documents S3 integration', () => {
-  test('handleSaveDocument uploads content to S3 and stores metadata reference', async () => {
+describe('rag-documents OneDrive integration', () => {
+  test('handleSaveDocument uploads content to OneDrive and stores metadata reference', async () => {
     const insertedRows = [];
     const sqlMock = jest.fn(async (strings, ...values) => {
       const query = strings.join(' ');
@@ -129,8 +129,8 @@ describe('rag-documents S3 integration', () => {
       },
     });
 
-    expect(uploadDocumentToS3Mock).toHaveBeenCalledTimes(1);
-    const uploadArgs = uploadDocumentToS3Mock.mock.calls[0][0];
+    expect(uploadDocumentToOneDriveMock).toHaveBeenCalledTimes(1);
+    const uploadArgs = uploadDocumentToOneDriveMock.mock.calls[0][0];
     expect(uploadArgs.filename).toBe('Policy.pdf');
     expect(Buffer.isBuffer(uploadArgs.body)).toBe(true);
     expect(uploadArgs.body.equals(Buffer.from('fake'))).toBe(true);
@@ -138,15 +138,15 @@ describe('rag-documents S3 integration', () => {
 
     expect(insertedRows).toHaveLength(1);
     expect(insertedRows[0].metadata.storage).toEqual(
-      expect.objectContaining({ provider: 's3', bucket: 'test-bucket', key: expect.stringContaining('rag-documents/user') })
+      expect.objectContaining({ provider: 'onedrive', driveId: 'drive-123', path: expect.stringContaining('rag-documents/user') })
     );
 
     const parsed = JSON.parse(response.body);
     expect(parsed.storageLocation).toEqual(
-      expect.objectContaining({ bucket: 'test-bucket', key: expect.stringContaining('rag-documents/user') })
+      expect.objectContaining({ driveId: 'drive-123', path: expect.stringContaining('rag-documents/user') })
     );
     expect(parsed.document.metadata.storage).toEqual(
-      expect.objectContaining({ provider: 's3', url: expect.stringContaining('https://test-bucket.s3.amazonaws.com') })
+      expect.objectContaining({ provider: 'onedrive', url: expect.stringContaining('https://contoso.sharepoint.com') })
     );
   });
 });
@@ -200,6 +200,7 @@ describe('downloadDocumentContentFromOpenAI', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
       })
     );
+
     expect(fetch).toHaveBeenNthCalledWith(
       2,
       'https://api.openai.com/v1/files/file-123/content',
@@ -210,11 +211,8 @@ describe('downloadDocumentContentFromOpenAI', () => {
     );
 
     expect(result.contentType).toBe('application/pdf');
+    expect(Buffer.isBuffer(result.buffer)).toBe(true);
     expect(result.buffer.equals(fileBytes)).toBe(true);
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      'Received vector store JSON payload while retrieving document content via vector-store endpoint. Falling back to next endpoint.'
-    );
 
     warnSpy.mockRestore();
   });

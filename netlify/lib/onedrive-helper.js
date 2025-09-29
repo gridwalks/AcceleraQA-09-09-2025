@@ -2,6 +2,16 @@ let cachedAccessToken = null;
 let cachedDriveId = null;
 let cachedSiteId = undefined;
 let cachedPrefix = null;
+let loggedDriveId = null;
+
+const logResolvedDriveId = (driveId) => {
+  if (!driveId || loggedDriveId === driveId) {
+    return;
+  }
+
+  console.log(`OneDrive drive configured: ${driveId}`);
+  loggedDriveId = driveId;
+};
 
 const DEFAULT_FOLDER_PREFIX = 'rag-documents';
 
@@ -61,6 +71,7 @@ const getConfiguredRootPath = () => {
 
 const resolveOneDriveConfig = () => {
   if (cachedAccessToken && cachedDriveId) {
+    logResolvedDriveId(cachedDriveId);
     return {
       accessToken: cachedAccessToken,
       driveId: cachedDriveId,
@@ -93,6 +104,7 @@ const resolveOneDriveConfig = () => {
   cachedAccessToken = accessToken;
   cachedDriveId = driveId;
   cachedSiteId = siteId;
+  logResolvedDriveId(driveId);
 
   return {
     accessToken,

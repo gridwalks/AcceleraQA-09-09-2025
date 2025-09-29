@@ -27,6 +27,7 @@ const setupNeonRagService = async ({ neonResponses = {}, chatResponse } = {}) =>
     });
 
   jest.spyOn(ragService, 'extractTextFromFile').mockResolvedValue('Document text');
+  jest.spyOn(ragService, 'captureBlobContent').mockResolvedValue({ base64: 'ZmFrZQ==', byteLength: 4 });
 
   const openaiModule = await import('./openaiService.js');
   const chatSpy = jest
@@ -46,9 +47,25 @@ describe('ragService neon backend integration', () => {
   test('uploadDocument sends sanitized metadata to Neon', async () => {
     const neonResponses = {
       upload: (_userId, payload) => ({
-        id: 'doc-1',
-        filename: payload.document.filename,
-        metadata: payload.document.metadata,
+        document: {
+          id: 'doc-1',
+          filename: payload.document.filename,
+          metadata: {
+            ...payload.document.metadata,
+            storage: {
+              provider: 's3',
+              bucket: 'bucket-name',
+              key: 'rag/doc-1',
+              url: 'https://bucket-name.s3.test-region.amazonaws.com/rag/doc-1',
+            },
+          },
+        },
+        storageLocation: {
+          provider: 's3',
+          bucket: 'bucket-name',
+          key: 'rag/doc-1',
+          url: 'https://bucket-name.s3.test-region.amazonaws.com/rag/doc-1',
+        },
         message: 'stored',
       }),
     };
@@ -69,6 +86,8 @@ describe('ragService neon backend integration', () => {
       expect.objectContaining({
         document: expect.objectContaining({
           filename: 'Policy.pdf',
+          content: 'ZmFrZQ==',
+          encoding: 'base64',
           title: 'Policy Overview',
           summary: 'Summary of the quality policy.',
           version: 'v1',
@@ -84,11 +103,17 @@ describe('ragService neon backend integration', () => {
       })
     );
 
-    expect(result.storage).toBe('neon-postgresql');
+    expect(result.storage).toBe('s3');
+    expect(result.storageLocation).toEqual(
+      expect.objectContaining({ provider: 's3', bucket: 'bucket-name', key: 'rag/doc-1' })
+    );
     expect(result.metadata.title).toBe('Policy Overview');
     expect(result.metadata.summary).toBe('Summary of the quality policy.');
     expect(result.metadata.version).toBe('v1');
     expect(result.metadata.tags).toEqual(['gmp', 'qa']);
+    expect(result.metadata.storage).toEqual(
+      expect.objectContaining({ provider: 's3', bucket: 'bucket-name', key: 'rag/doc-1' })
+    );
   });
 
   test('getDocuments returns Neon document list', async () => {

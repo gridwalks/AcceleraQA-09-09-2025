@@ -772,6 +772,8 @@ class RAGService {
 
       baseMetadata.fileName = baseMetadata.fileName || file.name;
 
+      const capturedContent = await this.captureBlobContent(file);
+
       const documentPayload = {
         filename: file.name,
         size: file.size,
@@ -782,6 +784,14 @@ class RAGService {
           ...baseMetadata,
         },
       };
+
+      if (capturedContent && typeof capturedContent.base64 === 'string') {
+        documentPayload.content = capturedContent.base64;
+        documentPayload.encoding = 'base64';
+        if (!Number.isFinite(documentPayload.size) && typeof capturedContent.byteLength === 'number') {
+          documentPayload.size = capturedContent.byteLength;
+        }
+      }
 
       if (normalizedTitle) {
         documentPayload.title = normalizedTitle;
@@ -813,6 +823,17 @@ class RAGService {
           ? persistedDocument.metadata
           : documentPayload.metadata;
 
+      const storageLocation =
+        response?.storageLocation ||
+        persistedDocument?.storageLocation ||
+        (persistedMetadata?.storage && typeof persistedMetadata.storage === 'object'
+          ? persistedMetadata.storage
+          : null);
+
+      if (storageLocation && persistedMetadata && typeof persistedMetadata === 'object') {
+        persistedMetadata.storage = storageLocation;
+      }
+
       return {
         ...response,
         document: persistedDocument || {
@@ -820,7 +841,8 @@ class RAGService {
           metadata: documentPayload.metadata,
         },
         metadata: persistedMetadata,
-        storage: 'neon-postgresql',
+        storageLocation,
+        storage: storageLocation?.provider || 'neon-postgresql',
       };
     }
 
@@ -869,12 +891,13 @@ class RAGService {
     }
 
     let savedDocument = docInfo;
+    let metadataResponse;
     try {
-      const response = await this.makeDocumentMetadataRequest('save_document', userId, {
+      metadataResponse = await this.makeDocumentMetadataRequest('save_document', userId, {
         document: docInfo,
         vectorStoreId,
       });
-      savedDocument = response?.document || docInfo;
+      savedDocument = metadataResponse?.document || docInfo;
     } catch (error) {
       console.error('Failed to persist document metadata. Rolling back OpenAI upload.', error);
       try {
@@ -892,11 +915,23 @@ class RAGService {
       this.clearDocumentMetadataCache(userId);
     }
 
+    const storageLocation =
+      metadataResponse?.storageLocation ||
+      savedDocument?.storageLocation ||
+      (savedDocument?.metadata && typeof savedDocument.metadata === 'object' && savedDocument.metadata.storage
+        ? savedDocument.metadata.storage
+        : null);
+
+    if (storageLocation && savedDocument?.metadata && typeof savedDocument.metadata === 'object') {
+      savedDocument.metadata.storage = storageLocation;
+    }
+
     return {
       fileId,
       vectorStoreId,
       metadata: savedDocument?.metadata || docInfo.metadata,
       document: savedDocument,
+      storageLocation,
     };
   }
 

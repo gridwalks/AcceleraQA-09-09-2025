@@ -1,6 +1,8 @@
 import { neon } from '@neondatabase/serverless';
 import { randomUUID } from 'crypto';
 
+import { uploadDocumentToS3 } from '../lib/s3-helper.js';
+
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
@@ -137,18 +139,50 @@ const createResponse = (statusCode, body) => ({
   body: JSON.stringify(body),
 });
 
-const mapDocumentRow = (row) => ({
-  id: row.document_id,
-  fileId: row.file_id,
-  filename: row.filename,
-  type: row.content_type,
-  size: row.size == null ? 0 : Number(row.size),
-  metadata: row.metadata || {},
-  chunks: row.chunks == null ? 0 : Number(row.chunks),
-  vectorStoreId: row.vector_store_id || null,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-});
+const mapDocumentRow = (row) => {
+  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
+  const storageLocation =
+    metadata.storage && typeof metadata.storage === 'object' ? { ...metadata.storage } : null;
+
+  return {
+    id: row.document_id,
+    fileId: row.file_id,
+    filename: row.filename,
+    type: row.content_type,
+    size: row.size == null ? 0 : Number(row.size),
+    metadata,
+    chunks: row.chunks == null ? 0 : Number(row.chunks),
+    vectorStoreId: row.vector_store_id || null,
+    storageLocation,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
+const isAccessDeniedError = (error) => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = error.name || error.Code || error.code;
+  const status = error.$metadata?.httpStatusCode || error.statusCode;
+  const message = typeof error.message === 'string' ? error.message : '';
+
+  return (
+    code === 'AccessDenied' ||
+    code === 'Forbidden' ||
+    status === 403 ||
+    /access\s*denied/i.test(message)
+  );
+};
+
+const logS3AccessDeniedHint = (error) => {
+  if (isAccessDeniedError(error)) {
+    console.error(
+      'If the policy is scoped to arn:aws:s3:::acceleraqa-kb/uploads/* but your app is writing to rag-documents/, S3 will return Access Denied'
+    );
+  }
+};
 
 const estimateBinarySizeFromBase64 = (base64 = '') => {
   if (!base64) return 0;
@@ -366,21 +400,58 @@ const handleSaveDocument = async (sql, userId, payload) => {
     document.metadata && typeof document.metadata === 'object' ? document.metadata : {}
   );
 
-  let contentBase64 = null;
+  let contentBuffer = null;
   let contentEncoding = null;
+  let storageLocation = null;
   try {
     const normalizedContent = normalizeDocumentContent(document);
-    contentBase64 = normalizedContent.base64;
-    contentEncoding = normalizedContent.encoding;
-    if (normalizedContent.truncated) {
-      console.warn(`Document content for ${documentId} exceeded persistence limit and will not be persisted locally.`);
+    if (normalizedContent.base64) {
+      contentBuffer = Buffer.from(normalizedContent.base64, 'base64');
+      contentEncoding = normalizedContent.encoding;
+    } else if (normalizedContent.truncated) {
+      console.warn(
+        `Document content for ${documentId} exceeded persistence limit and will not be persisted locally. Uploading original payload skipped.`
+      );
     }
   } catch (contentError) {
     console.warn('Unable to normalize document content for persistence:', contentError);
   }
 
+  if (contentBuffer) {
+    try {
+      storageLocation = await uploadDocumentToS3({
+        body: contentBuffer,
+        contentType: document.type || document.contentType || document.mimeType || 'application/octet-stream',
+        documentId,
+        userId,
+        filename: document.filename || document.name,
+        metadata: {
+          'x-user-id': userId,
+          'x-document-id': documentId,
+        },
+      });
+    } catch (uploadError) {
+      console.error('Failed to upload document content to S3:', uploadError);
+      logS3AccessDeniedHint(uploadError);
+      storageLocation = null;
+    }
+  }
+
   const numericSize = Number.isFinite(Number(document.size)) ? Number(document.size) : null;
-  const resolvedSize = numericSize ?? (contentBase64 ? estimateBinarySizeFromBase64(contentBase64) : 0);
+  const resolvedSize =
+    numericSize ?? (storageLocation?.size != null ? Number(storageLocation.size) : contentBuffer?.length ?? 0);
+
+  if (storageLocation) {
+    normalizedMetadata.storage = {
+      provider: 's3',
+      bucket: storageLocation.bucket,
+      region: storageLocation.region,
+      key: storageLocation.key,
+      url: storageLocation.url,
+      etag: storageLocation.etag || null,
+      size: storageLocation.size ?? contentBuffer?.length ?? numericSize ?? null,
+    };
+  }
 
   const rows = await sql`
     INSERT INTO rag_user_documents (
@@ -405,8 +476,8 @@ const handleSaveDocument = async (sql, userId, payload) => {
       ${normalizedMetadata},
       ${document.chunks ?? 0},
       ${vectorStoreId},
-      ${contentBase64},
-      ${contentEncoding}
+      ${storageLocation ? null : contentBuffer ? contentBuffer.toString('base64') : null},
+      ${storageLocation ? null : contentEncoding}
     )
     ON CONFLICT (document_id) DO UPDATE
     SET user_id = EXCLUDED.user_id,
@@ -423,8 +494,10 @@ const handleSaveDocument = async (sql, userId, payload) => {
     RETURNING document_id, file_id, filename, content_type, size, metadata, chunks, vector_store_id, created_at, updated_at
   `;
 
+  const mapped = mapDocumentRow(rows[0]);
   return createResponse(200, {
-    document: mapDocumentRow(rows[0]),
+    document: mapped,
+    storageLocation: mapped.storageLocation || storageLocation,
   });
 };
 
@@ -568,6 +641,9 @@ const handleDownloadDocument = async (sql, userId, payload) => {
     return createResponse(404, { error: 'Document not found for this user' });
   }
 
+  const metadata = record.metadata && typeof record.metadata === 'object' ? record.metadata : {};
+  const storageLocation = metadata.storage && typeof metadata.storage === 'object' ? metadata.storage : null;
+
   if (record.content_base64) {
     const encoding = record.content_encoding || DEFAULT_CONTENT_ENCODING;
     const derivedSize = estimateBinarySizeFromBase64(record.content_base64);
@@ -580,7 +656,20 @@ const handleDownloadDocument = async (sql, userId, payload) => {
       size: record.size == null ? derivedSize : Number(record.size),
       encoding,
       content: record.content_base64,
-      metadata: record.metadata || {},
+      metadata,
+      storageLocation,
+    });
+  }
+
+  if (storageLocation) {
+    return createResponse(200, {
+      documentId: record.document_id,
+      fileId: record.file_id,
+      filename: record.filename,
+      contentType: record.content_type || 'application/octet-stream',
+      size: record.size == null ? Number(storageLocation.size || 0) : Number(record.size),
+      storageLocation,
+      metadata,
     });
   }
 
@@ -640,7 +729,8 @@ const handleDownloadDocument = async (sql, userId, payload) => {
     size: record.size == null ? computedSize : Number(record.size),
     encoding: DEFAULT_CONTENT_ENCODING,
     content: base64Content,
-    metadata: record.metadata || {},
+    metadata,
+    storageLocation,
   });
 };
 
@@ -791,4 +881,5 @@ export const __testHelpers = {
   downloadDocumentContentFromOpenAI,
   isJsonLikeContentType,
   payloadContainsVectorStoreDescriptor,
+  handleSaveDocument,
 };

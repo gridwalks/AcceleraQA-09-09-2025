@@ -73,6 +73,26 @@ const buildS3UploadError = (error) => {
   return friendlyError;
 };
 
+const logS3UploadFailure = (error) => {
+  const statusCode = error?.$metadata?.httpStatusCode || error?.statusCode || null;
+  const responseBody = typeof error?.responseBody === 'string' && error.responseBody.trim()
+    ? error.responseBody
+    : null;
+  const code = error?.code || error?.name || null;
+
+  const details = {
+    message: error?.message || 'Unknown S3 upload error',
+    statusCode,
+    responseBody,
+  };
+
+  if (code) {
+    details.code = code;
+  }
+
+  console.error('Failed to upload document content to S3', { ...details, error });
+};
+
 let sqlClientPromise = null;
 let ensuredSchemaPromise = null;
 let documentTypeOptionsPromise = null;
@@ -1010,7 +1030,7 @@ async function handleUpload(sql, userId, payload = {}) {
         },
       });
     } catch (error) {
-      console.error('Failed to upload document content to S3', error);
+      logS3UploadFailure(error);
       throw buildS3UploadError(error);
     }
 

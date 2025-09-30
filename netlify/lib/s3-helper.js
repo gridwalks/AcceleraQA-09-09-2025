@@ -385,6 +385,7 @@ export const uploadDocumentToS3 = async ({
       `S3 upload failed with status ${response.status}${text ? `: ${text}` : ''}`
     );
     error.statusCode = response.status;
+    error.responseBody = text || null;
     throw error;
   }
 

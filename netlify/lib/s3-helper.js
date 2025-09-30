@@ -115,42 +115,37 @@ const coalesceCredential = (...values) => {
       continue;
     }
 
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed) {
-        return trimmed;
-      }
-      continue;
+    const trimmed = String(value).trim();
+    if (trimmed) {
+      return trimmed;
     }
-
-    return value;
   }
 
   return null;
 };
 
 const getS3Credentials = () => {
-  const accessKeyId = coalesceCredential(
+  const sanitizedAccessKeyId = coalesceCredential(
     process.env.RAG_S3_ACCESS_KEY_ID,
     process.env.AWS_ACCESS_KEY_ID,
   );
-  const secretAccessKey = coalesceCredential(
+  const sanitizedSecretAccessKey = coalesceCredential(
     process.env.RAG_S3_SECRET_ACCESS_KEY,
     process.env.AWS_SECRET_ACCESS_KEY,
   );
-  const sessionToken = coalesceCredential(
+  const sanitizedSessionToken = coalesceCredential(
     process.env.RAG_S3_SESSION_TOKEN,
     process.env.AWS_SESSION_TOKEN,
   );
 
-  if (!accessKeyId || !secretAccessKey) {
+  if (!sanitizedAccessKeyId || !sanitizedSecretAccessKey) {
     throw new Error('S3 credentials are required: set RAG_S3_ACCESS_KEY_ID/AWS_ACCESS_KEY_ID and RAG_S3_SECRET_ACCESS_KEY/AWS_SECRET_ACCESS_KEY');
   }
 
   return {
-    accessKeyId,
-    secretAccessKey,
-    sessionToken: sessionToken || null,
+    accessKeyId: sanitizedAccessKeyId,
+    secretAccessKey: sanitizedSecretAccessKey,
+    sessionToken: sanitizedSessionToken || null,
   };
 };
 
@@ -270,7 +265,11 @@ const signS3PutRequest = ({
   metadata,
   credentials,
 }) => {
-  const { accessKeyId, secretAccessKey, sessionToken } = credentials;
+  const {
+    accessKeyId: sanitizedAccessKeyId,
+    secretAccessKey: sanitizedSecretAccessKey,
+    sessionToken: sanitizedSessionToken,
+  } = credentials;
   const { amzDate, dateStamp } = toAmzDate(new Date());
   const payloadHash = sha256Hex(body);
 
@@ -285,8 +284,8 @@ const signS3PutRequest = ({
     'x-amz-date': amzDate,
   };
 
-  if (sessionToken) {
-    baseHeaders['x-amz-security-token'] = sessionToken;
+  if (sanitizedSessionToken) {
+    baseHeaders['x-amz-security-token'] = sanitizedSessionToken;
   }
 
   const metadataHeaders = Object.entries(metadata).reduce((acc, [metaKey, metaValue]) => {
@@ -319,13 +318,13 @@ const signS3PutRequest = ({
     sha256Hex(canonicalRequest),
   ].join('\n');
 
-  const kDate = hmacSha256(`AWS4${secretAccessKey}`, dateStamp);
+  const kDate = hmacSha256(`AWS4${sanitizedSecretAccessKey}`, dateStamp);
   const kRegion = hmacSha256(kDate, region);
   const kService = hmacSha256(kRegion, 's3');
   const kSigning = hmacSha256(kService, 'aws4_request');
   const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
 
-  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const authorization = `AWS4-HMAC-SHA256 Credential=${sanitizedAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
   const headers = {
     ...baseHeaders,
@@ -409,12 +408,13 @@ export const uploadDocumentToS3 = async ({
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
+    const rawText = await response.text().catch(() => '');
+    const responseText = typeof rawText === 'string' ? rawText.trim() : '';
     const error = new Error(
-      `S3 upload failed with status ${response.status}${text ? `: ${text}` : ''}`
+      `S3 upload failed with status ${response.status}${responseText ? `: ${responseText}` : ''}`
     );
     error.statusCode = response.status;
-    error.responseBody = text || null;
+    error.responseBody = responseText || null;
     throw error;
   }
 

@@ -131,13 +131,11 @@ const buildS3UploadError = (error) => {
   } else if (sanitizedErrorMessage) {
     detailParts.push(`Details: ${sanitizedErrorMessage}`);
   }
-
   if (suggestion) {
     detailParts.push(suggestion);
   }
 
   const friendlyMessage = [baseMessage, guidance, detailParts.join(' ')].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-
   const friendlyError = new Error(friendlyMessage);
   const fallbackStatus = error?.$metadata?.httpStatusCode || error?.statusCode || 502;
   const normalizedStatus = Number.isFinite(fallbackStatus) ? Number(fallbackStatus) : 502;

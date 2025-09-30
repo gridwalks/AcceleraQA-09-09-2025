@@ -155,6 +155,7 @@ const trimCredentialValue = (value) => {
 const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }) => {
   const sanitizedAccessKeyId = trimCredentialValue(accessKeyId);
   const sanitizedSecretAccessKey = trimCredentialValue(secretAccessKey);
+
   if (!sanitizedAccessKeyId || !sanitizedSecretAccessKey) {
     return null;
   }

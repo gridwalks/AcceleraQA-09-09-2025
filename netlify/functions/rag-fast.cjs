@@ -1,4 +1,4 @@
-// netlify/functions/rag-fast.js - Fixed with CommonJS syntax
+// netlify/functions/rag-fast.cjs - Fixed with CommonJS syntax
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',

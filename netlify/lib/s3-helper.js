@@ -208,6 +208,7 @@ const getS3Credentials = () => {
     label: 'AWS',
     accessKeyEnv: 'AWS_ACCESS_KEY_ID',
     secretKeyEnv: 'AWS_SECRET_ACCESS_KEY',
+    sessionTokenEnv: 'AWS_SESSION_TOKEN',
   });
 
   const candidates = [ragCredentials, awsCredentials].filter(Boolean);

@@ -572,13 +572,23 @@ class RAGService {
 
         if (!response.ok) {
           let errorMessage = `Request failed with status ${response.status}`;
+          let errorDetails;
           try {
             const errorData = await response.json();
             errorMessage = errorData.error || errorData.message || errorMessage;
+            if (errorData && typeof errorData === 'object' && errorData.details) {
+              errorDetails = errorData.details;
+            }
           } catch (parseError) {
             console.warn('Failed to parse Neon error response:', parseError);
           }
-          throw new Error(errorMessage);
+
+          const requestError = new Error(errorMessage);
+          requestError.statusCode = response.status;
+          if (errorDetails) {
+            requestError.details = errorDetails;
+          }
+          throw requestError;
         }
 
         this.activeNeonEndpointIndex = i;

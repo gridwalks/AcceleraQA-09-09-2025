@@ -3,6 +3,11 @@ import crypto from 'crypto';
 let cachedPrefix = null;
 let loggedBucket = null;
 
+const logEnvVariable = (name, value) => {
+  const displayValue = value == null ? '(not set)' : value;
+  console.log(`[S3 Config] ${name}=${displayValue}`);
+};
+
 const DEFAULT_PREFIX = 'rag-documents';
 
 const logResolvedBucket = (bucket) => {
@@ -33,14 +38,22 @@ const sanitizePathPrefix = (prefix) => {
 
 const getConfiguredPrefix = () => {
   if (cachedPrefix !== null) return cachedPrefix;
+  const candidates = [
+    { name: 'RAG_S3_PREFIX', value: process.env.RAG_S3_PREFIX },
+    { name: 'S3_PREFIX', value: process.env.S3_PREFIX },
+  ];
 
-  const candidates = [process.env.RAG_S3_PREFIX, process.env.S3_PREFIX];
+  for (const { name, value } of candidates) {
+    logEnvVariable(name, value);
 
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string') continue;
+    if (typeof value !== 'string') {
+      continue;
+    }
 
-    const trimmed = candidate.trim().replace(/^\/+|\/+$/g, '');
-    if (!trimmed) continue;
+    const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
+    if (!trimmed) {
+      continue;
+    }
 
     const sanitized = sanitizePathPrefix(trimmed);
     if (sanitized) {
@@ -54,10 +67,17 @@ const getConfiguredPrefix = () => {
 };
 
 const getConfiguredBucket = () => {
-  const bucket =
-    process.env.RAG_S3_BUCKET ||
-    process.env.S3_BUCKET ||
-    process.env.AWS_S3_BUCKET;
+  const sources = [
+    { name: 'RAG_S3_BUCKET', value: process.env.RAG_S3_BUCKET },
+    { name: 'S3_BUCKET', value: process.env.S3_BUCKET },
+    { name: 'AWS_S3_BUCKET', value: process.env.AWS_S3_BUCKET },
+  ];
+
+  for (const { name, value } of sources) {
+    logEnvVariable(name, value);
+  }
+
+  const bucket = sources.find(source => source.value)?.value;
 
   if (!bucket) {
     throw new Error(
@@ -70,10 +90,17 @@ const getConfiguredBucket = () => {
 };
 
 const getConfiguredRegion = () => {
-  const region =
-    process.env.RAG_S3_REGION ||
-    process.env.AWS_REGION ||
-    process.env.AWS_DEFAULT_REGION;
+  const sources = [
+    { name: 'RAG_S3_REGION', value: process.env.RAG_S3_REGION },
+    { name: 'AWS_REGION', value: process.env.AWS_REGION },
+    { name: 'AWS_DEFAULT_REGION', value: process.env.AWS_DEFAULT_REGION },
+  ];
+
+  for (const { name, value } of sources) {
+    logEnvVariable(name, value);
+  }
+
+  const region = sources.find(source => source.value)?.value;
 
   if (!region) {
     throw new Error(
@@ -99,6 +126,7 @@ const trimCredentialValue = (value) => {
   const trimmed = String(value).trim();
   return trimmed ? trimmed : null;
 };
+
 const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }) => {
   const sanitizedAccessKeyId = trimCredentialValue(accessKeyId);
   const sanitizedSecretAccessKey = trimCredentialValue(secretAccessKey);
@@ -112,19 +140,53 @@ const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }
     secretAccessKey: sanitizedSecretAccessKey,
     sessionToken: trimCredentialValue(sessionToken),
   };
+
+};
+
+const readCredentialCandidate = ({
+  label,
+  accessKeyEnv,
+  secretKeyEnv,
+  sessionTokenEnv,
+}) => {
+  const accessKeyId = process.env[accessKeyEnv];
+  const secretAccessKey = process.env[secretKeyEnv];
+  const sessionToken = process.env[sessionTokenEnv];
+
+  logEnvVariable(accessKeyEnv, accessKeyId);
+  logEnvVariable(secretKeyEnv, secretAccessKey);
+  logEnvVariable(sessionTokenEnv, sessionToken);
+
+  const candidate = buildCredentialCandidate({
+    accessKeyId,
+    secretAccessKey,
+    sessionToken,
+  });
+
+  if (!candidate) {
+    return null;
+  }
+
+  return {
+    ...candidate,
+    source: label,
+  };
 };
 
 const getS3Credentials = () => {
-  const ragCredentials = buildCredentialCandidate({
-    accessKeyId: process.env.RAG_S3_ACCESS_KEY_ID,
-    secretAccessKey: process.env.RAG_S3_SECRET_ACCESS_KEY,
-    sessionToken: process.env.RAG_S3_SESSION_TOKEN,
+  const ragCredentials = readCredentialCandidate({
+    label: 'RAG_S3',
+    accessKeyEnv: 'RAG_S3_ACCESS_KEY_ID',
+    secretKeyEnv: 'RAG_S3_SECRET_ACCESS_KEY',
+    sessionTokenEnv: 'RAG_S3_SESSION_TOKEN',
   });
 
-  const awsCredentials = buildCredentialCandidate({
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
+  const awsCredentials = readCredentialCandidate({
+    label: 'AWS',
+    accessKeyEnv: 'AWS_ACCESS_KEY_ID',
+    secretKeyEnv: 'AWS_SECRET_ACCESS_KEY',
+    sessionTokenEnv: 'AWS_SESSION_TOKEN',
+
   });
 
   const candidates = [ragCredentials, awsCredentials].filter(Boolean);
@@ -135,6 +197,8 @@ const getS3Credentials = () => {
 
   const candidateWithSessionToken = candidates.find(candidate => candidate.sessionToken);
   const selected = candidateWithSessionToken || candidates[0];
+
+  console.log(`[S3 Config] Selected credential source: ${selected.source}`);
 
   return {
     accessKeyId: selected.accessKeyId,

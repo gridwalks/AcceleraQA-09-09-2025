@@ -1,7 +1,7 @@
 
 import { neon, neonConfig } from '@neondatabase/serverless';
 
-import { uploadDocumentToOneDrive, __internal as onedriveInternal } from '../lib/onedrive-helper.js';
+import { uploadDocumentToS3, __internal as s3Internal } from '../lib/s3-helper.js';
 
 export const config = {
   nodeRuntime: 'nodejs18.x',
@@ -17,12 +17,13 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-const getDriveId = () =>
-  process.env.RAG_ONEDRIVE_DRIVE_ID ||
-  process.env.ONEDRIVE_DRIVE_ID ||
+const getBucketName = () =>
+  process.env.RAG_S3_BUCKET ||
+  process.env.S3_BUCKET ||
+  process.env.AWS_S3_BUCKET ||
   '';
 
-const getRootPath = () => onedriveInternal.getConfiguredRootPath();
+const getPrefix = () => s3Internal.getConfiguredPrefix();
 
 const isAccessDeniedError = (error) => {
   if (!error || typeof error !== 'object') {
@@ -41,24 +42,24 @@ const isAccessDeniedError = (error) => {
   );
 };
 
-const buildOneDriveUploadError = (error) => {
-  const driveId = getDriveId();
-  const rootPath = getRootPath();
+const buildS3UploadError = (error) => {
+  const bucket = getBucketName();
+  const prefix = getPrefix();
   const accessDenied = isAccessDeniedError(error);
   const baseMessage = accessDenied
-    ? 'Access denied when uploading document to OneDrive.'
-    : 'Failed to upload document to OneDrive.';
+    ? 'Access denied when uploading document to S3.'
+    : 'Failed to upload document to S3.';
 
   const guidanceParts = [];
-  if (driveId) {
-    guidanceParts.push(`drive "${driveId}"`);
+  if (bucket) {
+    guidanceParts.push(`bucket "${bucket}"`);
   }
-  if (rootPath) {
-    guidanceParts.push(`root path "${rootPath}"`);
+  if (prefix) {
+    guidanceParts.push(`prefix "${prefix}"`);
   }
 
   const guidance = guidanceParts.length
-    ? ` Confirm the configured Microsoft Graph permissions allow uploading to ${guidanceParts.join(' and ')}.`
+    ? ` Confirm the configured AWS permissions allow uploading to ${guidanceParts.join(' and ')}.`
     : '';
 
   const detail = error && typeof error.message === 'string' && error.message
@@ -70,6 +71,26 @@ const buildOneDriveUploadError = (error) => {
   const normalizedStatus = Number.isFinite(fallbackStatus) ? Number(fallbackStatus) : 502;
   friendlyError.statusCode = accessDenied ? 403 : Math.min(Math.max(normalizedStatus, 400), 599);
   return friendlyError;
+};
+
+const logS3UploadFailure = (error) => {
+  const statusCode = error?.$metadata?.httpStatusCode || error?.statusCode || null;
+  const responseBody = typeof error?.responseBody === 'string' && error.responseBody.trim()
+    ? error.responseBody
+    : null;
+  const code = error?.code || error?.name || null;
+
+  const details = {
+    message: error?.message || 'Unknown S3 upload error',
+    statusCode,
+    responseBody,
+  };
+
+  if (code) {
+    details.code = code;
+  }
+
+  console.error('Failed to upload document content to S3', { ...details, error });
 };
 
 let sqlClientPromise = null;
@@ -997,7 +1018,7 @@ async function handleUpload(sql, userId, payload = {}) {
   let storageLocation = null;
   if (contentBuffer && contentBuffer.length > 0) {
     try {
-      storageLocation = await uploadDocumentToOneDrive({
+      storageLocation = await uploadDocumentToS3({
         body: contentBuffer,
         contentType: mimeType || 'application/octet-stream',
         userId,
@@ -1009,18 +1030,18 @@ async function handleUpload(sql, userId, payload = {}) {
         },
       });
     } catch (error) {
-      console.error('Failed to upload document content to OneDrive', error);
-      throw buildOneDriveUploadError(error);
+      logS3UploadFailure(error);
+      throw buildS3UploadError(error);
     }
 
     metadata.storage = {
-      provider: 'onedrive',
-      driveId: storageLocation.driveId,
-      siteId: storageLocation.siteId,
-      path: storageLocation.path,
-      itemId: storageLocation.itemId,
+      provider: 's3',
+      bucket: storageLocation.bucket,
+      region: storageLocation.region,
+      key: storageLocation.key,
       url: storageLocation.url,
       etag: storageLocation.etag || null,
+      versionId: storageLocation.versionId || null,
       size: storageLocation.size ?? contentBuffer.length,
     };
   }

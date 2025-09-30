@@ -143,30 +143,6 @@ const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }
 
 };
 
-const trimCredentialValue = (value) => {
-  if (value == null) {
-    return null;
-  }
-
-  const trimmed = String(value).trim();
-  return trimmed ? trimmed : null;
-};
-
-const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }) => {
-  const sanitizedAccessKeyId = trimCredentialValue(accessKeyId);
-  const sanitizedSecretAccessKey = trimCredentialValue(secretAccessKey);
-
-  if (!sanitizedAccessKeyId || !sanitizedSecretAccessKey) {
-    return null;
-  }
-
-  return {
-    accessKeyId: sanitizedAccessKeyId,
-    secretAccessKey: sanitizedSecretAccessKey,
-    sessionToken: trimCredentialValue(sessionToken),
-  };
-};
-
 const readCredentialCandidate = ({
   label,
   accessKeyEnv,

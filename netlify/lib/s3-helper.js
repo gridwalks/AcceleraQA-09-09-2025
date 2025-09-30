@@ -14,41 +14,30 @@ const logResolvedBucket = (bucket) => {
   if (!bucket || loggedBucket === bucket) {
     return;
   }
-
   console.log(`S3 bucket configured: ${bucket}`);
   loggedBucket = bucket;
 };
 
 const sanitizePathSegment = (value, fallback) => {
-  if (typeof value !== 'string') {
-    return fallback;
-  }
+  if (typeof value !== 'string') return fallback;
 
   const trimmed = value.trim();
-  if (!trimmed) {
-    return fallback;
-  }
+  if (!trimmed) return fallback;
 
   return trimmed.replace(/[^a-zA-Z0-9._\-\/]+/g, '-');
 };
 
 const sanitizePathPrefix = (prefix) => {
-  if (typeof prefix !== 'string') {
-    return '';
-  }
-
+  if (typeof prefix !== 'string') return '';
   return prefix
     .split('/')
-    .map(segment => sanitizePathSegment(segment, ''))
+    .map((segment) => sanitizePathSegment(segment, ''))
     .filter(Boolean)
     .join('/');
 };
 
 const getConfiguredPrefix = () => {
-  if (cachedPrefix !== null) {
-    return cachedPrefix;
-  }
-
+  if (cachedPrefix !== null) return cachedPrefix;
   const candidates = [
     { name: 'RAG_S3_PREFIX', value: process.env.RAG_S3_PREFIX },
     { name: 'S3_PREFIX', value: process.env.S3_PREFIX },
@@ -91,7 +80,9 @@ const getConfiguredBucket = () => {
   const bucket = sources.find(source => source.value)?.value;
 
   if (!bucket) {
-    throw new Error('RAG_S3_BUCKET (or S3_BUCKET/AWS_S3_BUCKET) is required for document storage');
+    throw new Error(
+      'RAG_S3_BUCKET (or S3_BUCKET/AWS_S3_BUCKET) is required for document storage'
+    );
   }
 
   logResolvedBucket(bucket);
@@ -112,7 +103,9 @@ const getConfiguredRegion = () => {
   const region = sources.find(source => source.value)?.value;
 
   if (!region) {
-    throw new Error('RAG_S3_REGION (or AWS_REGION/AWS_DEFAULT_REGION) is required for document storage');
+    throw new Error(
+      'RAG_S3_REGION (or AWS_REGION/AWS_DEFAULT_REGION) is required for document storage'
+    );
   }
 
   return region;
@@ -122,12 +115,7 @@ const resolveS3Config = () => {
   const bucket = getConfiguredBucket();
   const region = getConfiguredRegion();
   const prefix = getConfiguredPrefix();
-
-  return {
-    bucket,
-    region,
-    prefix,
-  };
+  return { bucket, region, prefix };
 };
 
 const trimCredentialValue = (value) => {
@@ -152,6 +140,7 @@ const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }
     secretAccessKey: sanitizedSecretAccessKey,
     sessionToken: trimCredentialValue(sessionToken),
   };
+
 };
 
 const readCredentialCandidate = ({
@@ -197,6 +186,7 @@ const getS3Credentials = () => {
     accessKeyEnv: 'AWS_ACCESS_KEY_ID',
     secretKeyEnv: 'AWS_SECRET_ACCESS_KEY',
     sessionTokenEnv: 'AWS_SESSION_TOKEN',
+
   });
 
   const candidates = [ragCredentials, awsCredentials].filter(Boolean);
@@ -228,7 +218,10 @@ const buildObjectKey = ({ userId, documentId, filename }) => {
   const normalizedUserId = sanitizePathSegment(userId, 'anonymous');
   segments.push(normalizedUserId);
 
-  const normalizedDocumentId = sanitizePathSegment(documentId, Date.now().toString(36));
+  const normalizedDocumentId = sanitizePathSegment(
+    documentId,
+    Date.now().toString(36)
+  );
   segments.push(normalizedDocumentId);
 
   const safeFilename = sanitizePathSegment(filename, 'document');
@@ -241,7 +234,7 @@ const buildObjectKey = ({ userId, documentId, filename }) => {
 const encodeS3Key = (key) =>
   key
     .split('/')
-    .map(part => encodeURIComponent(part))
+    .map((part) => encodeURIComponent(part))
     .join('/');
 
 const buildObjectUrl = ({ bucket, region, key }) => {
@@ -253,45 +246,33 @@ const buildObjectUrl = ({ bucket, region, key }) => {
 };
 
 const normalizeSize = (body) => {
-  if (Buffer.isBuffer(body)) {
-    return body.length;
-  }
-  if (ArrayBuffer.isView(body)) {
-    return body.byteLength;
-  }
-  if (body instanceof ArrayBuffer) {
-    return body.byteLength;
-  }
-  if (typeof body === 'string') {
-    return Buffer.byteLength(body);
-  }
+  if (Buffer.isBuffer(body)) return body.length;
+  if (ArrayBuffer.isView(body)) return body.byteLength;
+  if (body instanceof ArrayBuffer) return body.byteLength;
+  if (typeof body === 'string') return Buffer.byteLength(body);
   return null;
 };
 
 const normalizeMetadata = (metadata) => {
-  if (!metadata || typeof metadata !== 'object') {
-    return {};
-  }
+  if (!metadata || typeof metadata !== 'object') return {};
 
   const normalized = {};
   for (const [key, value] of Object.entries(metadata)) {
-    if (typeof key !== 'string') {
-      continue;
-    }
+    if (typeof key !== 'string') continue;
 
     const sanitizedKey = key.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
-    if (!sanitizedKey) {
-      continue;
-    }
+    if (!sanitizedKey) continue;
 
-    if (value == null) {
-      continue;
-    }
+    if (value == null) continue;
 
     let stringValue;
     if (typeof value === 'string') {
       stringValue = value;
-    } else if (typeof value === 'number' || typeof value === 'boolean' || value instanceof Date) {
+    } else if (
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      value instanceof Date
+    ) {
       stringValue = value instanceof Date ? value.toISOString() : String(value);
     } else {
       try {
@@ -321,8 +302,10 @@ const toAmzDate = (date) => {
   };
 };
 
-const sha256Hex = (value) => crypto.createHash('sha256').update(value).digest('hex');
-const hmacSha256 = (key, value) => crypto.createHmac('sha256', key).update(value).digest();
+const sha256Hex = (value) =>
+  crypto.createHash('sha256').update(value).digest('hex');
+const hmacSha256 = (key, value) =>
+  crypto.createHmac('sha256', key).update(value).digest();
 
 const signS3PutRequest = ({
   bucket,
@@ -341,7 +324,10 @@ const signS3PutRequest = ({
   const { amzDate, dateStamp } = toAmzDate(new Date());
   const payloadHash = sha256Hex(body);
 
-  const host = region === 'us-east-1' ? `${bucket}.s3.amazonaws.com` : `${bucket}.s3.${region}.amazonaws.com`;
+  const host =
+    region === 'us-east-1'
+      ? `${bucket}.s3.amazonaws.com`
+      : `${bucket}.s3.${region}.amazonaws.com`;
   const canonicalUri = `/${encodeS3Key(key)}`;
   const canonicalQueryString = '';
 
@@ -356,15 +342,18 @@ const signS3PutRequest = ({
     baseHeaders['x-amz-security-token'] = sanitizedSessionToken;
   }
 
-  const metadataHeaders = Object.entries(metadata).reduce((acc, [metaKey, metaValue]) => {
-    acc[`x-amz-meta-${metaKey}`] = metaValue;
-    return acc;
-  }, {});
+  const metadataHeaders = Object.entries(metadata).reduce(
+    (acc, [metaKey, metaValue]) => {
+      acc[`x-amz-meta-${metaKey}`] = metaValue;
+      return acc;
+    },
+    {}
+  );
 
   const allHeaders = { ...baseHeaders, ...metadataHeaders };
   const sortedHeaderKeys = Object.keys(allHeaders).sort();
   const canonicalHeaders = sortedHeaderKeys
-    .map(keyName => `${keyName}:${allHeaders[keyName].toString()}`)
+    .map((keyName) => `${keyName}:${allHeaders[keyName].toString()}`)
     .join('\n');
 
   const signedHeaders = sortedHeaderKeys.join(';');
@@ -390,7 +379,10 @@ const signS3PutRequest = ({
   const kRegion = hmacSha256(kDate, region);
   const kService = hmacSha256(kRegion, 's3');
   const kSigning = hmacSha256(kService, 'aws4_request');
-  const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+  const signature = crypto
+    .createHmac('sha256', kSigning)
+    .update(stringToSign)
+    .digest('hex');
 
   const authorization = `AWS4-HMAC-SHA256 Credential=${sanitizedAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
@@ -407,18 +399,12 @@ const signS3PutRequest = ({
 };
 
 const ensureBufferBody = (body) => {
-  if (Buffer.isBuffer(body)) {
-    return body;
-  }
+  if (Buffer.isBuffer(body)) return body;
   if (ArrayBuffer.isView(body)) {
     return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
   }
-  if (body instanceof ArrayBuffer) {
-    return Buffer.from(body);
-  }
-  if (typeof body === 'string') {
-    return Buffer.from(body, 'utf8');
-  }
+  if (body instanceof ArrayBuffer) return Buffer.from(body);
+  if (typeof body === 'string') return Buffer.from(body, 'utf8');
   throw new Error('Unsupported body type for S3 upload');
 };
 

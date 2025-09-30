@@ -102,6 +102,9 @@ describe('S3 credential normalization', () => {
     process.env.RAG_S3_ACCESS_KEY_ID = 'AKIAEXAMPLE   ';
     process.env.RAG_S3_SECRET_ACCESS_KEY = 'secret-key   ';
     process.env.RAG_S3_SESSION_TOKEN = 'session-token   ';
+    delete process.env.AWS_ACCESS_KEY_ID;
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    delete process.env.AWS_SESSION_TOKEN;
   });
 
   afterEach(() => {
@@ -111,6 +114,9 @@ describe('S3 credential normalization', () => {
     delete process.env.RAG_S3_ACCESS_KEY_ID;
     delete process.env.RAG_S3_SECRET_ACCESS_KEY;
     delete process.env.RAG_S3_SESSION_TOKEN;
+    delete process.env.AWS_ACCESS_KEY_ID;
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    delete process.env.AWS_SESSION_TOKEN;
     jest.resetModules();
   });
 
@@ -139,6 +145,71 @@ describe('S3 credential normalization', () => {
     expect(requestOptions.headers.Authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE\//);
     expect(requestOptions.headers.Authorization).not.toContain('Credential=AKIAEXAMPLE   /');
     expect(requestOptions.headers.Authorization).toBe(requestOptions.headers.Authorization.trim());
+  });
+
+  test('propagates trimmed credentials in headers and error payloads on failure', async () => {
+    const responseBody = 'InvalidToken: session-token   ';
+    const textMock = jest.fn().mockResolvedValue(responseBody);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: textMock,
+      headers: { get: () => null },
+    });
+
+    const module = await import('./s3-helper.js');
+
+    await expect(
+      module.uploadDocumentToS3({
+        body: Buffer.from('payload'),
+        contentType: 'application/octet-stream',
+        userId: 'user',
+        documentId: 'doc',
+        filename: 'file.txt',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      responseBody: 'InvalidToken: session-token',
+    });
+
+    expect(textMock).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [, requestOptions] = global.fetch.mock.calls[0];
+    expect(requestOptions.headers['x-amz-security-token']).toBe('session-token');
+    expect(requestOptions.headers.Authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE\//);
+    expect(requestOptions.headers.Authorization).not.toContain('Credential=AKIAEXAMPLE   /');
+  });
+
+  test('prefers complete credential set when fallback prefix supplies session token', async () => {
+    process.env.RAG_S3_ACCESS_KEY_ID = 'RAGKEY   ';
+    process.env.RAG_S3_SECRET_ACCESS_KEY = 'rag-secret   ';
+    delete process.env.RAG_S3_SESSION_TOKEN;
+    process.env.AWS_ACCESS_KEY_ID = 'AKIAOTHER   ';
+    process.env.AWS_SECRET_ACCESS_KEY = 'other-secret   ';
+    process.env.AWS_SESSION_TOKEN = 'other-token   ';
+
+    const okResponse = {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+    };
+    global.fetch = jest.fn().mockResolvedValue(okResponse);
+
+    const module = await import('./s3-helper.js');
+
+    await module.uploadDocumentToS3({
+      body: Buffer.from('payload'),
+      contentType: 'text/plain',
+      userId: 'user',
+      documentId: 'doc',
+      filename: 'file.txt',
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [, requestOptions] = global.fetch.mock.calls[0];
+    expect(requestOptions.headers['x-amz-security-token']).toBe('other-token');
+    expect(requestOptions.headers.Authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIAOTHER\//);
+    expect(requestOptions.headers.Authorization).not.toContain('Credential=RAGKEY');
   });
 });
 

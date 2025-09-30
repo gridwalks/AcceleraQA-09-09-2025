@@ -1,4 +1,4 @@
-// netlify/functions/test-blob.js - Test Netlify Blob connectivity
+// netlify/functions/test-blob.cjs - Test Netlify Blob connectivity
 const { getStore } = require('@netlify/blobs');
 
 const headers = {

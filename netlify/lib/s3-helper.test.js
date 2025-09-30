@@ -92,3 +92,53 @@ describe('uploadDocumentToS3 error handling', () => {
   });
 });
 
+describe('S3 credential normalization', () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.RAG_S3_BUCKET = 'test-bucket';
+    process.env.RAG_S3_REGION = 'us-east-1';
+    process.env.RAG_S3_ACCESS_KEY_ID = 'AKIAEXAMPLE   ';
+    process.env.RAG_S3_SECRET_ACCESS_KEY = 'secret-key   ';
+    process.env.RAG_S3_SESSION_TOKEN = 'session-token   ';
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    delete process.env.RAG_S3_BUCKET;
+    delete process.env.RAG_S3_REGION;
+    delete process.env.RAG_S3_ACCESS_KEY_ID;
+    delete process.env.RAG_S3_SECRET_ACCESS_KEY;
+    delete process.env.RAG_S3_SESSION_TOKEN;
+    jest.resetModules();
+  });
+
+  test('trims whitespace from credentials before signing request', async () => {
+    const okResponse = {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+    };
+    global.fetch = jest.fn().mockResolvedValue(okResponse);
+
+    const module = await import('./s3-helper.js');
+
+    const result = await module.uploadDocumentToS3({
+      body: Buffer.from('payload'),
+      contentType: 'text/plain',
+      userId: 'user',
+      documentId: 'doc',
+      filename: 'file.txt',
+    });
+
+    expect(result.bucket).toBe('test-bucket');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [, requestOptions] = global.fetch.mock.calls[0];
+    expect(requestOptions.headers['x-amz-security-token']).toBe('session-token');
+    expect(requestOptions.headers.Authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE\//);
+    expect(requestOptions.headers.Authorization).not.toContain('Credential=AKIAEXAMPLE   /');
+    expect(requestOptions.headers.Authorization).toBe(requestOptions.headers.Authorization.trim());
+  });
+});
+

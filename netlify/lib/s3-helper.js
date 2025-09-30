@@ -109,10 +109,39 @@ const resolveS3Config = () => {
   };
 };
 
+const coalesceCredential = (...values) => {
+  for (const value of values) {
+    if (value == null) {
+      continue;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+      continue;
+    }
+
+    return value;
+  }
+
+  return null;
+};
+
 const getS3Credentials = () => {
-  const accessKeyId = process.env.RAG_S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.RAG_S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
-  const sessionToken = process.env.RAG_S3_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN;
+  const accessKeyId = coalesceCredential(
+    process.env.RAG_S3_ACCESS_KEY_ID,
+    process.env.AWS_ACCESS_KEY_ID,
+  );
+  const secretAccessKey = coalesceCredential(
+    process.env.RAG_S3_SECRET_ACCESS_KEY,
+    process.env.AWS_SECRET_ACCESS_KEY,
+  );
+  const sessionToken = coalesceCredential(
+    process.env.RAG_S3_SESSION_TOKEN,
+    process.env.AWS_SESSION_TOKEN,
+  );
 
   if (!accessKeyId || !secretAccessKey) {
     throw new Error('S3 credentials are required: set RAG_S3_ACCESS_KEY_ID/AWS_ACCESS_KEY_ID and RAG_S3_SECRET_ACCESS_KEY/AWS_SECRET_ACCESS_KEY');
@@ -268,7 +297,7 @@ const signS3PutRequest = ({
   const allHeaders = { ...baseHeaders, ...metadataHeaders };
   const sortedHeaderKeys = Object.keys(allHeaders).sort();
   const canonicalHeaders = sortedHeaderKeys
-    .map(keyName => `${keyName}:${allHeaders[keyName].toString().trim()}`)
+    .map(keyName => `${keyName}:${allHeaders[keyName].toString()}`)
     .join('\n');
 
   const signedHeaders = sortedHeaderKeys.join(';');

@@ -92,11 +92,13 @@ const resolveS3Config = () => {
 };
 
 const trimCredentialValue = (value) => {
-  if (value == null) return null;
+  if (value == null) {
+    return null;
+  }
+
   const trimmed = String(value).trim();
   return trimmed ? trimmed : null;
 };
-
 const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }) => {
   const sanitizedAccessKeyId = trimCredentialValue(accessKeyId);
   const sanitizedSecretAccessKey = trimCredentialValue(secretAccessKey);
@@ -128,14 +130,11 @@ const getS3Credentials = () => {
   const candidates = [ragCredentials, awsCredentials].filter(Boolean);
 
   if (!candidates.length) {
-    throw new Error(
-      'S3 credentials are required: set RAG_S3_ACCESS_KEY_ID/AWS_ACCESS_KEY_ID and RAG_S3_SECRET_ACCESS_KEY/AWS_SECRET_ACCESS_KEY'
-    );
+    throw new Error('S3 credentials are required: set RAG_S3_ACCESS_KEY_ID/AWS_ACCESS_KEY_ID and RAG_S3_SECRET_ACCESS_KEY/AWS_SECRET_ACCESS_KEY');
   }
 
-  // Prefer a candidate that includes a session token (e.g., from STS), else take the first.
-  const selected =
-    candidates.find((c) => c.sessionToken) || candidates[0];
+  const candidateWithSessionToken = candidates.find(candidate => candidate.sessionToken);
+  const selected = candidateWithSessionToken || candidates[0];
 
   return {
     accessKeyId: selected.accessKeyId,
@@ -402,9 +401,7 @@ export const uploadDocumentToS3 = async ({
     const rawText = await response.text().catch(() => '');
     const responseText = typeof rawText === 'string' ? rawText.trim() : '';
     const error = new Error(
-      `S3 upload failed with status ${response.status}${
-        responseText ? `: ${responseText}` : ''
-      }`
+      `S3 upload failed with status ${response.status}${responseText ? `: ${responseText}` : ''}`
     );
     error.statusCode = response.status;
     error.responseBody = responseText || null;

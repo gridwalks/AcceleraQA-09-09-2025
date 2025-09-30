@@ -125,27 +125,27 @@ const coalesceCredential = (...values) => {
 };
 
 const getS3Credentials = () => {
-  const accessKeyId = coalesceCredential(
+  const sanitizedAccessKeyId = coalesceCredential(
     process.env.RAG_S3_ACCESS_KEY_ID,
     process.env.AWS_ACCESS_KEY_ID,
   );
-  const secretAccessKey = coalesceCredential(
+  const sanitizedSecretAccessKey = coalesceCredential(
     process.env.RAG_S3_SECRET_ACCESS_KEY,
     process.env.AWS_SECRET_ACCESS_KEY,
   );
-  const sessionToken = coalesceCredential(
+  const sanitizedSessionToken = coalesceCredential(
     process.env.RAG_S3_SESSION_TOKEN,
     process.env.AWS_SESSION_TOKEN,
   );
 
-  if (!accessKeyId || !secretAccessKey) {
+  if (!sanitizedAccessKeyId || !sanitizedSecretAccessKey) {
     throw new Error('S3 credentials are required: set RAG_S3_ACCESS_KEY_ID/AWS_ACCESS_KEY_ID and RAG_S3_SECRET_ACCESS_KEY/AWS_SECRET_ACCESS_KEY');
   }
 
   return {
-    accessKeyId,
-    secretAccessKey,
-    sessionToken: sessionToken || null,
+    accessKeyId: sanitizedAccessKeyId,
+    secretAccessKey: sanitizedSecretAccessKey,
+    sessionToken: sanitizedSessionToken || null,
   };
 };
 
@@ -265,10 +265,11 @@ const signS3PutRequest = ({
   metadata,
   credentials,
 }) => {
-  const { accessKeyId, secretAccessKey, sessionToken } = credentials;
-  const sanitizedAccessKeyId = typeof accessKeyId === 'string' ? accessKeyId.trim() : accessKeyId;
-  const sanitizedSecretAccessKey = typeof secretAccessKey === 'string' ? secretAccessKey.trim() : secretAccessKey;
-  const sanitizedSessionToken = typeof sessionToken === 'string' ? sessionToken.trim() : sessionToken;
+  const {
+    accessKeyId: sanitizedAccessKeyId,
+    secretAccessKey: sanitizedSecretAccessKey,
+    sessionToken: sanitizedSessionToken,
+  } = credentials;
   const { amzDate, dateStamp } = toAmzDate(new Date());
   const payloadHash = sha256Hex(body);
 

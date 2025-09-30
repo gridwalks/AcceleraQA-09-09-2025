@@ -42,6 +42,61 @@ const isAccessDeniedError = (error) => {
   );
 };
 
+const sanitizeS3Value = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed
+    .replace(/(<Token-\d+>)([^<]+)(<\/Token-\d+>)/gi, '$1[redacted]$3')
+    .replace(/session-token[^\s<]*/gi, 'session-token[redacted]')
+    .slice(0, 5000);
+};
+
+const parseS3XmlError = (body) => {
+  if (typeof body !== 'string') {
+    return null;
+  }
+
+  const trimmed = body.trim();
+  if (!trimmed.startsWith('<')) {
+    return null;
+  }
+
+  const extract = (tag) => {
+    const match = trimmed.match(new RegExp(`<${tag}>([\s\S]*?)<\/${tag}>`, 'i'));
+    return match ? match[1].trim() : null;
+  };
+
+  return {
+    code: extract('Code'),
+    message: extract('Message'),
+    requestId: extract('RequestId'),
+    hostId: extract('HostId'),
+  };
+};
+
+const buildS3Suggestion = ({ accessDenied, code }) => {
+  if (accessDenied) {
+    return 'Verify the function\'s IAM role or user can perform s3:PutObject on the configured bucket and prefix.';
+  }
+
+  if (code && /invalidtoken/i.test(code)) {
+    return 'Refresh the temporary AWS credentials (access key, secret, and session token) and redeploy the function.';
+  }
+
+  if (code && /signaturedoesnotmatch/i.test(code)) {
+    return 'Check that the AWS region, bucket, and credentials match the target S3 bucket, then retry the upload.';
+  }
+
+  return 'Confirm the AWS credentials, bucket, and prefix configuration are correct before retrying the upload.';
+};
+
 const buildS3UploadError = (error) => {
   const bucket = getBucketName();
   const prefix = getPrefix();
@@ -62,14 +117,46 @@ const buildS3UploadError = (error) => {
     ? ` Confirm the configured AWS permissions allow uploading to ${guidanceParts.join(' and ')}.`
     : '';
 
-  const detail = error && typeof error.message === 'string' && error.message
-    ? ` Details: ${error.message}`
-    : '';
+  const sanitizedResponseBody = sanitizeS3Value(error?.responseBody);
+  const parsedResponse = parseS3XmlError(error?.responseBody);
+  const parsedCode = parsedResponse?.code || error?.code || error?.name || null;
+  const sanitizedErrorMessage = sanitizeS3Value(error?.message);
+  const suggestion = buildS3Suggestion({ accessDenied, code: parsedCode });
 
-  const friendlyError = new Error(`${baseMessage}${guidance}${detail}`.trim());
+  const detailParts = [];
+  if (parsedResponse?.message) {
+    detailParts.push(`S3 message: ${parsedResponse.message}`);
+  } else if (sanitizedResponseBody) {
+    detailParts.push(`S3 response: ${sanitizedResponseBody}`);
+  } else if (sanitizedErrorMessage) {
+    detailParts.push(`Details: ${sanitizedErrorMessage}`);
+  }
+
+  if (suggestion) {
+    detailParts.push(suggestion);
+  }
+
+  const friendlyMessage = [baseMessage, guidance, detailParts.join(' ')].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+  const friendlyError = new Error(friendlyMessage);
   const fallbackStatus = error?.$metadata?.httpStatusCode || error?.statusCode || 502;
   const normalizedStatus = Number.isFinite(fallbackStatus) ? Number(fallbackStatus) : 502;
-  friendlyError.statusCode = accessDenied ? 403 : Math.min(Math.max(normalizedStatus, 400), 599);
+  const resolvedStatus = accessDenied ? 403 : Math.min(Math.max(normalizedStatus, 400), 599);
+  friendlyError.statusCode = resolvedStatus;
+  friendlyError.details = {
+    provider: 's3',
+    bucket: bucket || null,
+    prefix: prefix || null,
+    statusCode: resolvedStatus,
+    code: parsedCode || null,
+    suggestion: suggestion || null,
+    responseBody: sanitizedResponseBody,
+    s3Message: parsedResponse?.message || null,
+    requestId: parsedResponse?.requestId || null,
+    hostId: parsedResponse?.hostId || null,
+    rawMessage: sanitizedErrorMessage,
+    timestamp: new Date().toISOString(),
+  };
   return friendlyError;
 };
 
@@ -1311,6 +1398,7 @@ export const handler = async (event) => {
       headers,
       body: JSON.stringify({
         error: error.message || 'Unexpected server error',
+        ...(error.details ? { details: error.details } : {}),
       }),
     };
   }

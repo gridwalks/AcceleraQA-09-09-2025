@@ -17,7 +17,9 @@ import {
   ExternalLink,
   Pencil,
   Save,
-  PlusCircle
+  PlusCircle,
+  AlertTriangle,
+  Copy
 } from 'lucide-react';
 import ragService from '../services/ragService';
 import { getToken } from '../services/authService';
@@ -132,6 +134,239 @@ const resolveExternalResourceId = (resource) => {
   );
 };
 
+const formatS3Timestamp = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleString();
+  } catch (error) {
+    console.warn('Failed to format S3 error timestamp:', error);
+    return value;
+  }
+};
+
+const buildS3ClipboardText = (details) => {
+  if (!details || typeof details !== 'object') {
+    return 'S3 upload error details unavailable.';
+  }
+
+  const lines = [
+    `Message: ${details.message || 'S3 upload failed.'}`,
+  ];
+
+  if (details.statusCode) {
+    lines.push(`Status Code: ${details.statusCode}`);
+  }
+  if (details.code) {
+    lines.push(`AWS Error Code: ${details.code}`);
+  }
+  if (details.bucket) {
+    lines.push(`Bucket: ${details.bucket}`);
+  }
+  if (details.prefix) {
+    lines.push(`Prefix: ${details.prefix}`);
+  }
+  if (details.requestId) {
+    lines.push(`Request ID: ${details.requestId}`);
+  }
+  if (details.hostId) {
+    lines.push(`Host ID: ${details.hostId}`);
+  }
+  if (details.s3Message) {
+    lines.push(`S3 Message: ${details.s3Message}`);
+  }
+  if (details.suggestion) {
+    lines.push(`Suggestion: ${details.suggestion}`);
+  }
+  if (details.timestamp) {
+    lines.push(`Captured: ${formatS3Timestamp(details.timestamp)}`);
+  }
+  if (details.responseBody) {
+    lines.push('Response Body:');
+    lines.push(details.responseBody);
+  }
+
+  return lines.join('\n');
+};
+
+const extractS3ErrorDetails = (error) => {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const message = typeof error.message === 'string' ? error.message : 'S3 upload failed.';
+  const details = error.details && typeof error.details === 'object' ? error.details : null;
+
+  if (!details) {
+    if (!/\bS3\b/i.test(message)) {
+      return null;
+    }
+
+    return {
+      message,
+      statusCode: error.statusCode || null,
+    };
+  }
+
+  if (details.provider && details.provider !== 's3') {
+    return null;
+  }
+
+  return {
+    message,
+    statusCode: details.statusCode ?? error.statusCode ?? null,
+    code: details.code ?? null,
+    bucket: details.bucket ?? null,
+    prefix: details.prefix ?? null,
+    suggestion: details.suggestion ?? null,
+    responseBody: details.responseBody ?? null,
+    s3Message: details.s3Message ?? null,
+    requestId: details.requestId ?? null,
+    hostId: details.hostId ?? null,
+    timestamp: details.timestamp ?? null,
+    rawMessage: details.rawMessage ?? null,
+  };
+};
+
+const S3ErrorModal = ({ isOpen, onClose, details }) => {
+  const [copyFeedback, setCopyFeedback] = useState(null);
+
+  useEffect(() => {
+    if (!copyFeedback) {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => setCopyFeedback(null), 2000);
+    return () => clearTimeout(timeoutId);
+  }, [copyFeedback]);
+
+  if (!isOpen || !details) {
+    return null;
+  }
+
+  const formattedTimestamp = formatS3Timestamp(details.timestamp);
+  const detailItems = [
+    { label: 'Status Code', value: details.statusCode },
+    { label: 'AWS Error Code', value: details.code },
+    { label: 'S3 Message', value: details.s3Message },
+    { label: 'Bucket', value: details.bucket },
+    { label: 'Prefix', value: details.prefix },
+    { label: 'Request ID', value: details.requestId },
+    { label: 'Host ID', value: details.hostId },
+  ].filter(item => item.value);
+
+  const handleCopy = async () => {
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        setCopyFeedback('Clipboard unavailable');
+        return;
+      }
+
+      await navigator.clipboard.writeText(buildS3ClipboardText(details));
+      setCopyFeedback('Copied!');
+    } catch (copyError) {
+      console.error('Failed to copy S3 error details:', copyError);
+      setCopyFeedback('Copy failed');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div className="relative w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5">
+          <div className="flex items-center space-x-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">S3 Upload Error</h3>
+              <p className="text-sm text-gray-500">The document could not be stored in Amazon S3.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+            aria-label="Close S3 error details"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-5 px-6 py-5">
+          <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+            <p className="font-medium text-red-800">{details.message}</p>
+            {details.rawMessage && details.rawMessage !== details.message && (
+              <p className="mt-2 text-xs text-red-600">{details.rawMessage}</p>
+            )}
+          </div>
+
+          {details.suggestion && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              {details.suggestion}
+            </div>
+          )}
+
+          {detailItems.length > 0 && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {detailItems.map(item => (
+                <div key={item.label} className="rounded-lg border border-gray-200 p-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">{item.label}</p>
+                  <p className="mt-1 break-words text-sm text-gray-900">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {details.responseBody && (
+            <div>
+              <h4 className="mb-2 text-sm font-semibold text-gray-900">S3 Response</h4>
+              <pre className="max-h-56 overflow-auto rounded-lg border border-gray-200 bg-gray-900 p-4 text-xs text-gray-100">
+                {details.responseBody}
+              </pre>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-xs text-gray-500">
+            {formattedTimestamp ? `Captured ${formattedTimestamp}` : 'Captured just now'}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {copyFeedback && (
+              <span
+                className={`text-xs ${
+                  copyFeedback === 'Copied!'
+                    ? 'text-green-600'
+                    : copyFeedback === 'Clipboard unavailable'
+                      ? 'text-amber-600'
+                      : 'text-red-600'
+                }`}
+              >
+                {copyFeedback}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Copy error details
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RAGConfigurationPage = ({ user, onClose }) => {
   const [activeTab, setActiveTab] = useState('documents');
   const [documents, setDocuments] = useState([]);
@@ -157,7 +392,19 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const [editingTrainingForm, setEditingTrainingForm] = useState({ ...TRAINING_RESOURCE_FORM_INITIAL_STATE });
   const [isSavingTrainingEdit, setIsSavingTrainingEdit] = useState(false);
   const [trainingEditError, setTrainingEditError] = useState(null);
+  const [s3ErrorDetails, setS3ErrorDetails] = useState(null);
+  const [showS3ErrorModal, setShowS3ErrorModal] = useState(false);
   const isMountedRef = useRef(false);
+
+  const openS3ErrorModal = useCallback(() => {
+    if (s3ErrorDetails) {
+      setShowS3ErrorModal(true);
+    }
+  }, [s3ErrorDetails]);
+
+  const closeS3ErrorModal = useCallback(() => {
+    setShowS3ErrorModal(false);
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -603,17 +850,28 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
       const fileInput = document.getElementById('file-upload');
       if (fileInput) fileInput.value = '';
-      
+
       await loadDocuments();
-      
+      setS3ErrorDetails(null);
+      setShowS3ErrorModal(false);
+
     } catch (error) {
       console.error('Error uploading document:', error);
-      setUploadStatus({ 
-        type: 'error', 
-        message: `Upload failed: ${error.message}` 
+      setUploadStatus({
+        type: 'error',
+        message: `Upload failed: ${error.message}`
       });
       setError(`Upload failed: ${error.message}`);
-      
+
+      const s3Details = extractS3ErrorDetails(error);
+      if (s3Details) {
+        setS3ErrorDetails(s3Details);
+        setShowS3ErrorModal(true);
+      } else {
+        setS3ErrorDetails(null);
+        setShowS3ErrorModal(false);
+      }
+
       // If it's an auth error, check authentication
       if (error.message.includes('authentication') || error.message.includes('401')) {
         await checkAuthentication();
@@ -769,13 +1027,21 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="relative bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center space-x-3">
-            <Database className="h-6 w-6 text-blue-600" />
-            <div>
+    <>
+      {s3ErrorDetails && (
+        <S3ErrorModal
+          isOpen={showS3ErrorModal}
+          onClose={closeS3ErrorModal}
+          details={s3ErrorDetails}
+        />
+      )}
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="relative bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div className="flex items-center space-x-3">
+              <Database className="h-6 w-6 text-blue-600" />
+              <div>
               <h2 className="text-xl font-semibold text-gray-900">My Resources</h2>
               <p className="text-sm text-gray-500">Upload documents to power your workspace knowledge base</p>
             </div>
@@ -883,9 +1149,22 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     Check Authentication Status
                   </button>
                 )}
+                {s3ErrorDetails && (
+                  <button
+                    type="button"
+                    onClick={openS3ErrorModal}
+                    className="mt-2 text-sm text-red-600 underline transition-colors hover:text-red-800"
+                  >
+                    View S3 error details
+                  </button>
+                )}
               </div>
               <button
-                onClick={() => setError(null)}
+                onClick={() => {
+                  setError(null);
+                  setS3ErrorDetails(null);
+                  setShowS3ErrorModal(false);
+                }}
                 className="ml-auto text-red-500 hover:text-red-700"
               >
                 <X className="h-4 w-4" />
@@ -1727,8 +2006,9 @@ const RAGConfigurationPage = ({ user, onClose }) => {
             </div>
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

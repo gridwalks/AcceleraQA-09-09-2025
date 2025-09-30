@@ -42,6 +42,61 @@ const isAccessDeniedError = (error) => {
   );
 };
 
+const sanitizeS3Value = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed
+    .replace(/(<Token-\d+>)([^<]+)(<\/Token-\d+>)/gi, '$1[redacted]$3')
+    .replace(/session-token[^\s<]*/gi, 'session-token[redacted]')
+    .slice(0, 5000);
+};
+
+const parseS3XmlError = (body) => {
+  if (typeof body !== 'string') {
+    return null;
+  }
+
+  const trimmed = body.trim();
+  if (!trimmed.startsWith('<')) {
+    return null;
+  }
+
+  const extract = (tag) => {
+    const match = trimmed.match(new RegExp(`<${tag}>([\s\S]*?)<\/${tag}>`, 'i'));
+    return match ? match[1].trim() : null;
+  };
+
+  return {
+    code: extract('Code'),
+    message: extract('Message'),
+    requestId: extract('RequestId'),
+    hostId: extract('HostId'),
+  };
+};
+
+const buildS3Suggestion = ({ accessDenied, code }) => {
+  if (accessDenied) {
+    return 'Verify the function\'s IAM role or user can perform s3:PutObject on the configured bucket and prefix.';
+  }
+
+  if (code && /invalidtoken/i.test(code)) {
+    return 'Refresh the temporary AWS credentials (access key, secret, and session token) and redeploy the function.';
+  }
+
+  if (code && /signaturedoesnotmatch/i.test(code)) {
+    return 'Check that the AWS region, bucket, and credentials match the target S3 bucket, then retry the upload.';
+  }
+
+  return 'Confirm the AWS credentials, bucket, and prefix configuration are correct before retrying the upload.';
+};
+
 const buildS3UploadError = (error) => {
   const bucket = getBucketName();
   const prefix = getPrefix();
@@ -62,14 +117,46 @@ const buildS3UploadError = (error) => {
     ? ` Confirm the configured AWS permissions allow uploading to ${guidanceParts.join(' and ')}.`
     : '';
 
-  const detail = error && typeof error.message === 'string' && error.message
-    ? ` Details: ${error.message}`
-    : '';
+  const sanitizedResponseBody = sanitizeS3Value(error?.responseBody);
+  const parsedResponse = parseS3XmlError(error?.responseBody);
+  const parsedCode = parsedResponse?.code || error?.code || error?.name || null;
+  const sanitizedErrorMessage = sanitizeS3Value(error?.message);
+  const suggestion = buildS3Suggestion({ accessDenied, code: parsedCode });
 
-  const friendlyError = new Error(`${baseMessage}${guidance}${detail}`.trim());
+  const detailParts = [];
+  if (parsedResponse?.message) {
+    detailParts.push(`S3 message: ${parsedResponse.message}`);
+  } else if (sanitizedResponseBody) {
+    detailParts.push(`S3 response: ${sanitizedResponseBody}`);
+  } else if (sanitizedErrorMessage) {
+    detailParts.push(`Details: ${sanitizedErrorMessage}`);
+  }
+
+  if (suggestion) {
+    detailParts.push(suggestion);
+  }
+
+  const friendlyMessage = [baseMessage, guidance, detailParts.join(' ')].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+  const friendlyError = new Error(friendlyMessage);
   const fallbackStatus = error?.$metadata?.httpStatusCode || error?.statusCode || 502;
   const normalizedStatus = Number.isFinite(fallbackStatus) ? Number(fallbackStatus) : 502;
-  friendlyError.statusCode = accessDenied ? 403 : Math.min(Math.max(normalizedStatus, 400), 599);
+  const resolvedStatus = accessDenied ? 403 : Math.min(Math.max(normalizedStatus, 400), 599);
+  friendlyError.statusCode = resolvedStatus;
+  friendlyError.details = {
+    provider: 's3',
+    bucket: bucket || null,
+    prefix: prefix || null,
+    statusCode: resolvedStatus,
+    code: parsedCode || null,
+    suggestion: suggestion || null,
+    responseBody: sanitizedResponseBody,
+    s3Message: parsedResponse?.message || null,
+    requestId: parsedResponse?.requestId || null,
+    hostId: parsedResponse?.hostId || null,
+    rawMessage: sanitizedErrorMessage,
+    timestamp: new Date().toISOString(),
+  };
   return friendlyError;
 };
 
@@ -96,6 +183,177 @@ const logS3UploadFailure = (error) => {
 let sqlClientPromise = null;
 let ensuredSchemaPromise = null;
 let documentTypeOptionsPromise = null;
+let loggedNeonConnectionKey = null;
+let loggedMissingNeonConnection = false;
+
+const NEON_CONNECTION_ENV_PRIORITY = [
+  'NEON_DATABASE_URL',
+  'DATABASE_URL',
+  'POSTGRES_URL',
+];
+
+const sanitizeNeonErrorMessage = (message) => {
+  if (typeof message !== 'string') {
+    return null;
+  }
+
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed
+    .replace(/postgres(?:ql)?:\/\/[^@\s]+@/gi, 'postgresql://[redacted]@')
+    .replace(/password=([^\s;]+)/gi, 'password=[redacted]')
+    .slice(0, 5000);
+};
+
+const parseDatabaseConnectionString = (connectionString) => {
+  if (typeof connectionString !== 'string') {
+    return null;
+  }
+
+  const trimmed = connectionString.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const params = new URLSearchParams(url.search);
+    const databasePath = url.pathname.replace(/^\/+/, '') || null;
+
+    return {
+      protocol: url.protocol.replace(/:$/, '') || null,
+      host: url.hostname || null,
+      port: url.port || null,
+      database: databasePath,
+      hasSslMode: params.has('sslmode'),
+      sslMode: params.get('sslmode') || null,
+      userPresent: Boolean(url.username),
+    };
+  } catch (error) {
+    return null;
+  }
+};
+
+const getNeonConnectionCandidate = () => {
+  for (const name of NEON_CONNECTION_ENV_PRIORITY) {
+    const value = process.env[name];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return { source: name, value: trimmed };
+      }
+    }
+  }
+
+  return { source: null, value: '' };
+};
+
+const logNeonConnectionDetails = (candidate) => {
+  if (!candidate?.value || !candidate.source) {
+    if (!loggedMissingNeonConnection) {
+      console.warn('NEON database connection string is not configured (NEON_DATABASE_URL/DATABASE_URL/POSTGRES_URL).');
+      loggedMissingNeonConnection = true;
+    }
+    return;
+  }
+
+  const parsed = parseDatabaseConnectionString(candidate.value);
+  const host = parsed?.host || 'unknown';
+  const database = parsed?.database || 'unknown';
+  const sslDescriptor = parsed?.sslMode || (parsed?.hasSslMode === false ? 'absent' : 'default');
+  const key = `${candidate.source}:${host}:${database}:${sslDescriptor}`;
+
+  if (loggedNeonConnectionKey === key) {
+    return;
+  }
+
+  loggedNeonConnectionKey = key;
+  console.log(
+    `[Neon Config] Using ${candidate.source} (host=${host}, database=${database}, sslmode=${sslDescriptor})`
+  );
+};
+
+const buildNeonSuggestion = ({ message, connectionConfigured, parsed }) => {
+  if (!connectionConfigured) {
+    return 'Set the NEON_DATABASE_URL environment variable (or DATABASE_URL/POSTGRES_URL) in Netlify before retrying the request.';
+  }
+
+  if (typeof message === 'string') {
+    const normalized = message.toLowerCase();
+
+    if (/password authentication failed/.test(normalized)) {
+      return 'Verify the database username and password embedded in NEON_DATABASE_URL.';
+    }
+
+    if (/does not exist/.test(normalized) && /database|relation|table/.test(normalized)) {
+      return 'Confirm the referenced database and tables exist in the Neon project.';
+    }
+
+    if (/no pg_hba\.conf entry/.test(normalized) || /ip address/.test(normalized)) {
+      return 'Update the Neon project connection policy or IP allow list to permit this function.';
+    }
+
+    if (/timeout/.test(normalized) || /timed out/.test(normalized)) {
+      return 'Check Neon project status and network connectivity, then retry the request.';
+    }
+
+    if (/bad gateway/.test(normalized) || /502/.test(normalized)) {
+      return 'Check Neon service availability and retry once the project reports healthy.';
+    }
+
+    if (/enotfound/.test(normalized) || /econnrefused/.test(normalized)) {
+      return 'Verify the Neon hostname and ensure outbound network access is permitted.';
+    }
+
+    if (/ssl/.test(normalized) && parsed && parsed.hasSslMode === false) {
+      return 'Append ?sslmode=require to NEON_DATABASE_URL to satisfy Neon TLS requirements.';
+    }
+  }
+
+  if (parsed && parsed.hasSslMode === false) {
+    return 'Append ?sslmode=require to NEON_DATABASE_URL when deploying to Netlify or other TLS-required environments.';
+  }
+
+  return null;
+};
+
+const buildNeonErrorDetails = (error) => {
+  const candidate = getNeonConnectionCandidate();
+  const connectionConfigured = Boolean(candidate.value);
+  const parsed = candidate.value ? parseDatabaseConnectionString(candidate.value) : null;
+  const sanitizedMessage = sanitizeNeonErrorMessage(error?.message);
+  const suggestion = buildNeonSuggestion({
+    message: sanitizedMessage || error?.message,
+    connectionConfigured,
+    parsed,
+  });
+
+  const baseDetails = {
+    provider: 'neon-postgresql',
+    statusCode: Number.isFinite(error?.statusCode) ? Number(error.statusCode) : null,
+    code: error?.code || error?.name || null,
+    message: sanitizedMessage,
+    connectionConfigured,
+    connectionSource: candidate.source,
+    host: parsed?.host || null,
+    port: parsed?.port || null,
+    database: parsed?.database || null,
+    hasSslMode: parsed?.hasSslMode ?? null,
+    sslMode: parsed?.sslMode || null,
+    userPresent: parsed?.userPresent ?? null,
+    suggestion: suggestion || null,
+    timestamp: new Date().toISOString(),
+  };
+
+  if (suggestion) {
+    baseDetails.recommendations = [suggestion];
+  }
+
+  return baseDetails;
+};
 
 function getFirstNonEmptyString(...values) {
   for (const value of values) {
@@ -124,21 +382,23 @@ function ensureFetchAvailable() {
 }
 
 function resolveConnectionString() {
-  const connectionString =
-    process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  const candidate = getNeonConnectionCandidate();
 
-  if (!connectionString) {
+  logNeonConnectionDetails(candidate);
+
+  if (!candidate.value) {
     const error = new Error(
-      'NEON_DATABASE_URL (or DATABASE_URL) environment variable is not set'
+      'NEON_DATABASE_URL (or DATABASE_URL/POSTGRES_URL) environment variable is not set'
     );
     error.statusCode = 500;
     throw error;
   }
-  if (!/sslmode=/i.test(connectionString)) {
+
+  if (!/sslmode=/i.test(candidate.value)) {
     console.warn('Connection string missing sslmode parameter; Neon recommends sslmode=require');
   }
 
-  return connectionString;
+  return candidate.value;
 }
 
 async function getSqlClient() {
@@ -1306,11 +1566,13 @@ export const handler = async (event) => {
   } catch (error) {
     const statusCode = error.statusCode || 500;
     console.error(`Neon RAG action "${action}" failed`, error);
+    const details = error.details || buildNeonErrorDetails(error);
     return {
       statusCode,
       headers,
       body: JSON.stringify({
         error: error.message || 'Unexpected server error',
+        ...(details ? { details } : {}),
       }),
     };
   }
@@ -1319,4 +1581,6 @@ export const handler = async (event) => {
 export const __testHelpers = {
   handleUpload,
   normalizeDocumentRow,
+  buildNeonErrorDetails,
+  parseDatabaseConnectionString,
 };

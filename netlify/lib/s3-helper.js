@@ -3,6 +3,11 @@ import crypto from 'crypto';
 let cachedPrefix = null;
 let loggedBucket = null;
 
+const logEnvVariable = (name, value) => {
+  const displayValue = value == null ? '(not set)' : value;
+  console.log(`[S3 Config] ${name}=${displayValue}`);
+};
+
 const DEFAULT_PREFIX = 'rag-documents';
 
 const logResolvedBucket = (bucket) => {
@@ -45,16 +50,18 @@ const getConfiguredPrefix = () => {
   }
 
   const candidates = [
-    process.env.RAG_S3_PREFIX,
-    process.env.S3_PREFIX,
+    { name: 'RAG_S3_PREFIX', value: process.env.RAG_S3_PREFIX },
+    { name: 'S3_PREFIX', value: process.env.S3_PREFIX },
   ];
 
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string') {
+  for (const { name, value } of candidates) {
+    logEnvVariable(name, value);
+
+    if (typeof value !== 'string') {
       continue;
     }
 
-    const trimmed = candidate.trim().replace(/^\/+|\/+$/g, '');
+    const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
     if (!trimmed) {
       continue;
     }
@@ -71,10 +78,17 @@ const getConfiguredPrefix = () => {
 };
 
 const getConfiguredBucket = () => {
-  const bucket =
-    process.env.RAG_S3_BUCKET ||
-    process.env.S3_BUCKET ||
-    process.env.AWS_S3_BUCKET;
+  const sources = [
+    { name: 'RAG_S3_BUCKET', value: process.env.RAG_S3_BUCKET },
+    { name: 'S3_BUCKET', value: process.env.S3_BUCKET },
+    { name: 'AWS_S3_BUCKET', value: process.env.AWS_S3_BUCKET },
+  ];
+
+  for (const { name, value } of sources) {
+    logEnvVariable(name, value);
+  }
+
+  const bucket = sources.find(source => source.value)?.value;
 
   if (!bucket) {
     throw new Error('RAG_S3_BUCKET (or S3_BUCKET/AWS_S3_BUCKET) is required for document storage');
@@ -85,10 +99,17 @@ const getConfiguredBucket = () => {
 };
 
 const getConfiguredRegion = () => {
-  const region =
-    process.env.RAG_S3_REGION ||
-    process.env.AWS_REGION ||
-    process.env.AWS_DEFAULT_REGION;
+  const sources = [
+    { name: 'RAG_S3_REGION', value: process.env.RAG_S3_REGION },
+    { name: 'AWS_REGION', value: process.env.AWS_REGION },
+    { name: 'AWS_DEFAULT_REGION', value: process.env.AWS_DEFAULT_REGION },
+  ];
+
+  for (const { name, value } of sources) {
+    logEnvVariable(name, value);
+  }
+
+  const region = sources.find(source => source.value)?.value;
 
   if (!region) {
     throw new Error('RAG_S3_REGION (or AWS_REGION/AWS_DEFAULT_REGION) is required for document storage');
@@ -109,48 +130,90 @@ const resolveS3Config = () => {
   };
 };
 
-const coalesceCredential = (...values) => {
-  for (const value of values) {
-    if (value == null) {
-      continue;
-    }
-
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed) {
-        return trimmed;
-      }
-      continue;
-    }
-
-    return value;
+const trimCredentialValue = (value) => {
+  if (value == null) {
+    return null;
   }
 
-  return null;
+  const trimmed = String(value).trim();
+  return trimmed ? trimmed : null;
 };
 
-const getS3Credentials = () => {
-  const accessKeyId = coalesceCredential(
-    process.env.RAG_S3_ACCESS_KEY_ID,
-    process.env.AWS_ACCESS_KEY_ID,
-  );
-  const secretAccessKey = coalesceCredential(
-    process.env.RAG_S3_SECRET_ACCESS_KEY,
-    process.env.AWS_SECRET_ACCESS_KEY,
-  );
-  const sessionToken = coalesceCredential(
-    process.env.RAG_S3_SESSION_TOKEN,
-    process.env.AWS_SESSION_TOKEN,
-  );
+const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }) => {
+  const sanitizedAccessKeyId = trimCredentialValue(accessKeyId);
+  const sanitizedSecretAccessKey = trimCredentialValue(secretAccessKey);
 
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error('S3 credentials are required: set RAG_S3_ACCESS_KEY_ID/AWS_ACCESS_KEY_ID and RAG_S3_SECRET_ACCESS_KEY/AWS_SECRET_ACCESS_KEY');
+  if (!sanitizedAccessKeyId || !sanitizedSecretAccessKey) {
+    return null;
   }
 
   return {
+    accessKeyId: sanitizedAccessKeyId,
+    secretAccessKey: sanitizedSecretAccessKey,
+    sessionToken: trimCredentialValue(sessionToken),
+  };
+};
+
+const readCredentialCandidate = ({
+  label,
+  accessKeyEnv,
+  secretKeyEnv,
+  sessionTokenEnv,
+}) => {
+  const accessKeyId = process.env[accessKeyEnv];
+  const secretAccessKey = process.env[secretKeyEnv];
+  const sessionToken = process.env[sessionTokenEnv];
+
+  logEnvVariable(accessKeyEnv, accessKeyId);
+  logEnvVariable(secretKeyEnv, secretAccessKey);
+  logEnvVariable(sessionTokenEnv, sessionToken);
+
+  const candidate = buildCredentialCandidate({
     accessKeyId,
     secretAccessKey,
-    sessionToken: sessionToken || null,
+    sessionToken,
+  });
+
+  if (!candidate) {
+    return null;
+  }
+
+  return {
+    ...candidate,
+    source: label,
+  };
+};
+
+const getS3Credentials = () => {
+  const ragCredentials = readCredentialCandidate({
+    label: 'RAG_S3',
+    accessKeyEnv: 'RAG_S3_ACCESS_KEY_ID',
+    secretKeyEnv: 'RAG_S3_SECRET_ACCESS_KEY',
+    sessionTokenEnv: 'RAG_S3_SESSION_TOKEN',
+  });
+
+  const awsCredentials = readCredentialCandidate({
+    label: 'AWS',
+    accessKeyEnv: 'AWS_ACCESS_KEY_ID',
+    secretKeyEnv: 'AWS_SECRET_ACCESS_KEY',
+    sessionTokenEnv: 'AWS_SESSION_TOKEN',
+  });
+
+  const candidates = [ragCredentials, awsCredentials].filter(Boolean);
+
+  if (!candidates.length) {
+    throw new Error('S3 credentials are required: set RAG_S3_ACCESS_KEY_ID/AWS_ACCESS_KEY_ID and RAG_S3_SECRET_ACCESS_KEY/AWS_SECRET_ACCESS_KEY');
+  }
+
+  const candidateWithSessionToken = candidates.find(candidate => candidate.sessionToken);
+  const selected = candidateWithSessionToken || candidates[0];
+
+  console.log(`[S3 Config] Selected credential source: ${selected.source}`);
+
+  return {
+    accessKeyId: selected.accessKeyId,
+    secretAccessKey: selected.secretAccessKey,
+    sessionToken: selected.sessionToken || null,
   };
 };
 
@@ -270,7 +333,11 @@ const signS3PutRequest = ({
   metadata,
   credentials,
 }) => {
-  const { accessKeyId, secretAccessKey, sessionToken } = credentials;
+  const {
+    accessKeyId: sanitizedAccessKeyId,
+    secretAccessKey: sanitizedSecretAccessKey,
+    sessionToken: sanitizedSessionToken,
+  } = credentials;
   const { amzDate, dateStamp } = toAmzDate(new Date());
   const payloadHash = sha256Hex(body);
 
@@ -285,8 +352,8 @@ const signS3PutRequest = ({
     'x-amz-date': amzDate,
   };
 
-  if (sessionToken) {
-    baseHeaders['x-amz-security-token'] = sessionToken;
+  if (sanitizedSessionToken) {
+    baseHeaders['x-amz-security-token'] = sanitizedSessionToken;
   }
 
   const metadataHeaders = Object.entries(metadata).reduce((acc, [metaKey, metaValue]) => {
@@ -319,13 +386,13 @@ const signS3PutRequest = ({
     sha256Hex(canonicalRequest),
   ].join('\n');
 
-  const kDate = hmacSha256(`AWS4${secretAccessKey}`, dateStamp);
+  const kDate = hmacSha256(`AWS4${sanitizedSecretAccessKey}`, dateStamp);
   const kRegion = hmacSha256(kDate, region);
   const kService = hmacSha256(kRegion, 's3');
   const kSigning = hmacSha256(kService, 'aws4_request');
   const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
 
-  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const authorization = `AWS4-HMAC-SHA256 Credential=${sanitizedAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
   const headers = {
     ...baseHeaders,
@@ -409,12 +476,13 @@ export const uploadDocumentToS3 = async ({
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
+    const rawText = await response.text().catch(() => '');
+    const responseText = typeof rawText === 'string' ? rawText.trim() : '';
     const error = new Error(
-      `S3 upload failed with status ${response.status}${text ? `: ${text}` : ''}`
+      `S3 upload failed with status ${response.status}${responseText ? `: ${responseText}` : ''}`
     );
     error.statusCode = response.status;
-    error.responseBody = text || null;
+    error.responseBody = responseText || null;
     throw error;
   }
 

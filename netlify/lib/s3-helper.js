@@ -155,8 +155,8 @@ const trimCredentialValue = (value) => {
 const buildCredentialCandidate = ({ accessKeyId, secretAccessKey, sessionToken }) => {
   const sanitizedAccessKeyId = trimCredentialValue(accessKeyId);
   const sanitizedSecretAccessKey = trimCredentialValue(secretAccessKey);
-
-  if (!sanitizedAccessKeyId || !sanitizedSecretAccessKey) {    return null;
+  if (!sanitizedAccessKeyId || !sanitizedSecretAccessKey) {
+    return null;
   }
 
   return {
@@ -208,8 +208,6 @@ const getS3Credentials = () => {
     label: 'AWS',
     accessKeyEnv: 'AWS_ACCESS_KEY_ID',
     secretKeyEnv: 'AWS_SECRET_ACCESS_KEY',
-    sessionTokenEnv: 'AWS_SESSION_TOKEN',
-
   });
 
   const candidates = [ragCredentials, awsCredentials].filter(Boolean);

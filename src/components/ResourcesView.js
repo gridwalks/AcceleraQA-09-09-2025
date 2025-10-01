@@ -737,7 +737,9 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       if (viewerRequestRef.current !== requestId) return;
       if (!response) throw new Error('No response received from download request');
 
-      const responseUrl = typeof response.downloadUrl === 'string' ? response.downloadUrl.trim() : '';
+      const responseUrl = [response.downloadUrl, response.url, response.blobUrl]
+        .map(value => (typeof value === 'string' ? value.trim() : ''))
+        .find(candidate => !!candidate) || '';
 
       if (responseUrl) {
         setViewerState({
@@ -776,6 +778,16 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
       // Fallback: backend returned base64 content; build a blob URL
       const base64Content = typeof response.content === 'string' ? response.content.trim() : '';
+      const encoding = typeof response.encoding === 'string' ? response.encoding.trim().toLowerCase() : 'base64';
+
+      if (!base64Content) {
+        throw new Error('Document content payload is empty.');
+      }
+
+      if (encoding && encoding !== 'base64') {
+        throw new Error(`Unsupported document encoding: ${encoding}`);
+      }
+
       const byteArray = await decodeBase64ToUint8Array(base64Content);
       if (!byteArray) throw new Error('Unable to decode document content');
 

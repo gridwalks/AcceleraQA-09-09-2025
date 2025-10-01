@@ -230,7 +230,7 @@ describe('handleDownloadDocument', () => {
 
     const response = await handleDownloadDocument(sqlMock, 'user-1', { documentId: '99' });
     expect(response.statusCode).toBe(404);
-    const payload = JSON.parse(response.body);
+    const payload = JSON.parse(response.body);1
     expect(payload.error).toBe('Document not found or access is restricted');
   });
 });

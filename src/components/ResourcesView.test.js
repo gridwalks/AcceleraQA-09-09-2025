@@ -495,6 +495,109 @@ describe('ResourcesView component', () => {
     }
   });
 
+  it('surfaces a storage not found message when Netlify blob 404s without fallback content', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
+    global.fetch = fetchMock;
+
+    const originalCreateObjectURL = typeof URL !== 'undefined' ? URL.createObjectURL : undefined;
+    const originalRevokeObjectURL = typeof URL !== 'undefined' ? URL.revokeObjectURL : undefined;
+
+    if (typeof URL !== 'undefined') {
+      URL.createObjectURL = jest.fn(() => {
+        throw new Error('createObjectURL should not be called when document bytes are unavailable');
+      });
+      URL.revokeObjectURL = jest.fn();
+    }
+
+    ragService.downloadDocument.mockResolvedValue({
+      filename: 'Missing.pdf',
+      contentType: 'application/pdf',
+      storageLocation: {
+        provider: 'netlify-blobs',
+        path: 'rag-documents/user/missing.pdf',
+        contentType: 'application/pdf',
+      },
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const resource = {
+      title: 'Missing Policy',
+      type: 'Guideline',
+      metadata: {
+        documentId: 'doc-missing',
+        filename: 'Missing.pdf',
+        contentType: 'application/pdf',
+        storage: {
+          provider: 'netlify-blobs',
+          path: 'rag-documents/user/missing.pdf',
+          contentType: 'application/pdf',
+        },
+      },
+    };
+
+    try {
+      await act(async () => {
+        root.render(<ResourcesView currentResources={[resource]} user={{ sub: 'user-4' }} />);
+      });
+
+      const card = container.querySelector('[role="button"]');
+      expect(card).not.toBeNull();
+
+      await act(async () => {
+        card.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(fetchMock).toHaveBeenCalled();
+      expect(ragService.downloadDocument).toHaveBeenCalledWith(
+        { documentId: 'doc-missing', fileId: '' },
+        'user-4'
+      );
+
+      expect(container.textContent).toContain('This document could not be found in Netlify Blob storage.');
+      expect(container.textContent).toContain(
+        'Netlify Blob reported a 404 Not Found response. Please contact an administrator to restore or remove this resource.'
+      );
+
+      const primaryPath = container.querySelector('[data-testid="document-viewer-error-primary-path"]');
+      expect(primaryPath).not.toBeNull();
+      expect(primaryPath.textContent).toContain('/.netlify/blobs/blob/rag-documents/user/missing.pdf');
+
+      const debugDetails = container.querySelector('details pre');
+      expect(debugDetails).not.toBeNull();
+      expect(debugDetails.textContent).toContain('Failed to download Netlify Blob document (status 404)');
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      document.body.removeChild(container);
+      global.fetch = originalFetch;
+
+      if (typeof URL !== 'undefined') {
+        if (originalCreateObjectURL) {
+          URL.createObjectURL = originalCreateObjectURL;
+        } else {
+          delete URL.createObjectURL;
+        }
+
+        if (originalRevokeObjectURL) {
+          URL.revokeObjectURL = originalRevokeObjectURL;
+        } else {
+          delete URL.revokeObjectURL;
+        }
+      }
+    }
+  });
+
   it('shows attempted document paths when downloads fail', async () => {
     const originalFetch = global.fetch;
     const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 500 });

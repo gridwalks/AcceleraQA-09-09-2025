@@ -511,7 +511,13 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
       const blobResponse = await fetch(downloadUrl, { credentials: 'include' });
       if (!blobResponse.ok) {
-        throw new Error(`Failed to download Netlify Blob document (status ${blobResponse.status}).`);
+        const error = new Error(`Failed to download Netlify Blob document (status ${blobResponse.status}).`);
+        error.status = blobResponse.status;
+        error.statusText = typeof blobResponse.statusText === 'string' ? blobResponse.statusText : '';
+        error.code = blobResponse.status === 404 ? 'NETLIFY_BLOB_NOT_FOUND' : 'NETLIFY_BLOB_DOWNLOAD_FAILED';
+        error.downloadUrl = downloadUrl;
+        error.requestId = requestId;
+        throw error;
       }
 
       const blob = await blobResponse.blob();
@@ -711,6 +717,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     });
 
     const attemptedSources = [];
+    let lastNetlifyError = null;
     const recordAttemptedSource = (label, path) => {
       if (!path) return;
       const trimmed = `${path}`.trim();
@@ -742,6 +749,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
             return;
           }
         } catch (netlifyError) {
+          lastNetlifyError = netlifyError;
           console.warn('Failed to load Netlify Blob document from resource metadata:', netlifyError);
         }
       }
@@ -803,6 +811,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
             return;
           }
         } catch (netlifyError) {
+          lastNetlifyError = netlifyError;
           console.warn('Failed to load Netlify Blob document from backend response:', netlifyError);
         }
       }
@@ -812,6 +821,18 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       const encoding = typeof response.encoding === 'string' ? response.encoding.trim().toLowerCase() : 'base64';
 
       if (!base64Content) {
+        if (
+          lastNetlifyError &&
+          (lastNetlifyError.code === 'NETLIFY_BLOB_NOT_FOUND' || lastNetlifyError.status === 404)
+        ) {
+          const storageError = new Error('This document could not be found in Netlify Blob storage.');
+          storageError.code = 'DOCUMENT_STORAGE_NOT_FOUND';
+          storageError.status = lastNetlifyError.status || 404;
+          storageError.downloadUrl = lastNetlifyError.downloadUrl || '';
+          storageError.cause = lastNetlifyError;
+          throw storageError;
+        }
+
         throw new Error('Document content payload is empty.');
       }
 
@@ -857,13 +878,48 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       if (viewerRequestRef.current === requestId) {
         const primaryAttempt = attemptedSources.find((entry) => entry?.path);
 
+        let message = 'We were unable to load this document in the viewer.';
+        let hint = 'If a download option is available, please try that instead.';
+        let targetPath = primaryAttempt?.path || '';
+        let targetLabel = primaryAttempt?.label || '';
+
+        if (error?.code === 'DOCUMENT_STORAGE_NOT_FOUND' || error?.status === 404) {
+          message = 'This document could not be found in Netlify Blob storage.';
+          hint = 'Netlify Blob reported a 404 Not Found response. Please contact an administrator to restore or remove this resource.';
+          if (lastNetlifyError?.downloadUrl) {
+            targetPath = lastNetlifyError.downloadUrl;
+            targetLabel = 'Netlify Blob download';
+          }
+        }
+
+        const debugMessages = [];
+        if (error?.message) {
+          debugMessages.push(error.message);
+        }
+        if (error?.status && !debugMessages.some((entry) => entry.includes('Status'))) {
+          debugMessages.push(`Status: ${error.status}`);
+        }
+        if (error?.cause?.message) {
+          debugMessages.push(`Cause: ${error.cause.message}`);
+        } else if (lastNetlifyError && lastNetlifyError !== error && lastNetlifyError?.message) {
+          debugMessages.push(`Netlify Blob error: ${lastNetlifyError.message}`);
+        }
+        if (lastNetlifyError?.status && lastNetlifyError !== error) {
+          debugMessages.push(`Netlify Blob status: ${lastNetlifyError.status}`);
+        }
+        if (lastNetlifyError?.statusText) {
+          debugMessages.push(`Netlify Blob status text: ${lastNetlifyError.statusText}`);
+        }
+
+        const debugMessage = debugMessages.filter(Boolean).join('\n');
+
         setViewerErrorInfo({
-          message: 'We were unable to load this document in the viewer.',
-          hint: 'If a download option is available, please try that instead.',
+          message,
+          hint,
           attemptedPaths: attemptedSources,
-          debugMessage: error?.message || String(error),
-          targetPath: primaryAttempt?.path || '',
-          targetLabel: primaryAttempt?.label || '',
+          debugMessage: debugMessage || error?.message || String(error),
+          targetPath,
+          targetLabel,
         });
         setIsViewerLoading(false);
       }

@@ -248,7 +248,20 @@ export const uploadDocumentToBlobStore = async ({
   const key = buildObjectKey({ userId, documentId, filename });
   const size = normalizedBody.length;
   const resolvedContentType = contentType || 'application/octet-stream';
-  const normalizedMetadata = normalizeMetadata(metadata);
+  const timestamp = new Date().toISOString();
+  const metadataWithDefaults = {
+    ...metadata,
+    'size-bytes': size,
+    size_bytes: size,
+    size,
+    sizeBytes: size,
+    'content-type': resolvedContentType,
+    contentType: resolvedContentType,
+    uploadedAt: timestamp,
+    'uploaded-at': timestamp,
+    uploaded_at: timestamp,
+  };
+  const normalizedMetadata = normalizeMetadata(metadataWithDefaults);
 
   await store.set(key, normalizedBody, {
     contentType: resolvedContentType,
@@ -263,6 +276,220 @@ export const uploadDocumentToBlobStore = async ({
     url: null,
     size,
     contentType: resolvedContentType,
+  };
+};
+
+const decodeMetadataValue = (value) => {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed === 'true') {
+    return true;
+  }
+
+  if (trimmed === 'false') {
+    return false;
+  }
+
+  const numeric = Number(trimmed);
+  if (!Number.isNaN(numeric)) {
+    return numeric;
+  }
+
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      console.warn('Failed to parse blob metadata JSON value:', error);
+    }
+  }
+
+  return trimmed;
+};
+
+const decodeMetadataObject = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return {};
+  }
+
+  const decoded = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    decoded[key] = decodeMetadataValue(value);
+  }
+  return decoded;
+};
+
+const firstNonEmptyString = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+};
+
+const firstFiniteNumber = (...values) => {
+  for (const value of values) {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+};
+
+const firstValidTimestamp = (...values) => {
+  for (const value of values) {
+    if (!value) {
+      continue;
+    }
+
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+  return null;
+};
+
+const deriveKeySegments = (key, prefix) => {
+  const normalizedKey = typeof key === 'string' ? key : '';
+  const normalizedPrefix = typeof prefix === 'string' ? prefix.replace(/^\/+|\/+$/g, '') : '';
+
+  let relativeKey = normalizedKey;
+  if (normalizedPrefix && normalizedKey.startsWith(`${normalizedPrefix}/`)) {
+    relativeKey = normalizedKey.slice(normalizedPrefix.length + 1);
+  }
+
+  const segments = relativeKey.split('/').filter(Boolean);
+  const [userId = null, documentId = null, ...rest] = segments;
+  const filename = rest.length > 0 ? rest.join('/') : segments[segments.length - 1] || null;
+
+  return {
+    relativeKey,
+    segments,
+    userId,
+    documentId,
+    filename,
+  };
+};
+
+export const listBlobFiles = async ({ prefix, limit } = {}) => {
+  const store = getBlobStoreInstance();
+  const storeName = getConfiguredStore();
+
+  const sanitizedPrefix = typeof prefix === 'string'
+    ? sanitizePathPrefix(prefix.replace(/^\/+|\/+$/g, ''))
+    : '';
+
+  const resolvedPrefix = sanitizedPrefix || getConfiguredPrefix();
+  const listOptions = {};
+  if (resolvedPrefix) {
+    listOptions.prefix = `${resolvedPrefix}/`;
+  }
+
+  const listResult = await store.list(listOptions);
+  const blobs = Array.isArray(listResult?.blobs) ? listResult.blobs : [];
+
+  const numericLimit = Number(limit);
+  const maxEntries = Number.isFinite(numericLimit) && numericLimit > 0
+    ? Math.floor(numericLimit)
+    : blobs.length;
+  const limitedBlobs = maxEntries < blobs.length ? blobs.slice(0, maxEntries) : blobs;
+  const metadataResults = await Promise.allSettled(
+    limitedBlobs.map(({ key }) => store.getMetadata(key))
+  );
+
+  const items = limitedBlobs.map((blob, index) => {
+    const metadataEntry = metadataResults[index];
+    const metadata =
+      metadataEntry.status === 'fulfilled' && metadataEntry.value?.metadata
+        ? metadataEntry.value.metadata
+        : {};
+    const decodedMetadata = decodeMetadataObject(metadata);
+    const derived = deriveKeySegments(blob.key, resolvedPrefix);
+    const storageMetadata =
+      decodedMetadata.storage && typeof decodedMetadata.storage === 'object'
+        ? decodedMetadata.storage
+        : null;
+
+    const size = firstFiniteNumber(
+      decodedMetadata['size-bytes'],
+      decodedMetadata.size_bytes,
+      decodedMetadata.sizeBytes,
+      decodedMetadata.size,
+      decodedMetadata['content-length'],
+      decodedMetadata['x-size-bytes'],
+      storageMetadata?.size
+    );
+
+    const contentType = firstNonEmptyString(
+      decodedMetadata['content-type'],
+      decodedMetadata.contentType,
+      storageMetadata?.contentType
+    );
+
+    const uploadedAt = firstValidTimestamp(
+      decodedMetadata.uploadedAt,
+      decodedMetadata['uploaded-at'],
+      decodedMetadata.uploaded_at,
+      storageMetadata?.uploadedAt,
+      storageMetadata?.uploaded_at
+    );
+
+    const userId = firstNonEmptyString(
+      decodedMetadata['x-user-id'],
+      decodedMetadata.userId,
+      decodedMetadata.user_id,
+      derived.userId
+    );
+
+    const documentId = firstNonEmptyString(
+      decodedMetadata['x-document-id'],
+      decodedMetadata.documentId,
+      decodedMetadata.document_id,
+      derived.documentId
+    );
+
+    return {
+      key: blob.key,
+      etag: blob.etag || null,
+      userId: userId || null,
+      documentId: documentId || null,
+      size: Number.isFinite(size) ? size : null,
+      contentType: contentType || null,
+      uploadedAt,
+      metadata: decodedMetadata,
+      relativeKey: derived.relativeKey,
+      segments: derived.segments,
+      filename: derived.filename,
+    };
+  });
+
+  return {
+    store: storeName,
+    prefix: resolvedPrefix,
+    blobs: items,
+    count: items.length,
+    total: blobs.length,
+    truncated: items.length < blobs.length,
+    timestamp: new Date().toISOString(),
   };
 };
 

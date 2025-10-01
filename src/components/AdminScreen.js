@@ -1256,7 +1256,6 @@ const AdminScreen = ({ user, onBack }) => {
                           <th className="px-4 py-2 text-left font-semibold text-gray-600">Content Type</th>
                           <th className="px-4 py-2 text-left font-semibold text-gray-600">Uploaded</th>
                           <th className="px-4 py-2 text-left font-semibold text-gray-600">Metadata</th>
-                          <th className="px-4 py-2 text-left font-semibold text-gray-600">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">

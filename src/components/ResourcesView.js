@@ -340,8 +340,8 @@ export const buildNetlifyBlobDownloadUrl = (storageLocation = {}) => {
     return directUrl;
   }
 
-  // Use the admin function for blob access instead of direct URLs
-  const adminFunctionUrl = process.env.REACT_APP_ADMIN_BLOB_FUNCTION || '/.netlify/functions/admin-blob-list';
+  // Use the user function for blob access instead of admin function
+  const userFunctionUrl = process.env.REACT_APP_USER_BLOB_FUNCTION || '/.netlify/functions/user-blob-access';
   
   const normalizePath = (input) => {
     if (typeof input !== 'string') {
@@ -390,7 +390,7 @@ export const buildNetlifyBlobDownloadUrl = (storageLocation = {}) => {
   }
 
   if (blobKey) {
-    return `${adminFunctionUrl}?key=${encodeURIComponent(blobKey)}`;
+    return `${userFunctionUrl}?key=${encodeURIComponent(blobKey)}`;
   }
 
   return '';

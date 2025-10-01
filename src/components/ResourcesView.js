@@ -522,9 +522,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         throw error;
       }
 
-      // Handle JSON response from admin function
+      // Handle JSON response from user function
       const responseData = await blobResponse.json();
+      console.log('Blob response data:', responseData);
       if (!responseData || !responseData.data) {
+        console.error('Invalid response from Netlify Blob service:', responseData);
         throw new Error('Invalid response from Netlify Blob service.');
       }
 
@@ -536,10 +538,14 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       }
       
       const blob = new Blob([bytes], { type: responseData.contentType || 'application/octet-stream' });
+      console.log('Created blob:', { size: blob.size, type: blob.type });
+      console.log('Response data keys:', Object.keys(responseData));
+      console.log('Response contentType:', responseData.contentType);
       const objectUrlResult = createObjectUrlFromBlob(blob);
       if (!objectUrlResult) {
         throw new Error('Unable to create object URL for Netlify Blob document.');
       }
+      console.log('Created object URL:', objectUrlResult.url);
 
       const arrayBuffer = await blob.arrayBuffer();
       const byteArray = new Uint8Array(arrayBuffer);
@@ -1514,6 +1520,17 @@ export const DocumentViewer = ({
   const isImageDocument =
     normalizedContentType.startsWith('image/') ||
     /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(normalizedFilename);
+  
+  console.log('DocumentViewer debug:', {
+    title: safeTitle,
+    contentType: normalizedContentType,
+    filename: normalizedFilename,
+    hasUrl,
+    blobUrl,
+    isPdfDocument,
+    isImageDocument,
+    url: url?.substring(0, 50) + '...'
+  });
 
   const resolvedError = errorInfo
     ? typeof errorInfo === 'string'

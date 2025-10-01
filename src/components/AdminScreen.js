@@ -581,7 +581,15 @@ const AdminScreen = ({ user, onBack }) => {
       setBlobError(null);
 
       try {
-        const result = await blobAdminService.downloadBlob({ key: blobKey });
+        // Use user blob access instead of admin service
+        const userBlobUrl = `/.netlify/functions/user-blob-access?key=${encodeURIComponent(blobKey)}`;
+        const response = await fetch(userBlobUrl, { credentials: 'include' });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch blob: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
 
         if (result.encoding && result.encoding !== 'base64') {
           throw new Error(`Unsupported blob encoding: ${result.encoding}`);
@@ -625,6 +633,14 @@ const AdminScreen = ({ user, onBack }) => {
         document.body.appendChild(anchor);
         anchor.click();
         document.body.removeChild(anchor);
+        console.log('Setting blob preview:', {
+          objectUrl,
+          filename: downloadName,
+          contentType,
+          size: Number.isFinite(file?.size) ? file.size : bytes.length,
+          key: blobKey
+        });
+        
         setBlobPreview((previous) => {
           if (previous?.objectUrl) {
             releasePreviewObjectUrl(previous.objectUrl);
@@ -1649,6 +1665,8 @@ const AdminScreen = ({ user, onBack }) => {
                 title={`Preview of ${blobPreview.filename}`}
                 src={blobPreview.objectUrl}
                 className="w-full h-full min-h-[420px] bg-white"
+                onLoad={() => console.log('Iframe loaded successfully')}
+                onError={(e) => console.error('Iframe load error:', e)}
               />
             </div>
           </div>

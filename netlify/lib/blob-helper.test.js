@@ -47,6 +47,10 @@ describe('uploadDocumentToBlobStore integration', () => {
   afterEach(() => {
     delete process.env.RAG_BLOB_STORE;
     delete process.env.RAG_BLOB_PREFIX;
+    delete process.env.NETLIFY_BLOBS_SITE_ID;
+    delete process.env.NETLIFY_SITE_ID;
+    delete process.env.NETLIFY_BLOBS_TOKEN;
+    delete process.env.NETLIFY_AUTH_TOKEN;
     delete global.__UPLOAD_DOCUMENT_TO_BLOB_MOCK__;
     jest.resetModules();
   });
@@ -88,5 +92,57 @@ describe('uploadDocumentToBlobStore integration', () => {
     expect(result).toEqual(
       expect.objectContaining({ provider: 'netlify-blobs', store: 'custom-store' })
     );
+  });
+});
+
+describe('Netlify Blob environment fallback', () => {
+  afterEach(() => {
+    delete process.env.NETLIFY_BLOBS_SITE_ID;
+    delete process.env.NETLIFY_SITE_ID;
+    delete process.env.NETLIFY_BLOBS_TOKEN;
+    delete process.env.NETLIFY_AUTH_TOKEN;
+    jest.resetModules();
+    jest.restoreAllMocks();
+  });
+
+  test('retries getStore with manual credentials when default environment is missing', async () => {
+    jest.resetModules();
+
+    const missingEnvError = new Error(
+      'The environment has not been configured to use Netlify Blobs'
+    );
+    missingEnvError.name = 'MissingBlobsEnvironmentError';
+
+    const storeSet = jest.fn().mockResolvedValue();
+    const getStoreMock = jest
+      .fn()
+      .mockImplementationOnce(() => {
+        throw missingEnvError;
+      })
+      .mockReturnValue({ set: storeSet });
+
+    jest.unstable_mockModule('@netlify/blobs', () => ({
+      getStore: getStoreMock,
+    }));
+
+    process.env.NETLIFY_BLOBS_SITE_ID = 'site-123';
+    process.env.NETLIFY_BLOBS_TOKEN = 'token-abc';
+
+    const module = await import('./blob-helper.js');
+
+    await module.uploadDocumentToBlobStore({
+      body: Buffer.from('data'),
+      userId: 'user-1',
+      documentId: 'doc-1',
+      filename: 'file.txt',
+    });
+
+    expect(getStoreMock).toHaveBeenNthCalledWith(1, 'rag-documents');
+    expect(getStoreMock).toHaveBeenNthCalledWith(2, {
+      name: 'rag-documents',
+      siteID: 'site-123',
+      token: 'token-abc',
+    });
+    expect(storeSet).toHaveBeenCalledTimes(1);
   });
 });

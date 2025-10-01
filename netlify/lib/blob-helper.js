@@ -2,6 +2,8 @@ import { getStore } from '@netlify/blobs';
 
 let cachedPrefix = null;
 let cachedStore = null;
+let cachedStoreInstance = null;
+let cachedStoreInstanceKey = null;
 
 const DEFAULT_PREFIX = 'rag-documents';
 const DEFAULT_STORE = 'rag-documents';
@@ -79,6 +81,75 @@ const getConfiguredStore = () => {
 
   cachedStore = DEFAULT_STORE;
   return cachedStore;
+};
+
+const resolveManualBlobCredentials = () => {
+  const siteCandidates = [
+    process.env.NETLIFY_BLOBS_SITE_ID,
+    process.env.NETLIFY_SITE_ID,
+  ];
+  const tokenCandidates = [
+    process.env.NETLIFY_BLOBS_TOKEN,
+    process.env.NETLIFY_AUTH_TOKEN,
+  ];
+
+  const siteID = siteCandidates.find((value) =>
+    typeof value === 'string' && value.trim()
+  );
+  const token = tokenCandidates.find((value) =>
+    typeof value === 'string' && value.trim()
+  );
+
+  return {
+    siteID: siteID ? siteID.trim() : null,
+    token: token ? token.trim() : null,
+  };
+};
+
+const isMissingBlobEnvironmentError = (error) => {
+  if (!error) return false;
+  if (error.name === 'MissingBlobsEnvironmentError') return true;
+
+  const message = typeof error.message === 'string' ? error.message : '';
+  return message
+    .toLowerCase()
+    .includes('environment has not been configured to use netlify blobs');
+};
+
+const getBlobStoreInstance = () => {
+  const storeName = getConfiguredStore();
+  const manualCredentials = resolveManualBlobCredentials();
+  const cacheKey = manualCredentials.siteID && manualCredentials.token
+    ? `${storeName}|manual`
+    : storeName;
+
+  if (cachedStoreInstance && cachedStoreInstanceKey === cacheKey) {
+    return cachedStoreInstance;
+  }
+
+  const instantiateStore = (input) => getStore(input);
+
+  try {
+    cachedStoreInstance = instantiateStore(storeName);
+    cachedStoreInstanceKey = storeName;
+    return cachedStoreInstance;
+  } catch (error) {
+    if (
+      isMissingBlobEnvironmentError(error) &&
+      manualCredentials.siteID &&
+      manualCredentials.token
+    ) {
+      cachedStoreInstance = instantiateStore({
+        name: storeName,
+        siteID: manualCredentials.siteID,
+        token: manualCredentials.token,
+      });
+      cachedStoreInstanceKey = cacheKey;
+      return cachedStoreInstance;
+    }
+
+    throw error;
+  }
 };
 
 const buildObjectKey = ({ userId, documentId, filename }) => {
@@ -172,7 +243,7 @@ export const uploadDocumentToBlobStore = async ({
     });
   }
 
-  const store = getStore(storeName);
+  const store = getBlobStoreInstance();
   const normalizedBody = ensureBufferBody(body);
   const key = buildObjectKey({ userId, documentId, filename });
   const size = normalizedBody.length;

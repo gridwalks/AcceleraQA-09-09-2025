@@ -328,6 +328,52 @@ export const decodeBase64ToUint8Array = async (base64) => {
   }
 };
 
+const NETLIFY_BLOB_PROVIDER = 'netlify-blobs';
+
+export const buildNetlifyBlobDownloadUrl = (storageLocation = {}) => {
+  if (!storageLocation || typeof storageLocation !== 'object') {
+    return '';
+  }
+
+  const directUrl = typeof storageLocation.url === 'string' ? storageLocation.url.trim() : '';
+  if (directUrl) {
+    return directUrl;
+  }
+
+  const normalizePath = (input) => {
+    if (typeof input !== 'string') {
+      return '';
+    }
+    const trimmed = input.trim().replace(/^\/+/, '');
+    if (!trimmed) {
+      return '';
+    }
+    return trimmed
+      .split('/')
+      .filter(Boolean)
+      .map(segment => encodeURIComponent(segment))
+      .join('/');
+  };
+
+  const normalizedPath = normalizePath(storageLocation.path);
+  if (normalizedPath) {
+    return `/.netlify/blobs/blob/${normalizedPath}`;
+  }
+
+  const normalizedStore = normalizePath(storageLocation.store);
+  const normalizedKey = normalizePath(storageLocation.key);
+
+  if (normalizedStore && normalizedKey) {
+    return `/.netlify/blobs/blob/${normalizedStore}/${normalizedKey}`;
+  }
+
+  if (normalizedKey) {
+    return `/.netlify/blobs/blob/${normalizedKey}`;
+  }
+
+  return '';
+};
+
 const createInitialViewerState = () => ({
   isOpen: false,
   title: '',
@@ -355,7 +401,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
   const [viewerState, setViewerState] = useState(() => createInitialViewerState());
   const [isViewerLoading, setIsViewerLoading] = useState(false);
-  const [viewerError, setViewerError] = useState(null);
+  const [viewerErrorInfo, setViewerErrorInfo] = useState(null);
   const activeObjectUrlRef = useRef(null);
   const viewerRequestRef = useRef(0);
   const userId = user?.sub || null;
@@ -424,11 +470,84 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     console.log(`Document viewer URL (${sourceLabel}):`, url);
   }, []);
 
+  const loadNetlifyBlobDocument = useCallback(
+    async ({
+      storageLocation,
+      requestId,
+      fallbackTitle,
+      fallbackFilename,
+      fallbackContentType,
+      responseFilename,
+      responseContentType,
+    }) => {
+      const downloadUrl = buildNetlifyBlobDownloadUrl(storageLocation);
+      if (!downloadUrl) {
+        throw new Error('Netlify Blob storage location is missing a downloadable path.');
+      }
+
+      if (typeof fetch !== 'function') {
+        throw new Error('This environment does not support fetching Netlify Blob documents.');
+      }
+
+      const blobResponse = await fetch(downloadUrl, { credentials: 'include' });
+      if (!blobResponse.ok) {
+        throw new Error(`Failed to download Netlify Blob document (status ${blobResponse.status}).`);
+      }
+
+      const blob = await blobResponse.blob();
+      const objectUrlResult = createObjectUrlFromBlob(blob);
+      if (!objectUrlResult) {
+        throw new Error('Unable to create object URL for Netlify Blob document.');
+      }
+
+      const arrayBuffer = await blob.arrayBuffer();
+      const byteArray = new Uint8Array(arrayBuffer);
+
+      if (viewerRequestRef.current !== requestId) {
+        objectUrlResult.revoke();
+        return 'stale';
+      }
+
+      activeObjectUrlRef.current = objectUrlResult;
+
+      let transportableBytes = null;
+      try {
+        const { buffer, byteOffset, byteLength } = byteArray;
+        transportableBytes = buffer.slice(byteOffset, byteOffset + byteLength);
+      } catch (sliceError) {
+        console.warn('Unable to create ArrayBuffer copy for Netlify Blob viewer state:', sliceError);
+      }
+
+      const resolvedContentType =
+        responseContentType ||
+        storageLocation?.contentType ||
+        (typeof blobResponse.headers?.get === 'function' ? blobResponse.headers.get('content-type') : null) ||
+        blob.type ||
+        fallbackContentType;
+
+      logDocumentUrl(downloadUrl, 'netlify blob download URL');
+      logDocumentUrl(objectUrlResult.url, 'netlify blob object URL');
+
+      setViewerState({
+        isOpen: true,
+        title: fallbackTitle,
+        url: objectUrlResult.url,
+        filename: responseFilename || fallbackFilename,
+        contentType: resolvedContentType,
+        allowDownload: true,
+        blobData: transportableBytes || byteArray,
+      });
+      setIsViewerLoading(false);
+      return 'success';
+    },
+    [createObjectUrlFromBlob, logDocumentUrl]
+  );
+
   const closeDocumentViewer = useCallback(() => {
     viewerRequestRef.current += 1;
     revokeActiveObjectUrl();
     setViewerState(createInitialViewerState());
-    setViewerError(null);
+    setViewerErrorInfo(null);
     setIsViewerLoading(false);
   }, [revokeActiveObjectUrl]);
 
@@ -514,7 +633,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     const resolvedUrl = directUrl || metadataUrl;
 
     revokeActiveObjectUrl();
-    setViewerError(null);
+    setViewerErrorInfo(null);
 
     if (resolvedUrl) {
       setViewerState({
@@ -545,10 +664,18 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         url: '',
         blobData: null,
       });
-      setViewerError('This resource does not include a downloadable document.');
+      setViewerErrorInfo({
+        message: 'This resource does not include a downloadable document.',
+        hint: 'No document reference or storage path was provided with this resource.',
+      });
       setIsViewerLoading(false);
       return;
     }
+
+    const storageLocationFromMetadata =
+      (metadata && typeof metadata.storage === 'object' && metadata.storage) ||
+      (metadata && typeof metadata.storageLocation === 'object' && metadata.storageLocation) ||
+      null;
 
     const resourceKey = getResourceKey(resource, index);
     setDownloadingResourceId(resourceKey);
@@ -563,7 +690,49 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       blobData: null,
     });
 
+    const attemptedSources = [];
+    const recordAttemptedSource = (label, path) => {
+      if (!path) return;
+      const trimmed = `${path}`.trim();
+      if (!trimmed) return;
+      attemptedSources.push({ label, path: trimmed });
+    };
+
     try {
+      if (storageLocationFromMetadata?.provider === NETLIFY_BLOB_PROVIDER) {
+        const netlifyPathCandidate =
+          buildNetlifyBlobDownloadUrl(storageLocationFromMetadata) ||
+          storageLocationFromMetadata?.path ||
+          storageLocationFromMetadata?.key ||
+          '';
+        recordAttemptedSource('Netlify Blob', netlifyPathCandidate);
+
+        try {
+          const netlifyResult = await loadNetlifyBlobDocument({
+            storageLocation: storageLocationFromMetadata,
+            requestId,
+            fallbackTitle,
+            fallbackFilename,
+            fallbackContentType: contentType,
+            responseFilename: metadata.filename,
+            responseContentType: metadata.contentType,
+          });
+
+          if (netlifyResult === 'success' || netlifyResult === 'stale') {
+            return;
+          }
+        } catch (netlifyError) {
+          console.warn('Failed to load Netlify Blob document from resource metadata:', netlifyError);
+        }
+      }
+
+      if (documentId || fileId) {
+        const referenceParts = [];
+        if (documentId) referenceParts.push(`documentId=${documentId}`);
+        if (fileId) referenceParts.push(`fileId=${fileId}`);
+        recordAttemptedSource('Document reference', referenceParts.join(' '));
+      }
+
       const response = await ragService.downloadDocument({ documentId, fileId }, userId);
       if (viewerRequestRef.current !== requestId) return;
       if (!response) throw new Error('No response received from download request');
@@ -583,6 +752,26 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         logDocumentUrl(responseUrl, 'backend download URL');
         setIsViewerLoading(false);
         return;
+      }
+
+      const storageLocation =
+        (response && typeof response.storageLocation === 'object' && response.storageLocation) ||
+        (response && typeof response.metadata === 'object' && response.metadata?.storage);
+
+      if (storageLocation?.provider === NETLIFY_BLOB_PROVIDER) {
+        const netlifyResult = await loadNetlifyBlobDocument({
+          storageLocation,
+          requestId,
+          fallbackTitle,
+          fallbackFilename,
+          fallbackContentType: contentType,
+          responseFilename: response.filename,
+          responseContentType: response.contentType,
+        });
+
+        if (netlifyResult === 'success' || netlifyResult === 'stale') {
+          return;
+        }
       }
 
       // Fallback: backend returned base64 content; build a blob URL
@@ -623,13 +812,26 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     } catch (error) {
       console.error('Failed to open resource document:', error);
       if (viewerRequestRef.current === requestId) {
-        setViewerError('We were unable to load this document in the viewer. If a download option is available, please try that instead.');
+        setViewerErrorInfo({
+          message: 'We were unable to load this document in the viewer.',
+          hint: 'If a download option is available, please try that instead.',
+          attemptedPaths: attemptedSources,
+          debugMessage: error?.message || String(error),
+        });
         setIsViewerLoading(false);
       }
     } finally {
       setDownloadingResourceId((current) => (current === resourceKey ? null : current));
     }
-  }, [createObjectUrlFromBlob, decodeBase64ToUint8Array, getResourceKey, revokeActiveObjectUrl, userId]);
+  }, [
+    createObjectUrlFromBlob,
+    decodeBase64ToUint8Array,
+    getResourceKey,
+    loadNetlifyBlobDocument,
+    logDocumentUrl,
+    revokeActiveObjectUrl,
+    userId,
+  ]);
 
   const handleSuggestionClick = (suggestion) => {
     if (suggestion?.url) {
@@ -871,7 +1073,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         contentType={viewerState.contentType}
         filename={viewerState.filename}
         isLoading={isViewerLoading}
-        error={viewerError}
+        error={viewerErrorInfo}
         allowDownload={viewerState.allowDownload}
         onClose={closeDocumentViewer}
       />
@@ -1151,7 +1353,7 @@ export const DocumentViewer = ({
   isLoading,
   onClose,
   filename,
-  error,
+  error: errorInfo,
   allowDownload,
 }) => {
   if (!isOpen) return null;
@@ -1167,6 +1369,24 @@ export const DocumentViewer = ({
   const isImageDocument =
     normalizedContentType.startsWith('image/') ||
     /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(normalizedFilename);
+
+  const resolvedError = errorInfo
+    ? typeof errorInfo === 'string'
+      ? { message: errorInfo }
+      : errorInfo
+    : null;
+  const attemptedPaths = Array.isArray(resolvedError?.attemptedPaths)
+    ? resolvedError.attemptedPaths
+        .filter((entry) => entry && typeof entry.path === 'string' && `${entry.path}`.trim())
+        .map((entry) => ({
+          label: entry.label || '',
+          path: `${entry.path}`.trim(),
+        }))
+    : [];
+  const errorMessage = resolvedError?.message || 'Document preview is not available.';
+  const errorHint = resolvedError?.hint || '';
+  const errorDebugMessage = resolvedError?.debugMessage || '';
+  const hasError = Boolean(resolvedError);
 
   let viewerContent = null;
 
@@ -1253,20 +1473,56 @@ export const DocumentViewer = ({
               <Loader2 className="h-8 w-8 animate-spin" />
               <p className="text-sm font-medium">Loading document...</p>
             </div>
-          ) : error ? (
-            <div className="flex h-full flex-col items-center justify-center space-y-3 px-6 text-center text-gray-600">
-              <AlertCircle className="h-10 w-10 text-amber-500" />
-              <p className="text-sm">{error}</p>
-              {allowDownload && url && (
-                <a
-                  href={url}
-                  download={filename || true}
-                  className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Download document</span>
-                </a>
-              )}
+          ) : hasError ? (
+            <div className="flex h-full flex-col items-center justify-center px-6 text-center text-gray-600">
+              <div className="w-full max-w-lg space-y-4">
+                <div className="flex flex-col items-center space-y-3">
+                  <AlertCircle className="h-10 w-10 text-amber-500" />
+                  <h3 className="text-base font-semibold text-gray-900">{errorMessage}</h3>
+                  {errorHint ? <p className="text-sm text-gray-600">{errorHint}</p> : null}
+                </div>
+                {attemptedPaths.length > 0 ? (
+                  <div
+                    className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left"
+                    data-testid="document-viewer-error-paths"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Attempted document paths</p>
+                    <ul className="mt-2 space-y-2">
+                      {attemptedPaths.map((entry, index) => (
+                        <li key={`${entry.label || 'path'}-${index}`} className="text-xs text-amber-900/90">
+                          {entry.label ? <span className="font-semibold">{entry.label}: </span> : null}
+                          <code
+                            className="break-all rounded bg-white/70 px-1.5 py-0.5"
+                            data-testid="document-viewer-error-path"
+                          >
+                            {entry.path}
+                          </code>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {errorDebugMessage ? (
+                  <details className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-left text-xs text-gray-600">
+                    <summary className="cursor-pointer text-gray-700">Technical details</summary>
+                    <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] text-gray-500">
+                      {errorDebugMessage}
+                    </pre>
+                  </details>
+                ) : null}
+                {allowDownload && url ? (
+                  <div className="flex justify-center">
+                    <a
+                      href={url}
+                      download={filename || true}
+                      className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>Download document</span>
+                    </a>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : viewerContent ? (
             viewerContent

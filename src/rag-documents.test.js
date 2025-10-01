@@ -1,26 +1,26 @@
 import { jest } from '@jest/globals';
 
-const uploadDocumentToS3Mock = jest.fn();
+const uploadDocumentToBlobMock = jest.fn();
 
 let downloadDocumentContentFromOpenAI;
 let handleSaveDocument;
 
 const loadModule = async () => {
   jest.resetModules();
-  uploadDocumentToS3Mock.mockReset();
-  uploadDocumentToS3Mock.mockResolvedValue({
-    bucket: 'bucket-123',
-    region: 'us-east-1',
+  uploadDocumentToBlobMock.mockReset();
+  uploadDocumentToBlobMock.mockResolvedValue({
+    provider: 'netlify-blobs',
+    store: 'rag-documents',
     key: 'rag-documents/user/doc-1',
-    url: 'https://bucket-123.s3.amazonaws.com/rag-documents/user/doc-1',
-    etag: 'etag-123',
+    path: 'rag-documents/rag-documents/user/doc-1',
+    url: null,
     size: 4,
-    versionId: 'version-1',
+    contentType: 'application/pdf',
   });
 
-  process.env.RAG_S3_BUCKET = 'bucket-123';
-  process.env.RAG_S3_REGION = 'us-east-1';
-  global.__UPLOAD_DOCUMENT_TO_S3_MOCK__ = uploadDocumentToS3Mock;
+  process.env.RAG_BLOB_STORE = 'rag-documents';
+  process.env.RAG_BLOB_PREFIX = 'rag-documents';
+  global.__UPLOAD_DOCUMENT_TO_BLOB_MOCK__ = uploadDocumentToBlobMock;
 
   const module = await import('../netlify/functions/rag-documents.js');
   downloadDocumentContentFromOpenAI = module.__testHelpers.downloadDocumentContentFromOpenAI;
@@ -34,11 +34,11 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete global.fetch;
-  delete process.env.RAG_S3_BUCKET;
-  delete process.env.RAG_S3_REGION;
+  delete process.env.RAG_BLOB_STORE;
+  delete process.env.RAG_BLOB_PREFIX;
   delete process.env.RAG_S3_PREFIX;
   delete process.env.S3_PREFIX;
-  delete global.__UPLOAD_DOCUMENT_TO_S3_MOCK__;
+  delete global.__UPLOAD_DOCUMENT_TO_BLOB_MOCK__;
 });
 
 const createMockResponse = ({
@@ -91,8 +91,8 @@ const createMockResponse = ({
   return response;
 };
 
-describe('rag-documents S3 integration', () => {
-  test('handleSaveDocument uploads content to S3 and stores metadata reference', async () => {
+describe('rag-documents Netlify Blob integration', () => {
+  test('handleSaveDocument uploads content to Netlify Blob store and stores metadata reference', async () => {
     const insertedRows = [];
     const sqlMock = jest.fn(async (strings, ...values) => {
       const query = strings.join(' ');
@@ -129,8 +129,8 @@ describe('rag-documents S3 integration', () => {
       },
     });
 
-    expect(uploadDocumentToS3Mock).toHaveBeenCalledTimes(1);
-    const uploadArgs = uploadDocumentToS3Mock.mock.calls[0][0];
+    expect(uploadDocumentToBlobMock).toHaveBeenCalledTimes(1);
+    const uploadArgs = uploadDocumentToBlobMock.mock.calls[0][0];
     expect(uploadArgs.filename).toBe('Policy.pdf');
     expect(Buffer.isBuffer(uploadArgs.body)).toBe(true);
     expect(uploadArgs.body.equals(Buffer.from('fake'))).toBe(true);
@@ -138,15 +138,23 @@ describe('rag-documents S3 integration', () => {
 
     expect(insertedRows).toHaveLength(1);
     expect(insertedRows[0].metadata.storage).toEqual(
-      expect.objectContaining({ provider: 's3', bucket: 'bucket-123', key: expect.stringContaining('rag-documents/user') })
+      expect.objectContaining({
+        provider: 'netlify-blobs',
+        store: 'rag-documents',
+        key: expect.stringContaining('rag-documents/user'),
+      })
     );
 
     const parsed = JSON.parse(response.body);
     expect(parsed.storageLocation).toEqual(
-      expect.objectContaining({ bucket: 'bucket-123', key: expect.stringContaining('rag-documents/user') })
+      expect.objectContaining({
+        provider: 'netlify-blobs',
+        store: 'rag-documents',
+        key: expect.stringContaining('rag-documents/user'),
+      })
     );
     expect(parsed.document.metadata.storage).toEqual(
-      expect.objectContaining({ provider: 's3', url: expect.stringContaining('https://bucket-123.s3.amazonaws.com') })
+      expect.objectContaining({ provider: 'netlify-blobs', store: 'rag-documents' })
     );
   });
 });

@@ -1,7 +1,7 @@
 
 import { neon, neonConfig } from '@neondatabase/serverless';
 
-import { uploadDocumentToS3, __internal as s3Internal } from '../lib/s3-helper.js';
+import { uploadDocumentToBlobStore, __internal as blobInternal } from '../lib/blob-helper.js';
 
 export const config = {
   nodeRuntime: 'nodejs18.x',
@@ -17,167 +17,65 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-const getBucketName = () =>
-  process.env.RAG_S3_BUCKET ||
-  process.env.S3_BUCKET ||
-  process.env.AWS_S3_BUCKET ||
-  '';
-
-const getPrefix = () => s3Internal.getConfiguredPrefix();
-
-const isAccessDeniedError = (error) => {
-  if (!error || typeof error !== 'object') {
-    return false;
+const getBlobStoreName = () => {
+  try {
+    return blobInternal.getConfiguredStore();
+  } catch (error) {
+    console.warn('Unable to resolve Netlify Blob store configuration:', error);
+    return 'configured store';
   }
-
-  const code = error.name || error.Code || error.code;
-  const status = error.$metadata?.httpStatusCode || error.statusCode;
-  const message = typeof error.message === 'string' ? error.message : '';
-
-  return (
-    code === 'AccessDenied' ||
-    code === 'Forbidden' ||
-    status === 403 ||
-    /access\s*denied/i.test(message)
-  );
 };
 
-const sanitizeS3Value = (value) => {
-  if (typeof value !== 'string') {
-    return null;
+const getBlobPrefix = () => {
+  try {
+    return blobInternal.getConfiguredPrefix();
+  } catch (error) {
+    console.warn('Unable to resolve Netlify Blob prefix configuration:', error);
+    return 'documents';
   }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return trimmed
-    .replace(/(<Token-\d+>)([^<]+)(<\/Token-\d+>)/gi, '$1[redacted]$3')
-    .replace(/session-token[^\s<]*/gi, 'session-token[redacted]')
-    .slice(0, 5000);
 };
 
-const parseS3XmlError = (body) => {
-  if (typeof body !== 'string') {
-    return null;
+const buildBlobUploadError = (error) => {
+  const store = getBlobStoreName();
+  const prefix = getBlobPrefix();
+  const messageParts = ['Failed to upload document to Netlify Blob store.'];
+
+  if (store) {
+    messageParts.push(`Verify the function can access the "${store}" store${prefix ? ` with prefix "${prefix}"` : ''}.`);
   }
 
-  const trimmed = body.trim();
-  if (!trimmed.startsWith('<')) {
-    return null;
+  const sanitizedErrorMessage = typeof error?.message === 'string' ? error.message.trim() : '';
+  if (sanitizedErrorMessage) {
+    messageParts.push(`Details: ${sanitizedErrorMessage}`);
   }
 
-  const extract = (tag) => {
-    const match = trimmed.match(new RegExp(`<${tag}>([\s\S]*?)<\/${tag}>`, 'i'));
-    return match ? match[1].trim() : null;
-  };
-
-  return {
-    code: extract('Code'),
-    message: extract('Message'),
-    requestId: extract('RequestId'),
-    hostId: extract('HostId'),
-  };
-};
-
-const buildS3Suggestion = ({ accessDenied, code }) => {
-  if (accessDenied) {
-    return 'Verify the function\'s IAM role or user can perform s3:PutObject on the configured bucket and prefix.';
-  }
-
-  if (code && /invalidtoken/i.test(code)) {
-    return 'Refresh the temporary AWS credentials (access key, secret, and session token) and redeploy the function.';
-  }
-
-  if (code && /signaturedoesnotmatch/i.test(code)) {
-    return 'Check that the AWS region, bucket, and credentials match the target S3 bucket, then retry the upload.';
-  }
-
-  return 'Confirm the AWS credentials, bucket, and prefix configuration are correct before retrying the upload.';
-};
-
-const buildS3UploadError = (error) => {
-  const bucket = getBucketName();
-  const prefix = getPrefix();
-  const accessDenied = isAccessDeniedError(error);
-  const baseMessage = accessDenied
-    ? 'Access denied when uploading document to S3.'
-    : 'Failed to upload document to S3.';
-
-  const guidanceParts = [];
-  if (bucket) {
-    guidanceParts.push(`bucket "${bucket}"`);
-  }
-  if (prefix) {
-    guidanceParts.push(`prefix "${prefix}"`);
-  }
-
-  const guidance = guidanceParts.length
-    ? ` Confirm the configured AWS permissions allow uploading to ${guidanceParts.join(' and ')}.`
-    : '';
-
-  const sanitizedResponseBody = sanitizeS3Value(error?.responseBody);
-  const parsedResponse = parseS3XmlError(error?.responseBody);
-  const parsedCode = parsedResponse?.code || error?.code || error?.name || null;
-  const sanitizedErrorMessage = sanitizeS3Value(error?.message);
-  const suggestion = buildS3Suggestion({ accessDenied, code: parsedCode });
-
-  const detailParts = [];
-  if (parsedResponse?.message) {
-    detailParts.push(`S3 message: ${parsedResponse.message}`);
-  } else if (sanitizedResponseBody) {
-    detailParts.push(`S3 response: ${sanitizedResponseBody}`);
-  } else if (sanitizedErrorMessage) {
-    detailParts.push(`Details: ${sanitizedErrorMessage}`);
-  }
-
-  if (suggestion) {
-    detailParts.push(suggestion);
-  }
-
-  const friendlyMessage = [baseMessage, guidance, detailParts.join(' ')].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-
-  const friendlyError = new Error(friendlyMessage);
-  const fallbackStatus = error?.$metadata?.httpStatusCode || error?.statusCode || 502;
+  const friendlyError = new Error(messageParts.join(' ').replace(/\s+/g, ' ').trim());
+  const fallbackStatus = error?.statusCode || error?.status || 502;
   const normalizedStatus = Number.isFinite(fallbackStatus) ? Number(fallbackStatus) : 502;
-  const resolvedStatus = accessDenied ? 403 : Math.min(Math.max(normalizedStatus, 400), 599);
+  const resolvedStatus = Math.min(Math.max(normalizedStatus, 400), 599);
   friendlyError.statusCode = resolvedStatus;
   friendlyError.details = {
-    provider: 's3',
-    bucket: bucket || null,
+    provider: 'netlify-blobs',
+    store: store || null,
     prefix: prefix || null,
     statusCode: resolvedStatus,
-    code: parsedCode || null,
-    suggestion: suggestion || null,
-    responseBody: sanitizedResponseBody,
-    s3Message: parsedResponse?.message || null,
-    requestId: parsedResponse?.requestId || null,
-    hostId: parsedResponse?.hostId || null,
-    rawMessage: sanitizedErrorMessage,
+    rawMessage: sanitizedErrorMessage || null,
     timestamp: new Date().toISOString(),
   };
   return friendlyError;
 };
 
-const logS3UploadFailure = (error) => {
-  const statusCode = error?.$metadata?.httpStatusCode || error?.statusCode || null;
-  const responseBody = typeof error?.responseBody === 'string' && error.responseBody.trim()
-    ? error.responseBody
-    : null;
-  const code = error?.code || error?.name || null;
+const logBlobUploadFailure = (error) => {
+  const statusCode = error?.statusCode || error?.status || null;
+  const message = error?.message || 'Unknown Netlify Blob upload error';
 
-  const details = {
-    message: error?.message || 'Unknown S3 upload error',
+  console.error('Failed to upload document content to Netlify Blob store', {
+    message,
     statusCode,
-    responseBody,
-  };
-
-  if (code) {
-    details.code = code;
-  }
-
-  console.error('Failed to upload document content to S3', { ...details, error });
+    store: getBlobStoreName(),
+    prefix: getBlobPrefix(),
+    error,
+  });
 };
 
 let sqlClientPromise = null;
@@ -1278,7 +1176,7 @@ async function handleUpload(sql, userId, payload = {}) {
   let storageLocation = null;
   if (contentBuffer && contentBuffer.length > 0) {
     try {
-      storageLocation = await uploadDocumentToS3({
+      storageLocation = await uploadDocumentToBlobStore({
         body: contentBuffer,
         contentType: mimeType || 'application/octet-stream',
         userId,
@@ -1290,19 +1188,18 @@ async function handleUpload(sql, userId, payload = {}) {
         },
       });
     } catch (error) {
-      logS3UploadFailure(error);
-      throw buildS3UploadError(error);
+      logBlobUploadFailure(error);
+      throw buildBlobUploadError(error);
     }
 
     metadata.storage = {
-      provider: 's3',
-      bucket: storageLocation.bucket,
-      region: storageLocation.region,
+      provider: storageLocation.provider,
+      store: storageLocation.store,
       key: storageLocation.key,
+      path: storageLocation.path,
       url: storageLocation.url,
-      etag: storageLocation.etag || null,
-      versionId: storageLocation.versionId || null,
       size: storageLocation.size ?? contentBuffer.length,
+      contentType: storageLocation.contentType || mimeType || 'application/octet-stream',
     };
   }
 

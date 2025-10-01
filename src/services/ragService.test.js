@@ -53,18 +53,20 @@ describe('ragService neon backend integration', () => {
           metadata: {
             ...payload.document.metadata,
             storage: {
-              provider: 's3',
-              bucket: 'bucket-123',
+              provider: 'netlify-blobs',
+              store: 'rag-documents',
               key: 'rag/doc-1',
-              url: 'https://bucket-123.s3.amazonaws.com/rag/doc-1',
+              path: 'rag-documents/rag/doc-1',
+              url: null,
             },
           },
         },
         storageLocation: {
-          provider: 's3',
-          bucket: 'bucket-123',
+          provider: 'netlify-blobs',
+          store: 'rag-documents',
           key: 'rag/doc-1',
-          url: 'https://bucket-123.s3.amazonaws.com/rag/doc-1',
+          path: 'rag-documents/rag/doc-1',
+          url: null,
         },
         message: 'stored',
       }),
@@ -103,16 +105,16 @@ describe('ragService neon backend integration', () => {
       })
     );
 
-    expect(result.storage).toBe('s3');
+    expect(result.storage).toBe('netlify-blobs');
     expect(result.storageLocation).toEqual(
-      expect.objectContaining({ provider: 's3', bucket: 'bucket-123', key: 'rag/doc-1' })
+      expect.objectContaining({ provider: 'netlify-blobs', store: 'rag-documents', key: 'rag/doc-1' })
     );
     expect(result.metadata.title).toBe('Policy Overview');
     expect(result.metadata.summary).toBe('Summary of the quality policy.');
     expect(result.metadata.version).toBe('v1');
     expect(result.metadata.tags).toEqual(['gmp', 'qa']);
     expect(result.metadata.storage).toEqual(
-      expect.objectContaining({ provider: 's3', bucket: 'bucket-123', key: 'rag/doc-1' })
+      expect.objectContaining({ provider: 'netlify-blobs', store: 'rag-documents', key: 'rag/doc-1' })
     );
   });
 

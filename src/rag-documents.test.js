@@ -192,8 +192,8 @@ describe('handleDownloadDocument', () => {
         return [];
       }
 
-      if (query.includes('FROM rag_documents') && query.includes('id =')) {
-        expect(values).toEqual(expect.arrayContaining(['user-1', 42]));
+      if (query.includes('FROM rag_documents') && query.includes('id::text')) {
+        expect(values).toEqual(expect.arrayContaining(['user-1', '42']));
         return [neonRow];
       }
 
@@ -232,6 +232,47 @@ describe('handleDownloadDocument', () => {
     expect(response.statusCode).toBe(404);
     const payload = JSON.parse(response.body);1
     expect(payload.error).toBe('Document not found or access is restricted');
+  });
+
+  test('returns Neon row when rag_documents id is stored as text without metadata documentId', async () => {
+    const neonRow = {
+      id: 'str-id-123',
+      user_id: 'user-1',
+      filename: 'StringId.pdf',
+      file_type: 'application/pdf',
+      file_size: 512,
+      metadata: {
+        storage: {
+          provider: 'netlify-blobs',
+          url: 'https://example.com/string-id.pdf',
+          size: 512,
+        },
+      },
+    };
+
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (query.includes('FROM rag_user_documents')) {
+        return [];
+      }
+
+      if (query.includes('FROM rag_documents') && query.includes('id::text')) {
+        expect(query).toContain('id::text =');
+        expect(values).toEqual(expect.arrayContaining(['user-1', 'str-id-123']));
+        return [neonRow];
+      }
+
+      throw new Error(`Unexpected query executed: ${query}`);
+    });
+
+    const response = await handleDownloadDocument(sqlMock, 'user-1', { documentId: 'str-id-123' });
+    expect(response.statusCode).toBe(200);
+
+    const payload = JSON.parse(response.body);
+    expect(payload.documentId).toBe('str-id-123');
+    expect(payload.filename).toBe('StringId.pdf');
+    expect(payload.storageLocation.url).toBe('https://example.com/string-id.pdf');
   });
 });
 

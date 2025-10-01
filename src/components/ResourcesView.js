@@ -940,7 +940,6 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
           debugMessage = fallbackDebug || 'No additional technical details are available.';
         }
-
         setViewerErrorInfo({
           message,
           hint,

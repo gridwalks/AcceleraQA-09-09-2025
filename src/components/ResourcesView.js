@@ -781,18 +781,29 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         (response && typeof response.metadata === 'object' && response.metadata?.storage);
 
       if (storageLocation?.provider === NETLIFY_BLOB_PROVIDER) {
-        const netlifyResult = await loadNetlifyBlobDocument({
-          storageLocation,
-          requestId,
-          fallbackTitle,
-          fallbackFilename,
-          fallbackContentType: contentType,
-          responseFilename: response.filename,
-          responseContentType: response.contentType,
-        });
+        const netlifyPathCandidate =
+          buildNetlifyBlobDownloadUrl(storageLocation) ||
+          storageLocation?.path ||
+          storageLocation?.key ||
+          '';
+        recordAttemptedSource('Netlify Blob (backend response)', netlifyPathCandidate);
 
-        if (netlifyResult === 'success' || netlifyResult === 'stale') {
-          return;
+        try {
+          const netlifyResult = await loadNetlifyBlobDocument({
+            storageLocation,
+            requestId,
+            fallbackTitle,
+            fallbackFilename,
+            fallbackContentType: contentType,
+            responseFilename: response.filename,
+            responseContentType: response.contentType,
+          });
+
+          if (netlifyResult === 'success' || netlifyResult === 'stale') {
+            return;
+          }
+        } catch (netlifyError) {
+          console.warn('Failed to load Netlify Blob document from backend response:', netlifyError);
         }
       }
 

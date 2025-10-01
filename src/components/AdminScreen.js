@@ -132,6 +132,7 @@ const AdminScreen = ({ user, onBack }) => {
   const [appliedBlobPrefix, setAppliedBlobPrefix] = useState('');
   const [blobSearchTerm, setBlobSearchTerm] = useState('');
   const [blobSort, setBlobSort] = useState('newest');
+  const [downloadingBlobKeys, setDownloadingBlobKeys] = useState(() => new Set());
   const ragBackendLabel = getRagBackendLabel();
   const neonBackendEnabled = isNeonBackend();
 
@@ -478,6 +479,101 @@ const AdminScreen = ({ user, onBack }) => {
     setBlobPrefixInput('');
     loadBlobInventory('');
   }, [appliedBlobPrefix, blobPrefixInput, loadBlobInventory]);
+
+  const markBlobDownloading = useCallback(
+    (key, isDownloading) => {
+      if (!key) {
+        return;
+      }
+
+      setDownloadingBlobKeys((previous) => {
+        const next = new Set(previous);
+        if (isDownloading) {
+          next.add(key);
+        } else {
+          next.delete(key);
+        }
+        return next;
+      });
+    },
+    [setDownloadingBlobKeys]
+  );
+
+  const handleBlobDownload = useCallback(
+    async (file) => {
+      if (!file?.key) {
+        setBlobError('Unable to download file: missing blob key.');
+        return;
+      }
+
+      if (
+        typeof window === 'undefined' ||
+        typeof window.URL?.createObjectURL !== 'function' ||
+        typeof document === 'undefined'
+      ) {
+        setBlobError('File downloads are not supported in this environment.');
+        return;
+      }
+
+      const blobKey = file.key;
+      markBlobDownloading(blobKey, true);
+      setBlobError(null);
+
+      try {
+        const result = await blobAdminService.downloadBlob({ key: blobKey });
+
+        if (result.encoding && result.encoding !== 'base64') {
+          throw new Error(`Unsupported blob encoding: ${result.encoding}`);
+        }
+
+        const base64Data = result.data;
+        if (typeof base64Data !== 'string' || !base64Data) {
+          throw new Error('Received an empty blob payload.');
+        }
+
+        let binaryString;
+        if (typeof window !== 'undefined' && typeof window.atob === 'function') {
+          binaryString = window.atob(base64Data);
+        } else if (typeof atob === 'function') {
+          binaryString = atob(base64Data);
+        } else if (typeof Buffer !== 'undefined') {
+          binaryString = Buffer.from(base64Data, 'base64').toString('binary');
+        } else {
+          throw new Error('Base64 decoding is not supported in this environment.');
+        }
+
+        const byteLength = binaryString.length;
+        const bytes = new Uint8Array(byteLength);
+        for (let index = 0; index < byteLength; index += 1) {
+          bytes[index] = binaryString.charCodeAt(index);
+        }
+
+        const contentType = result.contentType || file.contentType || 'application/octet-stream';
+        const blob = new Blob([bytes], { type: contentType });
+        const objectUrl = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        const downloadName =
+          result.filename ||
+          file.filename ||
+          result.relativeKey ||
+          file.relativeKey ||
+          blobKey.split('/').pop() ||
+          'download';
+        anchor.download = downloadName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        window.URL.revokeObjectURL(objectUrl);
+      } catch (error) {
+        console.error('Failed to download blob file:', error);
+        setBlobError(error.message || 'Failed to download file from Netlify blobs.');
+      } finally {
+        markBlobDownloading(blobKey, false);
+      }
+    },
+    [markBlobDownloading, setBlobError]
+  );
 
   // Test system components
   const runSystemTests = async () => {
@@ -1165,14 +1261,14 @@ const AdminScreen = ({ user, onBack }) => {
                       <tbody className="divide-y divide-gray-100">
                         {isBlobLoading && filteredBlobFiles.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                            <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                               <RefreshCw className="h-5 w-5 inline-block animate-spin mr-2" />
                               Loading Netlify blob inventory…
                             </td>
                           </tr>
                         ) : filteredBlobFiles.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                            <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                               No blob files found for the selected filters.
                             </td>
                           </tr>
@@ -1211,6 +1307,21 @@ const AdminScreen = ({ user, onBack }) => {
                               <td className="px-4 py-3 align-top text-gray-600">{formatDateTime(file.uploadedAt)}</td>
                               <td className="px-4 py-3 align-top text-xs text-gray-600">
                                 {renderMetadataPreview(file.metadata)}
+                              </td>
+                              <td className="px-4 py-3 align-top">
+                                <button
+                                  type="button"
+                                  onClick={() => handleBlobDownload(file)}
+                                  className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                  disabled={downloadingBlobKeys.has(file.key)}
+                                >
+                                  {downloadingBlobKeys.has(file.key) ? (
+                                    <RefreshCw className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Download className="h-4 w-4" />
+                                  )}
+                                  <span>{downloadingBlobKeys.has(file.key) ? 'Preparing…' : 'Download'}</span>
+                                </button>
                               </td>
                             </tr>
                           ))

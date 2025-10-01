@@ -31,12 +31,12 @@ const normalizeRoles = (roles = []) =>
         .filter(Boolean)
     : [];
 
-async function listBlobs({ user, prefix, limit } = {}) {
+const ensureAdminUser = async (user) => {
   const currentUser = user || (await authService.getUser());
   const userId = currentUser?.sub || (await authService.getUserId());
 
   if (!userId) {
-    throw new Error('Administrator authentication is required to list Netlify blobs.');
+    throw new Error('Administrator authentication is required to access Netlify blobs.');
   }
 
   let token;
@@ -60,7 +60,11 @@ async function listBlobs({ user, prefix, limit } = {}) {
   if (typeof currentUser?.organization === 'string' && currentUser.organization.trim()) {
     headers['x-user-organization'] = currentUser.organization.trim();
   }
+  return { headers, userId, roles, currentUser };
+};
 
+async function listBlobs({ user, prefix, limit } = {}) {
+  const { headers } = await ensureAdminUser(user);
   const numericLimit = Number(limit);
   const queryString = buildQueryString({
     prefix: sanitizeQueryParam(prefix),
@@ -92,9 +96,48 @@ async function listBlobs({ user, prefix, limit } = {}) {
 
   return data;
 }
+async function downloadBlob({ user, key } = {}) {
+  const { headers } = await ensureAdminUser(user);
+
+  const sanitizedKey = sanitizeQueryParam(key);
+  if (!sanitizedKey) {
+    throw new Error('A blob key is required to download a Netlify blob.');
+  }
+
+  const queryString = buildQueryString({ key: sanitizedKey });
+  const endpoint = ADMIN_BLOB_FUNCTION;
+  let response;
+  try {
+    response = await fetch(`${endpoint}${queryString}`, {
+      method: 'GET',
+      headers,
+    });
+  } catch (error) {
+    throw new Error('Unable to reach Netlify blob download service.');
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (error) {
+    throw new Error('Failed to parse Netlify blob download response.');
+  }
+
+  if (!response.ok) {
+    const message = typeof data?.error === 'string' ? data.error : data?.message;
+    throw new Error(message || `Download failed with status ${response.status}`);
+  }
+
+  if (!data || typeof data.data !== 'string') {
+    throw new Error('Download response did not include blob data.');
+  }
+
+  return data;
+}
 
 const blobAdminService = {
   listBlobs,
+  downloadBlob,
 };
 
 export default blobAdminService;

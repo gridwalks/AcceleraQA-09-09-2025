@@ -1,4 +1,4 @@
-import { listBlobFiles } from '../lib/blob-helper.js';
+import { listBlobFiles, getBlobFile } from '../lib/blob-helper.js';
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -114,6 +114,34 @@ export const handler = async (event, context) => {
     const query = event.queryStringParameters || {};
     const limitParam = Number(query.limit);
     const prefixParam = typeof query.prefix === 'string' ? query.prefix : '';
+    const keyParam = typeof query.key === 'string' ? query.key.trim() : '';
+
+    if (keyParam) {
+      const file = await getBlobFile({ key: keyParam });
+
+      if (!file) {
+        return {
+          statusCode: 404,
+          headers,
+          body: JSON.stringify({
+            error: 'Blob not found',
+            message: `No blob found for key ${keyParam}`,
+            requestedBy: userId || null,
+            roles,
+          }),
+        };
+      }
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          ...file,
+          requestedBy: userId || null,
+          roles,
+        }),
+      };
+    }
 
     const result = await listBlobFiles({
       prefix: prefixParam,

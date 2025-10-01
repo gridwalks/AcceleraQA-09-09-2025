@@ -390,6 +390,100 @@ const deriveKeySegments = (key, prefix) => {
   };
 };
 
+export const getBlobFile = async ({ key } = {}) => {
+  if (typeof key !== 'string') {
+    throw new Error('A blob key is required to download a file from Netlify Blobs.');
+  }
+
+  const trimmedKey = key.trim();
+  if (!trimmedKey) {
+    throw new Error('A blob key is required to download a file from Netlify Blobs.');
+  }
+
+  const normalizedKey = trimmedKey.replace(/^\/+/, '');
+  const store = getBlobStoreInstance();
+  const storeName = getConfiguredStore();
+  const configuredPrefix = getConfiguredPrefix();
+
+  const result = await store.getWithMetadata(normalizedKey, { type: 'arrayBuffer' });
+  if (!result) {
+    return null;
+  }
+
+  const buffer = Buffer.from(result.data);
+  const decodedMetadata = decodeMetadataObject(result.metadata || {});
+  const storageMetadata =
+    decodedMetadata.storage && typeof decodedMetadata.storage === 'object'
+      ? decodedMetadata.storage
+      : null;
+
+  const derived = deriveKeySegments(normalizedKey, configuredPrefix);
+
+  const size = firstFiniteNumber(
+    decodedMetadata['size-bytes'],
+    decodedMetadata.size_bytes,
+    decodedMetadata.sizeBytes,
+    decodedMetadata.size,
+    decodedMetadata['content-length'],
+    decodedMetadata['x-size-bytes'],
+    storageMetadata?.size,
+    buffer.length
+  );
+
+  const contentType =
+    firstNonEmptyString(
+      decodedMetadata['content-type'],
+      decodedMetadata.contentType,
+      storageMetadata?.contentType
+    ) || 'application/octet-stream';
+
+  const uploadedAt = firstValidTimestamp(
+    decodedMetadata.uploadedAt,
+    decodedMetadata['uploaded-at'],
+    decodedMetadata.uploaded_at,
+    storageMetadata?.uploadedAt,
+    storageMetadata?.uploaded_at
+  );
+
+  const userId = firstNonEmptyString(
+    decodedMetadata['x-user-id'],
+    decodedMetadata.userId,
+    decodedMetadata.user_id,
+    derived.userId
+  );
+
+  const documentId = firstNonEmptyString(
+    decodedMetadata['x-document-id'],
+    decodedMetadata.documentId,
+    decodedMetadata.document_id,
+    derived.documentId
+  );
+
+  const etag = firstNonEmptyString(
+    result.etag,
+    decodedMetadata.etag,
+    decodedMetadata.ETag,
+    decodedMetadata['etag'],
+    decodedMetadata['ETag']
+  );
+
+  return {
+    key: normalizedKey,
+    store: storeName,
+    relativeKey: derived.relativeKey,
+    userId: userId || null,
+    documentId: documentId || null,
+    filename: derived.filename || null,
+    size: Number.isFinite(size) ? size : buffer.length,
+    contentType,
+    uploadedAt,
+    metadata: decodedMetadata,
+    etag: etag || null,
+    data: buffer.toString('base64'),
+    encoding: 'base64',
+  };
+};
+
 export const listBlobFiles = async ({ prefix, limit } = {}) => {
   const store = getBlobStoreInstance();
   const storeName = getConfiguredStore();

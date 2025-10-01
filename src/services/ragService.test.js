@@ -290,6 +290,59 @@ describe('ragService neon backend integration', () => {
   });
 });
 
+describe('shared document retention for OpenAI backend', () => {
+  test('getDocuments retains globally shared documents even without OpenAI file access', async () => {
+    jest.resetModules();
+    process.env.REACT_APP_RAG_BACKEND = 'openai';
+
+    const ragModule = await import('./ragService.js');
+    const ragService = ragModule.default;
+
+    const metadataResponse = {
+      documents: [
+        {
+          id: 'shared-doc',
+          filename: 'Admin.pdf',
+          metadata: {
+            title: 'Admin Doc',
+            sharedWithAllUsers: true,
+            storage: { url: 'https://example.com/shared.pdf' },
+          },
+        },
+        {
+          id: 'private-doc',
+          filename: 'User.pdf',
+          metadata: { title: 'User Doc' },
+        },
+      ],
+    };
+
+    const metadataSpy = jest
+      .spyOn(ragService, 'makeDocumentMetadataRequest')
+      .mockResolvedValue(metadataResponse);
+
+    const openaiModule = await import('./openaiService.js');
+    const openaiSpy = jest
+      .spyOn(openaiModule.default, 'makeRequest')
+      .mockResolvedValue({ data: [{ id: 'private-doc' }] });
+
+    const documents = await ragService.getDocuments('user-openai');
+
+    expect(metadataSpy).toHaveBeenCalledWith('list_documents', 'user-openai');
+    expect(openaiSpy).toHaveBeenCalledWith('/files', expect.objectContaining({ method: 'GET' }));
+    expect(documents).toHaveLength(2);
+
+    const ids = documents.map(doc => doc.id);
+    expect(ids).toEqual(expect.arrayContaining(['shared-doc', 'private-doc']));
+    const sharedDoc = documents.find(doc => doc.id === 'shared-doc');
+    expect(sharedDoc.metadata.sharedWithAllUsers).toBe(true);
+
+    metadataSpy.mockRestore();
+    openaiSpy.mockRestore();
+    delete process.env.REACT_APP_RAG_BACKEND;
+  });
+});
+
 describe('extractTextFromFile', () => {
   test('uses pdf.js to extract structured text from PDFs', async () => {
     jest.resetModules();

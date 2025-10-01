@@ -92,6 +92,12 @@ REACT_APP_AUTH0_ORG_CLAIM=https://your-domain.com/org
 NEON_DATABASE_URL=postgres://user:password@host:port/dbname
 REACT_APP_RAG_DOCS_FUNCTION=/.netlify/functions/rag-documents # optional override
 
+# Netlify Blob Storage (Document Store)
+NETLIFY_BLOBS_SITE_ID=your_site_id                # falls back to NETLIFY_SITE_ID if unset
+NETLIFY_BLOBS_TOKEN=your_access_token             # falls back to NETLIFY_AUTH_TOKEN if unset
+RAG_BLOB_STORE=your_blob_store_name               # falls back to NETLIFY_BLOB_STORE if unset
+RAG_BLOB_PREFIX=rag-documents                     # defaults to 'rag-documents' when unset
+
 # Support Requests (Email via SendGrid)
 SUPPORT_REQUEST_SENDGRID_API_KEY=your_sendgrid_api_key
 SUPPORT_REQUEST_FROM_EMAIL=verified_sender@example.com # optional verified sender override
@@ -101,6 +107,8 @@ SUPPORT_REQUEST_TO_EMAIL=support@acceleraqa.atlassian.net # optional override
 # Feature Flags (Optional)
 REACT_APP_ENABLE_AI_SUGGESTIONS=true # set to 'false' to disable AI suggestions
 ```
+
+You can find the Netlify Site ID in **Site settings → Site information** and generate a personal access token from **User settings → Applications → Personal access tokens** for local development. Netlify-managed deploys typically inject `NETLIFY_*` blob credentials automatically, but setting these variables locally ensures the RAG blob store is available during development and testing.
 
 ### 4. Auth0 Configuration
 

@@ -340,6 +340,9 @@ export const buildNetlifyBlobDownloadUrl = (storageLocation = {}) => {
     return directUrl;
   }
 
+  // Use the admin function for blob access instead of direct URLs
+  const adminFunctionUrl = process.env.REACT_APP_ADMIN_BLOB_FUNCTION || '/.netlify/functions/admin-blob-list';
+  
   const normalizePath = (input) => {
     if (typeof input !== 'string') {
       return '';
@@ -375,20 +378,19 @@ export const buildNetlifyBlobDownloadUrl = (storageLocation = {}) => {
       .join('/');
   };
 
-  const normalizedPath = normalizePath(storageLocation.path);
-  if (normalizedPath) {
-    return `/.netlify/blobs/blob/${normalizedPath}`;
+  // Extract the blob key from the storage location
+  let blobKey = '';
+  
+  if (storageLocation.key) {
+    blobKey = normalizePath(storageLocation.key);
+  } else if (storageLocation.path) {
+    blobKey = normalizePath(storageLocation.path);
+  } else if (storageLocation.store && storageLocation.key) {
+    blobKey = normalizePath(`${storageLocation.store}/${storageLocation.key}`);
   }
 
-  const normalizedStore = normalizePath(storageLocation.store);
-  const normalizedKey = normalizePath(storageLocation.key);
-
-  if (normalizedStore && normalizedKey) {
-    return `/.netlify/blobs/blob/${normalizedStore}/${normalizedKey}`;
-  }
-
-  if (normalizedKey) {
-    return `/.netlify/blobs/blob/${normalizedKey}`;
+  if (blobKey) {
+    return `${adminFunctionUrl}?key=${encodeURIComponent(blobKey)}`;
   }
 
   return '';
@@ -520,7 +522,20 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         throw error;
       }
 
-      const blob = await blobResponse.blob();
+      // Handle JSON response from admin function
+      const responseData = await blobResponse.json();
+      if (!responseData || !responseData.data) {
+        throw new Error('Invalid response from Netlify Blob service.');
+      }
+
+      // Convert base64 data to blob
+      const binaryString = atob(responseData.data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const blob = new Blob([bytes], { type: responseData.contentType || 'application/octet-stream' });
       const objectUrlResult = createObjectUrlFromBlob(blob);
       if (!objectUrlResult) {
         throw new Error('Unable to create object URL for Netlify Blob document.');

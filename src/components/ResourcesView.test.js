@@ -249,7 +249,7 @@ describe('DocumentViewer', () => {
               message: 'Unable to fetch the requested document.',
               hint: 'Please try downloading the file directly or contact support.',
               attemptedPaths: [
-                { label: 'Netlify Blob', path: '/.netlify/blobs/blob/path/to/document.pdf' },
+                { label: 'Netlify Blob', path: '/.netlify/functions/admin-blob-list?key=path%2Fto%2Fdocument.pdf' },
                 { label: 'Document reference', path: 'documentId=doc-1 fileId=file-1' },
               ],
               debugMessage: 'Status 500: Internal Server Error',
@@ -265,12 +265,12 @@ describe('DocumentViewer', () => {
 
       const primaryPathContainer = container.querySelector('[data-testid="document-viewer-error-primary-path"]');
       expect(primaryPathContainer).not.toBeNull();
-      expect(primaryPathContainer.textContent).toContain('/.netlify/blobs/blob/path/to/document.pdf');
+      expect(primaryPathContainer.textContent).toContain('/.netlify/functions/admin-blob-list?key=path%2Fto%2Fdocument.pdf');
 
       const pathEntries = Array.from(
         container.querySelectorAll('[data-testid="document-viewer-error-path"]')
       ).map((node) => node.textContent);
-      expect(pathEntries).toContain('/.netlify/blobs/blob/path/to/document.pdf');
+      expect(pathEntries).toContain('/.netlify/functions/admin-blob-list?key=path%2Fto%2Fdocument.pdf');
       expect(pathEntries).toContain('documentId=doc-1 fileId=file-1');
 
       const debugPre = container.querySelector('details pre');
@@ -358,7 +358,7 @@ describe('ResourcesView component', () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock).toHaveBeenCalledWith(
-        '/.netlify/blobs/blob/rag-documents/user/doc-123.pdf',
+        '/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Fdoc-123.pdf',
         { credentials: 'include' }
       );
       expect(ragService.downloadDocument).not.toHaveBeenCalled();
@@ -460,7 +460,7 @@ describe('ResourcesView component', () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(fetchMock).toHaveBeenCalledWith(
-        '/.netlify/blobs/blob/rag-documents/user/doc-999.pdf',
+        '/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Fdoc-999.pdf',
         { credentials: 'include' }
       );
       expect(ragService.downloadDocument).toHaveBeenCalledWith(
@@ -570,7 +570,7 @@ describe('ResourcesView component', () => {
 
       const primaryPath = container.querySelector('[data-testid="document-viewer-error-primary-path"]');
       expect(primaryPath).not.toBeNull();
-      expect(primaryPath.textContent).toContain('/.netlify/blobs/blob/rag-documents/user/missing.pdf');
+      expect(primaryPath.textContent).toContain('/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Fmissing.pdf');
 
       const debugDetails = container.querySelector('details pre');
       expect(debugDetails).not.toBeNull();
@@ -659,7 +659,7 @@ describe('ResourcesView component', () => {
 
       const primaryPathContainer = container.querySelector('[data-testid="document-viewer-error-primary-path"]');
       expect(primaryPathContainer).not.toBeNull();
-      expect(primaryPathContainer.textContent).toContain('/.netlify/blobs/blob/rag-documents/user/doc-404.pdf');
+      expect(primaryPathContainer.textContent).toContain('/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Fdoc-404.pdf');
 
       const attemptedPathsContainer = container.querySelector('[data-testid="document-viewer-error-paths"]');
       expect(attemptedPathsContainer).not.toBeNull();
@@ -668,7 +668,7 @@ describe('ResourcesView component', () => {
         container.querySelectorAll('[data-testid="document-viewer-error-path"]')
       ).map((node) => node.textContent);
 
-      expect(pathEntries).toContain('/.netlify/blobs/blob/rag-documents/user/doc-404.pdf');
+      expect(pathEntries).toContain('/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Fdoc-404.pdf');
       expect(pathEntries).toContain('documentId=doc-404 fileId=file-404');
 
       const debugPre = container.querySelector('details pre');
@@ -706,22 +706,22 @@ describe('buildNetlifyBlobDownloadUrl', () => {
 
   it('constructs a blob url from path metadata', () => {
     const url = buildNetlifyBlobDownloadUrl({ path: 'rag-documents/user/file.pdf' });
-    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/file.pdf');
+    expect(url).toBe('/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Ffile.pdf');
   });
 
   it('constructs a blob url from store and key metadata', () => {
     const url = buildNetlifyBlobDownloadUrl({ store: 'rag-documents', key: 'rag-documents/user/file.pdf' });
-    expect(url).toBe('/.netlify/blobs/blob/rag-documents/rag-documents/user/file.pdf');
+    expect(url).toBe('/.netlify/functions/admin-blob-list?key=rag-documents%2Frag-documents%2Fuser%2Ffile.pdf');
   });
 
   it('avoids double encoding already escaped path segments', () => {
     const url = buildNetlifyBlobDownloadUrl({ path: 'rag-documents/user/My%20File%20(1).pdf' });
-    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/My%20File%20(1).pdf');
+    expect(url).toBe('/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2FMy%2520File%2520(1).pdf');
   });
 
   it('preserves encoded forward slashes within segments', () => {
     const url = buildNetlifyBlobDownloadUrl({ key: 'rag-documents/user/some%2Fnested%2Fname.txt' });
-    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/some%2Fnested%2Fname.txt');
+    expect(url).toBe('/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Fsome%252Fnested%252Fname.txt');
   });
 
   it('returns empty string when metadata is incomplete', () => {
@@ -802,7 +802,7 @@ describe('ResourcesView component', () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock).toHaveBeenCalledWith(
-        '/.netlify/blobs/blob/rag-documents/user/doc-123.pdf',
+        '/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Fdoc-123.pdf',
         { credentials: 'include' }
       );
       expect(ragService.downloadDocument).not.toHaveBeenCalled();
@@ -841,12 +841,12 @@ describe('buildNetlifyBlobDownloadUrl', () => {
 
   it('constructs a blob url from path metadata', () => {
     const url = buildNetlifyBlobDownloadUrl({ path: 'rag-documents/user/file.pdf' });
-    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/file.pdf');
+    expect(url).toBe('/.netlify/functions/admin-blob-list?key=rag-documents%2Fuser%2Ffile.pdf');
   });
 
   it('constructs a blob url from store and key metadata', () => {
     const url = buildNetlifyBlobDownloadUrl({ store: 'rag-documents', key: 'rag-documents/user/file.pdf' });
-    expect(url).toBe('/.netlify/blobs/blob/rag-documents/rag-documents/user/file.pdf');
+    expect(url).toBe('/.netlify/functions/admin-blob-list?key=rag-documents%2Frag-documents%2Fuser%2Ffile.pdf');
   });
 
   it('returns empty string when metadata is incomplete', () => {

@@ -388,6 +388,113 @@ describe('ResourcesView component', () => {
     }
   });
 
+  it('falls back to base64 content when Netlify downloads fail with 404', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 404 })
+      .mockResolvedValueOnce({ ok: false, status: 404 });
+    global.fetch = fetchMock;
+
+    const originalCreateObjectURL = typeof URL !== 'undefined' ? URL.createObjectURL : undefined;
+    const originalRevokeObjectURL = typeof URL !== 'undefined' ? URL.revokeObjectURL : undefined;
+
+    const createObjectURLMock = jest.fn(() => 'blob:base64-fallback');
+    const revokeObjectURLMock = jest.fn();
+
+    if (typeof URL !== 'undefined') {
+      URL.createObjectURL = createObjectURLMock;
+      URL.revokeObjectURL = revokeObjectURLMock;
+    }
+
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+    const base64Content = Buffer.from(pdfBytes).toString('base64');
+
+    ragService.downloadDocument.mockResolvedValue({
+      filename: 'Fallback.pdf',
+      contentType: 'application/pdf',
+      storageLocation: {
+        provider: 'netlify-blobs',
+        path: 'rag-documents/user/doc-999.pdf',
+        contentType: 'application/pdf',
+      },
+      content: base64Content,
+      encoding: 'base64',
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const resource = {
+      title: 'Fallback Policy',
+      type: 'Guideline',
+      metadata: {
+        documentId: 'doc-999',
+        filename: 'Fallback.pdf',
+        contentType: 'application/pdf',
+        storage: {
+          provider: 'netlify-blobs',
+          path: 'rag-documents/user/doc-999.pdf',
+          contentType: 'application/pdf',
+        },
+      },
+    };
+
+    try {
+      await act(async () => {
+        root.render(<ResourcesView currentResources={[resource]} user={{ sub: 'user-3' }} />);
+      });
+
+      const card = container.querySelector('[role="button"]');
+      expect(card).not.toBeNull();
+
+      await act(async () => {
+        card.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/.netlify/blobs/blob/rag-documents/user/doc-999.pdf',
+        { credentials: 'include' }
+      );
+      expect(ragService.downloadDocument).toHaveBeenCalledWith(
+        { documentId: 'doc-999', fileId: '' },
+        'user-3'
+      );
+      expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+
+      const pdfViewer = container.querySelector('[data-testid="pdf-blob-viewer"]');
+      expect(pdfViewer).not.toBeNull();
+
+      const errorPaths = container.querySelector('[data-testid="document-viewer-error-paths"]');
+      expect(errorPaths).toBeNull();
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      document.body.removeChild(container);
+      global.fetch = originalFetch;
+      if (typeof URL !== 'undefined') {
+        if (originalCreateObjectURL) {
+          URL.createObjectURL = originalCreateObjectURL;
+        } else {
+          delete URL.createObjectURL;
+        }
+        if (originalRevokeObjectURL) {
+          URL.revokeObjectURL = originalRevokeObjectURL;
+        } else {
+          delete URL.revokeObjectURL;
+        }
+      }
+    }
+  });
+
   it('shows attempted document paths when downloads fail', async () => {
     const originalFetch = global.fetch;
     const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 500 });

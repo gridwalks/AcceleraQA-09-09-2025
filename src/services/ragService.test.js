@@ -118,6 +118,24 @@ describe('ragService neon backend integration', () => {
     );
   });
 
+  test('downloadDocument delegates to document metadata endpoint for Neon backend', async () => {
+    const { ragService, makeNeonRequestSpy } = await setupNeonRagService();
+
+    const metadataSpy = jest
+      .spyOn(ragService, 'makeDocumentMetadataRequest')
+      .mockResolvedValue({ downloadUrl: 'https://example.com/doc.pdf', filename: 'doc.pdf' });
+
+    const result = await ragService.downloadDocument({ documentId: 'doc-42' }, 'user-9');
+
+    expect(metadataSpy).toHaveBeenCalledWith(
+      'download_document',
+      'user-9',
+      expect.objectContaining({ documentId: 'doc-42' })
+    );
+    expect(makeNeonRequestSpy).not.toHaveBeenCalledWith('download_document', expect.anything(), expect.anything());
+    expect(result).toEqual(expect.objectContaining({ downloadUrl: 'https://example.com/doc.pdf' }));
+  });
+
   test('getDocuments returns Neon document list', async () => {
     const neonResponses = {
       list: () => ({
@@ -269,6 +287,59 @@ describe('ragService neon backend integration', () => {
     expect(result.sources[0].metadata.citationNumber).toBe(1);
     expect(result.answer).toContain('References');
     expect(result.resources).toEqual(chatResponse.resources);
+  });
+});
+
+describe('shared document retention for OpenAI backend', () => {
+  test('getDocuments retains globally shared documents even without OpenAI file access', async () => {
+    jest.resetModules();
+    process.env.REACT_APP_RAG_BACKEND = 'openai';
+
+    const ragModule = await import('./ragService.js');
+    const ragService = ragModule.default;
+
+    const metadataResponse = {
+      documents: [
+        {
+          id: 'shared-doc',
+          filename: 'Admin.pdf',
+          metadata: {
+            title: 'Admin Doc',
+            sharedWithAllUsers: true,
+            storage: { url: 'https://example.com/shared.pdf' },
+          },
+        },
+        {
+          id: 'private-doc',
+          filename: 'User.pdf',
+          metadata: { title: 'User Doc' },
+        },
+      ],
+    };
+
+    const metadataSpy = jest
+      .spyOn(ragService, 'makeDocumentMetadataRequest')
+      .mockResolvedValue(metadataResponse);
+
+    const openaiModule = await import('./openaiService.js');
+    const openaiSpy = jest
+      .spyOn(openaiModule.default, 'makeRequest')
+      .mockResolvedValue({ data: [{ id: 'private-doc' }] });
+
+    const documents = await ragService.getDocuments('user-openai');
+
+    expect(metadataSpy).toHaveBeenCalledWith('list_documents', 'user-openai');
+    expect(openaiSpy).toHaveBeenCalledWith('/files', expect.objectContaining({ method: 'GET' }));
+    expect(documents).toHaveLength(2);
+
+    const ids = documents.map(doc => doc.id);
+    expect(ids).toEqual(expect.arrayContaining(['shared-doc', 'private-doc']));
+    const sharedDoc = documents.find(doc => doc.id === 'shared-doc');
+    expect(sharedDoc.metadata.sharedWithAllUsers).toBe(true);
+
+    metadataSpy.mockRestore();
+    openaiSpy.mockRestore();
+    delete process.env.REACT_APP_RAG_BACKEND;
   });
 });
 

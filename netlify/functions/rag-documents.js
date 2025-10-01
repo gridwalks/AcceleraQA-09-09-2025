@@ -5,7 +5,7 @@ import { uploadDocumentToBlobStore, __internal as blobInternal } from '../lib/bl
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id, x-user-roles, x-user-role, x-user-organization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json',
 };
@@ -17,6 +17,8 @@ const MAX_BASE64_LENGTH = 12 * 1024 * 1024; // ~9 MB binary payload
 const BASE64_CLEANUP_REGEX = /\s+/g;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const DEFAULT_CONTENT_ENCODING = 'base64';
+const ADMIN_ROLE_KEYWORDS = new Set(['admin', 'administrator', 'superadmin', 'system_admin', 'global_admin']);
+const GLOBAL_VISIBILITY_VALUES = new Set(['global', 'public', 'everyone', 'all']);
 
 const getOpenAIApiKey = () => process.env.OPENAI_API_KEY || process.env.REACT_APP_OPENAI_API_KEY || null;
 
@@ -133,11 +135,191 @@ const extractUserId = (event, context) => {
   return { userId: null, source: 'unknown' };
 };
 
+const parseRolesHeader = (rawValue) => {
+  if (!rawValue || typeof rawValue !== 'string') {
+    return [];
+  }
+
+  return rawValue
+    .split(/[;,]/)
+    .map(role => role.split(/\s+/))
+    .flat()
+    .map(role => (typeof role === 'string' ? role.trim() : ''))
+    .filter(Boolean);
+};
+
+const extractUserRoles = (event, context) => {
+  const headerRolesValue =
+    getHeaderValue(event.headers, 'x-user-roles') ||
+    getHeaderValue(event.headers, 'x-user-role') ||
+    getHeaderValue(event.headers, 'x_roles');
+
+  let roles = parseRolesHeader(headerRolesValue);
+
+  if (roles.length === 0) {
+    const metadataRoles = context?.clientContext?.user?.app_metadata?.roles;
+    if (Array.isArray(metadataRoles)) {
+      roles = metadataRoles.map(role => (typeof role === 'string' ? role.trim() : '')).filter(Boolean);
+    }
+  }
+
+  if (roles.length === 0) {
+    const directRoles = context?.clientContext?.user?.roles;
+    if (Array.isArray(directRoles)) {
+      roles = directRoles.map(role => (typeof role === 'string' ? role.trim() : '')).filter(Boolean);
+    }
+  }
+
+  return Array.from(new Set(roles.map(role => role.toLowerCase())));
+};
+
+const extractUserOrganization = (event, context) => {
+  const headerOrganization =
+    getHeaderValue(event.headers, 'x-user-organization') ||
+    getHeaderValue(event.headers, 'x-organization') ||
+    getHeaderValue(event.headers, 'x_org');
+
+  if (typeof headerOrganization === 'string' && headerOrganization.trim()) {
+    return headerOrganization.trim();
+  }
+
+  const contextOrganization =
+    context?.clientContext?.user?.app_metadata?.organization || context?.clientContext?.user?.organization;
+
+  if (typeof contextOrganization === 'string' && contextOrganization.trim()) {
+    return contextOrganization.trim();
+  }
+
+  return null;
+};
+
+const rolesIncludeAdmin = (roles = []) => roles.some(role => ADMIN_ROLE_KEYWORDS.has(role.trim().toLowerCase()));
+
+const metadataIndicatesSharedAccess = (metadata = {}) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return false;
+  }
+
+  if (metadata.sharedWithAllUsers === true || metadata.shared_with_all_users === true) {
+    return true;
+  }
+
+  const sharedWithAllUsers =
+    typeof metadata.sharedWithAllUsers === 'string' && metadata.sharedWithAllUsers.trim().toLowerCase() === 'true';
+  const snakeSharedWithAllUsers =
+    typeof metadata.shared_with_all_users === 'string' && metadata.shared_with_all_users.trim().toLowerCase() === 'true';
+
+  if (sharedWithAllUsers || snakeSharedWithAllUsers) {
+    return true;
+  }
+
+  const visibility = typeof metadata.visibility === 'string' ? metadata.visibility.trim().toLowerCase() : '';
+  if (visibility && GLOBAL_VISIBILITY_VALUES.has(visibility)) {
+    return true;
+  }
+
+  const audience = typeof metadata.audience === 'string' ? metadata.audience.trim().toLowerCase() : '';
+  if (audience && GLOBAL_VISIBILITY_VALUES.has(audience)) {
+    return true;
+  }
+
+  const sharedAudience = typeof metadata.sharedAudience === 'string' ? metadata.sharedAudience.trim().toLowerCase() : '';
+  if (sharedAudience && ['all-users', 'all', 'everyone'].includes(sharedAudience)) {
+    return true;
+  }
+
+  return false;
+};
+
+const applyAdminSharingMetadata = (metadata = {}) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return metadata;
+  }
+
+  metadata.sharedWithAllUsers = true;
+  metadata.shared_with_all_users = true;
+
+  const normalizedVisibility = typeof metadata.visibility === 'string' ? metadata.visibility.trim().toLowerCase() : '';
+  if (!normalizedVisibility || !GLOBAL_VISIBILITY_VALUES.has(normalizedVisibility)) {
+    metadata.visibility = 'global';
+  }
+
+  const normalizedAudience = typeof metadata.audience === 'string' ? metadata.audience.trim().toLowerCase() : '';
+  if (!normalizedAudience || !GLOBAL_VISIBILITY_VALUES.has(normalizedAudience)) {
+    metadata.audience = 'all';
+  }
+
+  metadata.sharedAudience = 'all-users';
+  metadata.uploaderRole = 'admin';
+
+  return metadata;
+};
+
+const stripGlobalSharingMetadata = (metadata = {}) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return metadata;
+  }
+
+  delete metadata.sharedWithAllUsers;
+  delete metadata.shared_with_all_users;
+
+  if (typeof metadata.visibility === 'string' && GLOBAL_VISIBILITY_VALUES.has(metadata.visibility.trim().toLowerCase())) {
+    delete metadata.visibility;
+  }
+
+  if (typeof metadata.audience === 'string' && GLOBAL_VISIBILITY_VALUES.has(metadata.audience.trim().toLowerCase())) {
+    delete metadata.audience;
+  }
+
+  if (typeof metadata.sharedAudience === 'string') {
+    const normalizedSharedAudience = metadata.sharedAudience.trim().toLowerCase();
+    if (['all-users', 'all', 'everyone'].includes(normalizedSharedAudience)) {
+      delete metadata.sharedAudience;
+    }
+  }
+
+  if (typeof metadata.uploaderRole === 'string' && ADMIN_ROLE_KEYWORDS.has(metadata.uploaderRole.trim().toLowerCase())) {
+    delete metadata.uploaderRole;
+  }
+
+  return metadata;
+};
+
+const buildRequestContext = (event, context) => {
+  const { userId, source } = extractUserId(event, context);
+  const roles = extractUserRoles(event, context);
+  const organization = extractUserOrganization(event, context);
+  const isAdmin = rolesIncludeAdmin(roles);
+
+  return { userId, source, roles, organization, isAdmin };
+};
+
 const createResponse = (statusCode, body) => ({
   statusCode,
   headers,
   body: JSON.stringify(body),
 });
+
+const parseJson = (value, fallback = {}) => {
+  if (!value) return { ...fallback };
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return { ...fallback, ...value };
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { ...fallback, ...parsed };
+      }
+    } catch (error) {
+      console.warn('Failed to parse JSON metadata value:', error);
+    }
+  }
+
+  return { ...fallback };
+};
 
 const mapDocumentRow = (row) => {
   const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
@@ -156,6 +338,49 @@ const mapDocumentRow = (row) => {
     storageLocation,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+};
+
+const mapNeonDocumentRow = (row) => {
+  const metadata = parseJson(row.metadata, {});
+  if (!metadata.processingMode) {
+    metadata.processingMode = 'neon-postgresql';
+  }
+
+  const storageLocation =
+    metadata.storage && typeof metadata.storage === 'object' ? { ...metadata.storage } : null;
+
+  if (storageLocation) {
+    metadata.storage = storageLocation;
+  }
+
+  const normalizedFilename =
+    getFirstNonEmptyString(
+      metadata.filename,
+      metadata.fileName,
+      metadata.originalFilename,
+      row.filename,
+    ) || `document-${row.id}`;
+
+  const normalizedContentType =
+    getFirstNonEmptyString(metadata.contentType, metadata.mimeType, row.file_type) ||
+    'application/octet-stream';
+
+  const fileId = getFirstNonEmptyString(metadata.fileId, metadata.file_id, metadata.openaiFileId);
+
+  const sizeCandidates = [row.file_size, storageLocation?.size];
+  const resolvedSize = sizeCandidates
+    .map(value => (Number.isFinite(Number(value)) ? Number(value) : null))
+    .find(value => value != null);
+
+  return {
+    documentId: row.id,
+    fileId: fileId || null,
+    filename: normalizedFilename,
+    contentType: normalizedContentType,
+    size: resolvedSize != null ? resolvedSize : 0,
+    metadata,
+    storageLocation,
   };
 };
 
@@ -384,6 +609,11 @@ const handleListDocuments = async (sql, userId) => {
     SELECT document_id, file_id, filename, content_type, size, metadata, chunks, vector_store_id, created_at, updated_at
     FROM rag_user_documents
     WHERE user_id = ${userId}
+      OR metadata->>'sharedWithAllUsers' = 'true'
+      OR metadata->>'shared_with_all_users' = 'true'
+      OR LOWER(COALESCE(metadata->>'visibility', '')) IN ('global', 'public', 'everyone', 'all')
+      OR LOWER(COALESCE(metadata->>'audience', '')) IN ('global', 'public', 'everyone', 'all')
+      OR LOWER(COALESCE(metadata->>'sharedAudience', '')) IN ('all-users', 'all', 'everyone')
     ORDER BY created_at DESC
   `;
 
@@ -393,7 +623,7 @@ const handleListDocuments = async (sql, userId) => {
   });
 };
 
-const handleSaveDocument = async (sql, userId, payload) => {
+const handleSaveDocument = async (sql, userId, payload, requestContext = {}) => {
   const document = payload?.document;
   const vectorStoreId = payload?.vectorStoreId || document?.vectorStoreId || null;
 
@@ -405,6 +635,18 @@ const handleSaveDocument = async (sql, userId, payload) => {
   const normalizedMetadata = sanitizeDocumentMetadata(
     document.metadata && typeof document.metadata === 'object' ? document.metadata : {}
   );
+
+  const organization = typeof requestContext.organization === 'string' ? requestContext.organization.trim() : '';
+
+  if (requestContext.isAdmin) {
+    applyAdminSharingMetadata(normalizedMetadata);
+  } else {
+    stripGlobalSharingMetadata(normalizedMetadata);
+  }
+
+  if (organization && !normalizedMetadata.organization) {
+    normalizedMetadata.organization = organization;
+  }
 
   let contentBuffer = null;
   let contentEncoding = null;
@@ -625,7 +867,7 @@ const downloadDocumentContentFromOpenAI = async ({ apiKey, fileId, vectorStoreId
   };
 };
 
-const handleDownloadDocument = async (sql, userId, payload) => {
+const handleDownloadDocument = async (sql, userId, payload, requestContext = {}) => {
   const documentId = payload?.documentId;
   const fileId = payload?.fileId;
 
@@ -634,16 +876,108 @@ const handleDownloadDocument = async (sql, userId, payload) => {
   }
 
   const rows = await sql`
-    SELECT document_id, file_id, filename, content_type, size, metadata, vector_store_id, content_base64, content_encoding
+    SELECT user_id, document_id, file_id, filename, content_type, size, metadata, vector_store_id, content_base64, content_encoding
     FROM rag_user_documents
-    WHERE user_id = ${userId}
+    WHERE (
+        user_id = ${userId}
+        OR metadata->>'sharedWithAllUsers' = 'true'
+        OR metadata->>'shared_with_all_users' = 'true'
+        OR LOWER(COALESCE(metadata->>'visibility', '')) IN ('global', 'public', 'everyone', 'all')
+        OR LOWER(COALESCE(metadata->>'audience', '')) IN ('global', 'public', 'everyone', 'all')
+        OR LOWER(COALESCE(metadata->>'sharedAudience', '')) IN ('all-users', 'all', 'everyone')
+      )
       AND (document_id = ${documentId} OR file_id = ${fileId})
     LIMIT 1
   `;
 
   const record = rows[0];
   if (!record) {
-    return createResponse(404, { error: 'Document not found for this user' });
+    const numericDocumentId = Number(documentId);
+    let neonRow = null;
+
+    if (documentId) {
+      if (Number.isFinite(numericDocumentId)) {
+        const neonRowsById = await sql`
+          SELECT id, user_id, filename, file_type, file_size, metadata
+          FROM rag_documents
+          WHERE (
+              user_id = ${userId}
+              OR metadata->>'sharedWithAllUsers' = 'true'
+              OR metadata->>'shared_with_all_users' = 'true'
+              OR LOWER(COALESCE(metadata->>'visibility', '')) IN ('global', 'public', 'everyone', 'all')
+              OR LOWER(COALESCE(metadata->>'audience', '')) IN ('global', 'public', 'everyone', 'all')
+              OR LOWER(COALESCE(metadata->>'sharedAudience', '')) IN ('all-users', 'all', 'everyone')
+            )
+            AND id = ${numericDocumentId}
+          LIMIT 1
+        `;
+        neonRow = neonRowsById[0] || null;
+      } else {
+        const neonRowsByDocId = await sql`
+          SELECT id, user_id, filename, file_type, file_size, metadata
+          FROM rag_documents
+          WHERE (
+              user_id = ${userId}
+              OR metadata->>'sharedWithAllUsers' = 'true'
+              OR metadata->>'shared_with_all_users' = 'true'
+              OR LOWER(COALESCE(metadata->>'visibility', '')) IN ('global', 'public', 'everyone', 'all')
+              OR LOWER(COALESCE(metadata->>'audience', '')) IN ('global', 'public', 'everyone', 'all')
+              OR LOWER(COALESCE(metadata->>'sharedAudience', '')) IN ('all-users', 'all', 'everyone')
+            )
+            AND (metadata->>'documentId' = ${documentId} OR metadata->>'document_id' = ${documentId})
+          LIMIT 1
+        `;
+        neonRow = neonRowsByDocId[0] || null;
+      }
+    }
+
+    if (!neonRow && fileId) {
+      const neonRowsByFileId = await sql`
+        SELECT id, user_id, filename, file_type, file_size, metadata
+        FROM rag_documents
+        WHERE (
+            user_id = ${userId}
+            OR metadata->>'sharedWithAllUsers' = 'true'
+            OR metadata->>'shared_with_all_users' = 'true'
+            OR LOWER(COALESCE(metadata->>'visibility', '')) IN ('global', 'public', 'everyone', 'all')
+            OR LOWER(COALESCE(metadata->>'audience', '')) IN ('global', 'public', 'everyone', 'all')
+            OR LOWER(COALESCE(metadata->>'sharedAudience', '')) IN ('all-users', 'all', 'everyone')
+          )
+          AND (metadata->>'fileId' = ${fileId} OR metadata->>'file_id' = ${fileId})
+        LIMIT 1
+      `;
+      neonRow = neonRowsByFileId[0] || null;
+    }
+
+    if (!neonRow) {
+      return createResponse(404, { error: 'Document not found or access is restricted' });
+    }
+
+    if (neonRow.user_id && neonRow.user_id !== userId && !requestContext.isAdmin) {
+      const neonMetadata = parseJson(neonRow.metadata, {});
+      if (!metadataIndicatesSharedAccess(neonMetadata)) {
+        return createResponse(403, { error: 'Document access is restricted' });
+      }
+    }
+
+    const normalized = mapNeonDocumentRow(neonRow);
+
+    return createResponse(200, {
+      documentId: String(normalized.documentId),
+      fileId: normalized.fileId,
+      filename: normalized.filename,
+      contentType: normalized.contentType,
+      size: normalized.size,
+      metadata: normalized.metadata,
+      storageLocation: normalized.storageLocation,
+    });
+  }
+
+  if (record.user_id && record.user_id !== userId && !requestContext.isAdmin) {
+    const recordMetadata = record.metadata && typeof record.metadata === 'object' ? record.metadata : {};
+    if (!metadataIndicatesSharedAccess(recordMetadata)) {
+      return createResponse(403, { error: 'Document access is restricted' });
+    }
   }
 
   const metadata = record.metadata && typeof record.metadata === 'object' ? record.metadata : {};
@@ -755,7 +1089,7 @@ const handleDeleteDocument = async (sql, userId, payload) => {
   return createResponse(200, { success: true });
 };
 
-const handleUpdateDocument = async (sql, userId, payload) => {
+const handleUpdateDocument = async (sql, userId, payload, requestContext = {}) => {
   const documentId = payload?.documentId;
   const metadataUpdates = payload?.metadata;
   const clearFieldsInput = Array.isArray(payload?.clearFields) ? payload.clearFields : [];
@@ -802,6 +1136,17 @@ const handleUpdateDocument = async (sql, userId, payload) => {
     ...sanitizedUpdates,
   });
 
+  const organization = typeof requestContext.organization === 'string' ? requestContext.organization.trim() : '';
+
+  if (requestContext.isAdmin) {
+    applyAdminSharingMetadata(mergedMetadata);
+    if (organization && !mergedMetadata.organization) {
+      mergedMetadata.organization = organization;
+    }
+  } else {
+    stripGlobalSharingMetadata(mergedMetadata);
+  }
+
   const updatedRows = await sql`
     UPDATE rag_user_documents
     SET metadata = ${mergedMetadata},
@@ -832,7 +1177,8 @@ export const handler = async (event, context) => {
     const sql = getSqlClient();
     await ensureSchema(sql);
 
-    const { userId } = extractUserId(event, context);
+    const requestContext = buildRequestContext(event, context);
+    const { userId } = requestContext;
     if (!userId) {
       return createResponse(401, {
         error: 'User authentication required',
@@ -862,13 +1208,13 @@ export const handler = async (event, context) => {
       case 'list_documents':
         return await handleListDocuments(sql, userId);
       case 'save_document':
-        return await handleSaveDocument(sql, userId, data);
+        return await handleSaveDocument(sql, userId, data, requestContext);
       case 'delete_document':
         return await handleDeleteDocument(sql, userId, data);
       case 'update_document':
-        return await handleUpdateDocument(sql, userId, data);
+        return await handleUpdateDocument(sql, userId, data, requestContext);
       case 'download_document':
-        return await handleDownloadDocument(sql, userId, data);
+        return await handleDownloadDocument(sql, userId, data, requestContext);
       default:
         return createResponse(400, { error: `Unsupported action: ${action}` });
     }
@@ -887,4 +1233,6 @@ export const __testHelpers = {
   isJsonLikeContentType,
   payloadContainsVectorStoreDescriptor,
   handleSaveDocument,
+  handleDownloadDocument,
+  handleListDocuments,
 };

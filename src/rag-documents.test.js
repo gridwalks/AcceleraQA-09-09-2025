@@ -4,6 +4,8 @@ const uploadDocumentToBlobMock = jest.fn();
 
 let downloadDocumentContentFromOpenAI;
 let handleSaveDocument;
+let handleDownloadDocument;
+let handleListDocuments;
 
 const loadModule = async () => {
   jest.resetModules();
@@ -25,6 +27,8 @@ const loadModule = async () => {
   const module = await import('../netlify/functions/rag-documents.js');
   downloadDocumentContentFromOpenAI = module.__testHelpers.downloadDocumentContentFromOpenAI;
   handleSaveDocument = module.__testHelpers.handleSaveDocument;
+  handleDownloadDocument = module.__testHelpers.handleDownloadDocument;
+  handleListDocuments = module.__testHelpers.handleListDocuments;
 };
 
 beforeEach(async () => {
@@ -156,6 +160,261 @@ describe('rag-documents Netlify Blob integration', () => {
     expect(parsed.document.metadata.storage).toEqual(
       expect.objectContaining({ provider: 'netlify-blobs', store: 'rag-documents' })
     );
+  });
+});
+
+describe('handleDownloadDocument', () => {
+  test('returns Neon metadata when rag_user_documents has no entry', async () => {
+    const storageLocation = {
+      provider: 'netlify-blobs',
+      url: 'https://example.com/blob',
+      size: 2048,
+      contentType: 'application/pdf',
+    };
+
+    const neonRow = {
+      id: 42,
+      filename: 'Doc.pdf',
+      file_type: 'application/pdf',
+      file_size: 2048,
+      metadata: {
+        storage: storageLocation,
+        fileName: 'Doc.pdf',
+      },
+    };
+
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (query.includes('FROM rag_user_documents')) {
+        expect(query).toContain("metadata->>'sharedWithAllUsers'");
+        expect(values).toEqual(expect.arrayContaining(['user-1']));
+        return [];
+      }
+
+      if (query.includes('FROM rag_documents') && query.includes('id =')) {
+        expect(values).toEqual(expect.arrayContaining(['user-1', 42]));
+        return [neonRow];
+      }
+
+      throw new Error(`Unexpected query executed: ${query}`);
+    });
+
+    const response = await handleDownloadDocument(sqlMock, 'user-1', { documentId: '42' });
+    expect(response.statusCode).toBe(200);
+
+    const payload = JSON.parse(response.body);
+    expect(payload).toMatchObject({
+      documentId: '42',
+      filename: 'Doc.pdf',
+      storageLocation,
+      contentType: 'application/pdf',
+      size: 2048,
+    });
+  });
+
+  test('returns 404 when neither table contains a match', async () => {
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (query.includes('FROM rag_user_documents')) {
+        return [];
+      }
+
+      if (query.includes('FROM rag_documents')) {
+        return [];
+      }
+
+      throw new Error(`Unexpected query executed: ${query}`);
+    });
+
+    const response = await handleDownloadDocument(sqlMock, 'user-1', { documentId: '99' });
+    expect(response.statusCode).toBe(404);
+    const payload = JSON.parse(response.body);
+    expect(payload.error).toBe('Document not found or access is restricted');
+  });
+});
+
+describe('admin document sharing controls', () => {
+  test('handleSaveDocument marks admin uploads as shared for all users', async () => {
+    const insertedRows = [];
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (query.includes('INSERT INTO rag_user_documents')) {
+        const [, , , , , , metadata] = values;
+        insertedRows.push(metadata);
+        return [
+          {
+            document_id: values[0],
+            file_id: values[2],
+            filename: values[3],
+            content_type: values[4],
+            size: values[5],
+            metadata,
+            chunks: values[7],
+            vector_store_id: values[8],
+            created_at: '2024-01-01T00:00:00.000Z',
+            updated_at: '2024-01-01T00:00:00.000Z',
+          },
+        ];
+      }
+
+      return [];
+    });
+
+    const response = await handleSaveDocument(
+      sqlMock,
+      'admin-user',
+      {
+        document: {
+          id: 'doc-admin',
+          fileId: 'doc-admin',
+          filename: 'Guide.pdf',
+          type: 'application/pdf',
+          metadata: { title: 'Admin Guide' },
+        },
+      },
+      { isAdmin: true, organization: 'Acme Pharma' }
+    );
+
+    expect(insertedRows).toHaveLength(1);
+    const storedMetadata = insertedRows[0];
+    expect(storedMetadata.sharedWithAllUsers).toBe(true);
+    expect(storedMetadata.shared_with_all_users).toBe(true);
+    expect(storedMetadata.visibility).toBe('global');
+    expect(storedMetadata.audience).toBe('all');
+    expect(storedMetadata.sharedAudience).toBe('all-users');
+    expect(storedMetadata.organization).toBe('Acme Pharma');
+    expect(storedMetadata.uploaderRole).toBe('admin');
+
+    const payload = JSON.parse(response.body);
+    expect(payload.document.metadata.sharedWithAllUsers).toBe(true);
+    expect(payload.document.metadata.visibility).toBe('global');
+  });
+
+  test('handleSaveDocument strips shared metadata from non-admin uploads', async () => {
+    const insertedRows = [];
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (query.includes('INSERT INTO rag_user_documents')) {
+        insertedRows.push(values[6]);
+        return [
+          {
+            document_id: values[0],
+            file_id: values[2],
+            filename: values[3],
+            content_type: values[4],
+            size: values[5],
+            metadata: values[6],
+            chunks: values[7],
+            vector_store_id: values[8],
+            created_at: '2024-01-01T00:00:00.000Z',
+            updated_at: '2024-01-01T00:00:00.000Z',
+          },
+        ];
+      }
+
+      return [];
+    });
+
+    const response = await handleSaveDocument(sqlMock, 'user-55', {
+      document: {
+        id: 'doc-user',
+        fileId: 'doc-user',
+        filename: 'Checklist.pdf',
+        type: 'application/pdf',
+        metadata: {
+          title: 'Checklist',
+          sharedWithAllUsers: true,
+          visibility: 'global',
+        },
+      },
+    });
+
+    expect(insertedRows).toHaveLength(1);
+    const storedMetadata = insertedRows[0];
+    expect(storedMetadata.sharedWithAllUsers).toBeUndefined();
+    expect(storedMetadata.visibility).not.toBe('global');
+
+    const payload = JSON.parse(response.body);
+    expect(payload.document.metadata.sharedWithAllUsers).toBeUndefined();
+    expect(payload.document.metadata.visibility).not.toBe('global');
+  });
+
+  test('handleListDocuments includes shared admin documents for all users', async () => {
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+      expect(query).toContain("metadata->>'sharedWithAllUsers'");
+      expect(values).toContain('user-b');
+
+      return [
+        {
+          document_id: 'doc-user',
+          file_id: 'doc-user',
+          filename: 'User.pdf',
+          content_type: 'application/pdf',
+          size: 1024,
+          metadata: { title: 'User Doc' },
+          chunks: 0,
+          vector_store_id: 'vs-1',
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
+        },
+        {
+          document_id: 'doc-shared',
+          file_id: 'doc-shared',
+          filename: 'Admin.pdf',
+          content_type: 'application/pdf',
+          size: 2048,
+          metadata: { title: 'Admin Doc', sharedWithAllUsers: true },
+          chunks: 0,
+          vector_store_id: 'vs-2',
+          created_at: '2024-01-02T00:00:00.000Z',
+          updated_at: '2024-01-02T00:00:00.000Z',
+        },
+      ];
+    });
+
+    const response = await handleListDocuments(sqlMock, 'user-b');
+    expect(response.statusCode).toBe(200);
+
+    const payload = JSON.parse(response.body);
+    expect(payload.total).toBe(2);
+    const ids = payload.documents.map(doc => doc.id);
+    expect(ids).toEqual(expect.arrayContaining(['doc-user', 'doc-shared']));
+  });
+
+  test('handleDownloadDocument returns shared admin document for non-owner', async () => {
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (query.includes('FROM rag_user_documents')) {
+        return [
+          {
+            user_id: 'admin-user',
+            document_id: 'doc-shared',
+            file_id: 'doc-shared',
+            filename: 'Admin.pdf',
+            content_type: 'application/pdf',
+            size: 2048,
+            metadata: { sharedWithAllUsers: true, storage: { url: 'https://example.com/shared.pdf', provider: 'netlify-blobs' } },
+            vector_store_id: null,
+            content_base64: null,
+            content_encoding: null,
+          },
+        ];
+      }
+
+      return [];
+    });
+
+    const response = await handleDownloadDocument(sqlMock, 'user-b', { documentId: 'doc-shared' });
+    expect(response.statusCode).toBe(200);
+    const payload = JSON.parse(response.body);
+    expect(payload.documentId).toBe('doc-shared');
+    expect(payload.storageLocation.url).toBe('https://example.com/shared.pdf');
   });
 });
 

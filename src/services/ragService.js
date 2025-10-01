@@ -1,6 +1,6 @@
 // src/services/ragService.js - RAG service using OpenAI file search APIs
 import openaiService from './openaiService';
-import { getToken, getUserId } from './authService';
+import authService, { getToken, getUserId } from './authService';
 import { getCurrentModel } from '../config/modelConfig';
 import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION, RAG_DOCS_FUNCTION } from '../config/ragConfig';
 import { convertDocxToPdfIfNeeded } from '../utils/fileConversion';
@@ -64,6 +64,57 @@ const getFirstNonEmptyString = (...values) => {
 };
 
 const toFiniteNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+const metadataIndicatesGlobalSharing = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return false;
+  }
+
+  const sharedKeys = ['sharedWithAllUsers', 'shared_with_all_users'];
+  if (
+    sharedKeys.some(key => {
+      const value = metadata[key];
+      if (value === true) return true;
+      if (typeof value === 'string' && value.trim().toLowerCase() === 'true') return true;
+      return false;
+    })
+  ) {
+    return true;
+  }
+
+  const visibility = typeof metadata.visibility === 'string' ? metadata.visibility.trim().toLowerCase() : '';
+  if (visibility && ['global', 'public', 'everyone', 'all'].includes(visibility)) {
+    return true;
+  }
+
+  const audience = typeof metadata.audience === 'string' ? metadata.audience.trim().toLowerCase() : '';
+  if (audience && ['all', 'everyone', 'global'].includes(audience)) {
+    return true;
+  }
+
+  return false;
+};
+
+const documentHasPersistentStorage = (document) => {
+  if (!document || typeof document !== 'object') {
+    return false;
+  }
+
+  const storageCandidates = [];
+
+  if (document.storageLocation && typeof document.storageLocation === 'object') {
+    storageCandidates.push(document.storageLocation);
+  }
+
+  if (document.metadata && typeof document.metadata === 'object') {
+    const metadataStorage = document.metadata.storage;
+    if (metadataStorage && typeof metadataStorage === 'object') {
+      storageCandidates.push(metadataStorage);
+    }
+  }
+
+  return storageCandidates.some(storage => Object.keys(storage).length > 0);
+};
 
 const extractAnnotationIndex = (annotation, key) => {
   if (!annotation || typeof annotation !== 'object') {
@@ -635,6 +686,25 @@ class RAGService {
       'x-user-id': resolvedUserId,
     };
 
+    try {
+      const user = await authService.getUser();
+      const roles = Array.isArray(user?.roles)
+        ? user.roles
+            .map(role => (typeof role === 'string' ? role.trim() : ''))
+            .filter(Boolean)
+        : [];
+
+      if (roles.length > 0) {
+        headers['x-user-roles'] = roles.join(',');
+      }
+
+      if (typeof user?.organization === 'string' && user.organization.trim()) {
+        headers['x-user-organization'] = user.organization.trim();
+      }
+    } catch (roleError) {
+      console.warn('Unable to resolve user context for document metadata request:', roleError);
+    }
+
     let response;
     try {
       response = await fetch(this.docsEndpoint, {
@@ -975,10 +1045,26 @@ class RAGService {
         headers: { 'OpenAI-Beta': 'assistants=v2' },
       });
       const ids = new Set((data.data || []).map(f => f.id));
-      syncedDocuments = documents.filter(doc => ids.has(doc.id));
+      const shouldRetainWithoutOpenAI = (doc) => {
+        if (!doc || typeof doc !== 'object') {
+          return false;
+        }
+
+        if (metadataIndicatesGlobalSharing(doc.metadata)) {
+          return true;
+        }
+
+        if (documentHasPersistentStorage(doc)) {
+          return true;
+        }
+
+        return false;
+      };
+
+      syncedDocuments = documents.filter(doc => ids.has(doc.id) || shouldRetainWithoutOpenAI(doc));
 
       if (syncedDocuments.length !== documents.length) {
-        const missingDocuments = documents.filter(doc => !ids.has(doc.id));
+        const missingDocuments = documents.filter(doc => !ids.has(doc.id) && !shouldRetainWithoutOpenAI(doc));
         await Promise.all(
           missingDocuments.map(doc =>
             this.makeDocumentMetadataRequest('delete_document', resolvedUserId, { documentId: doc.id }).catch(syncError => {
@@ -1068,10 +1154,6 @@ class RAGService {
   }
 
   async downloadDocument(documentReference, userId) {
-    if (this.isNeonBackend()) {
-      throw new Error('Document downloads are not supported when using the Neon backend');
-    }
-
     const reference =
       typeof documentReference === 'string'
         ? { documentId: documentReference }

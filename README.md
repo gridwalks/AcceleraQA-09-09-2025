@@ -106,6 +106,7 @@ SUPPORT_REQUEST_TO_EMAIL=support@acceleraqa.atlassian.net # optional override
 
 # Feature Flags (Optional)
 REACT_APP_ENABLE_AI_SUGGESTIONS=true # set to 'false' to disable AI suggestions
+REACT_APP_VERBOSE_LOGS=false         # set to 'true' to surface suppressed console diagnostics
 ```
 
 You can find the Netlify Site ID in **Site settings → Site information** and generate a personal access token from **User settings → Applications → Personal access tokens** for local development. Netlify-managed deploys typically inject `NETLIFY_*` blob credentials automatically, but setting these variables locally ensures the RAG blob store is available during development and testing.

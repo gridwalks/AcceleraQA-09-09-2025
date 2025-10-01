@@ -1,5 +1,6 @@
 import { createAuth0Client } from '@auth0/auth0-spa-js';
 import { AUTH0_CONFIG, ERROR_MESSAGES } from '../config/constants';
+import { logVerbose, logVerboseInfo, logVerboseWarn } from '../utils/logging';
 
 class AuthService {
   constructor() {
@@ -20,7 +21,7 @@ class AuthService {
         throw new Error('Auth0 configuration missing. Please check environment variables.');
       }
 
-      console.log('Initializing Auth0 client...');
+      logVerboseInfo('Initializing Auth0 client...');
       this.auth0Client = await createAuth0Client({
         domain: AUTH0_CONFIG.DOMAIN,
         clientId: AUTH0_CONFIG.CLIENT_ID,
@@ -37,7 +38,7 @@ class AuthService {
       });
 
       this.isInitialized = true;
-      console.log('Auth0 client initialized successfully');
+      logVerboseInfo('Auth0 client initialized successfully');
       return this.auth0Client;
     } catch (error) {
       console.error('Auth0 initialization failed:', error);
@@ -93,7 +94,7 @@ class AuthService {
           });
           user = await this.auth0Client.getUser();
         } catch (silentError) {
-          console.warn('Silent authentication failed:', silentError);
+          logVerboseWarn('Silent authentication failed:', silentError);
           return null;
         }
       }
@@ -120,8 +121,6 @@ class AuthService {
   }
 
   async getToken() {
-    console.log('=== GET TOKEN DEBUG ===');
-    
     if (!this.auth0Client) {
       console.error('Auth0 client not initialized');
       throw new Error('Auth0 client not initialized');
@@ -130,8 +129,8 @@ class AuthService {
     try {
       // Check if user is authenticated first
       const isAuth = await this.isAuthenticated();
-      console.log('User is authenticated:', isAuth);
-      
+      logVerboseInfo('User is authenticated:', isAuth);
+
       if (!isAuth) {
         console.error('User is not authenticated');
         throw new Error('User is not authenticated');
@@ -139,12 +138,16 @@ class AuthService {
 
       // Check if we have a cached token that's still valid
       if (this.cachedToken && this.tokenExpiry && Date.now() < this.tokenExpiry - 60000) {
-        console.log('Using cached token (expires in:', Math.round((this.tokenExpiry - Date.now()) / 1000), 'seconds)');
+        logVerboseInfo(
+          'Using cached token (expires in:',
+          Math.round((this.tokenExpiry - Date.now()) / 1000),
+          'seconds)'
+        );
         return this.cachedToken;
       }
 
-      console.log('Getting fresh token from Auth0...');
-      
+      logVerboseInfo('Getting fresh token from Auth0...');
+
       // Get fresh token with enhanced options
       const token = await this.auth0Client.getTokenSilently({
         authorizationParams: {
@@ -162,9 +165,9 @@ class AuthService {
         throw new Error('No token returned from authentication service');
       }
 
-      console.log('Token received successfully');
-      console.log('Token length:', token.length);
-      console.log('Token starts correctly:', token.startsWith('eyJ'));
+      logVerbose('Token received successfully');
+      logVerbose('Token length:', token.length);
+      logVerbose('Token starts correctly:', token.startsWith('eyJ'));
 
       // Parse token to get expiry
       try {
@@ -174,24 +177,24 @@ class AuthService {
           while (payload.length % 4) {
             payload += '=';
           }
-          
+
           const decoded = JSON.parse(atob(payload));
           if (decoded.exp) {
             this.tokenExpiry = decoded.exp * 1000; // Convert to milliseconds
-            console.log('Token expires at:', new Date(this.tokenExpiry).toISOString());
+            logVerbose('Token expires at:', new Date(this.tokenExpiry).toISOString());
           }
-          
-          console.log('Token subject:', decoded.sub);
-          console.log('Token audience:', decoded.aud);
+
+          logVerbose('Token subject:', decoded.sub);
+          logVerbose('Token audience:', decoded.aud);
         }
       } catch (parseError) {
-        console.warn('Could not parse token for caching:', parseError);
+        logVerboseWarn('Could not parse token for caching:', parseError);
       }
 
       // Cache the token
       this.cachedToken = token;
-      
-      console.log('=== TOKEN SUCCESS ===');
+
+      logVerbose('=== TOKEN SUCCESS ===');
       return token;
 
     } catch (error) {

@@ -1,4 +1,5 @@
 import { UI_CONFIG, APP_CONFIG } from '../config/constants';
+import { logVerboseInfo } from './logging';
 import {
   validateMessage,
   repairMessage,
@@ -28,7 +29,7 @@ const STORAGE_CONFIG = {
  * @returns {boolean} - Whether localStorage is available
  */
 export function isStorageAvailable() {
-  console.info('Persistent localStorage usage has been disabled for conversations.');
+  logVerboseInfo('Persistent localStorage usage has been disabled for conversations.');
   return false;
 }
 
@@ -227,7 +228,7 @@ function buildThreadSnapshotsForStorage(messages) {
  * @returns {Promise<Object[]>} - Loaded messages or empty array
  */
 export async function loadMessagesFromStorage(userId) {
-  console.info('Persistent message storage is disabled. Returning empty history for user:', userId);
+  logVerboseInfo('Persistent message storage is disabled. Returning empty history for user:', userId);
   return [];
 }
 
@@ -295,7 +296,7 @@ function validateMessagesForStorage(messages) {
  * @returns {Promise<boolean>} - Success status
  */
 export async function saveMessagesToStorage(userId, messages) {
-  console.info('Persistent message storage is disabled. Skipping save for user:', userId);
+  logVerboseInfo('Persistent message storage is disabled. Skipping save for user:', userId);
   return false;
 }
 

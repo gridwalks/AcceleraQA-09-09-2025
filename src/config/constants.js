@@ -21,7 +21,7 @@ Structure your output into these sections:
 Quote the exact text (≤75 words) from the source.
 Provide the reference (e.g., 21 CFR Part 11, §11.10(b)).
 
-2.Plain-Language Interpretation
+2. Plain-Language Interpretation
 Explain what this section means in practice.
 Identify obligations for key roles (Sponsor, Site, Vendor, CRO).
 
@@ -50,7 +50,7 @@ Never fabricate sections or references. If absent: say “Not addressed in this 
 Keep “Deep Dive” ~200–300 words; “Quick Check” ≤150 words.
 Always prioritize patient safety, data integrity (ALCOA+), and inspection readiness.
 Reference multiple frameworks if they overlap (e.g., 21 CFR Part 11 + EMA Annex 11).
-xt (study/site, report name, exact error, timing), and immediately initiate the Incident Management SOP by raising a YPRIME ticket before attempting troubleshooting. Keep the sponsor informed using the ticket as the reference point while coordinating internal follow-up.
+If uncertain about the user's context, ask clarifying questions before proceeding.
 `,
 };
 // Auth0 Configuration with enhanced validation

@@ -1,5 +1,5 @@
 // src/components/AdminScreen.js - Comprehensive Admin Dashboard
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   ArrowLeft, 
   Users, 
@@ -16,14 +16,14 @@ import {
   Trash2,
   RefreshCw,
   Eye,
-  Server,
   Cloud,
   HardDrive,
   Zap,
   Bug,
   Monitor,
   Search,
-  BookOpen
+  BookOpen,
+  X
 } from 'lucide-react';
 
 // Import services
@@ -36,6 +36,7 @@ import TrainingResourcesAdmin from './TrainingResourcesAdmin';
 import { getCurrentModel } from '../config/modelConfig';
 import { getTokenUsageStats } from '../utils/tokenUsage';
 import { getRagBackendLabel, isNeonBackend } from '../config/ragConfig';
+import blobAdminService from '../services/blobAdminService';
 
 export const checkStorageHealth = async () => {
   // Check browser storage capacity
@@ -65,6 +66,54 @@ export const checkStorageHealth = async () => {
   }
 };
 
+const formatBytes = (bytes) => {
+  if (bytes === 0) {
+    return '0 B';
+  }
+
+  if (!Number.isFinite(bytes) || bytes == null || bytes < 0) {
+    return '—';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / Math.pow(1024, exponent);
+  const decimals = value >= 10 || exponent === 0 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[exponent]}`;
+};
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return '—';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+};
+
+const formatMetadataValue = (value) => {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+
+  if (typeof value === 'object') {
+    try {
+      const stringified = JSON.stringify(value);
+      return stringified.length > 60 ? `${stringified.slice(0, 57)}…` : stringified;
+    } catch (error) {
+      console.warn('Failed to stringify metadata value for preview:', error);
+      return '[object]';
+    }
+  }
+
+  const text = String(value);
+  return text.length > 60 ? `${text.slice(0, 57)}…` : text;
+};
+
 const AdminScreen = ({ user, onBack }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(false);
@@ -75,18 +124,98 @@ const AdminScreen = ({ user, onBack }) => {
   const [error, setError] = useState(null);
   const [chatModel] = useState(getCurrentModel());
   const [tokenUsage, setTokenUsage] = useState({ daily: [], monthly: [] });
+  const [blobFiles, setBlobFiles] = useState([]);
+  const [blobMetadata, setBlobMetadata] = useState({ store: '', prefix: '', timestamp: null, total: null, truncated: false });
+  const [blobError, setBlobError] = useState(null);
+  const [isBlobLoading, setIsBlobLoading] = useState(false);
+  const [hasLoadedBlobInventory, setHasLoadedBlobInventory] = useState(false);
+  const [blobPrefixInput, setBlobPrefixInput] = useState('');
+  const [appliedBlobPrefix, setAppliedBlobPrefix] = useState('');
+  const [blobSearchTerm, setBlobSearchTerm] = useState('');
+  const [blobSort, setBlobSort] = useState('newest');
+  const [downloadingBlobKeys, setDownloadingBlobKeys] = useState(() => new Set());
+  const [blobPreview, setBlobPreview] = useState(null);
   const ragBackendLabel = getRagBackendLabel();
   const neonBackendEnabled = isNeonBackend();
 
   // Check if user has admin role
   const isAdmin = hasAdminRole(user);
 
-  // Load admin data on component mount
-  useEffect(() => {
-    if (isAdmin) {
-      loadAdminData();
+  const releasePreviewObjectUrl = useCallback((objectUrl) => {
+    if (!objectUrl) {
+      return;
     }
-  }, [isAdmin]);
+
+    if (typeof window !== 'undefined' && typeof window.URL?.revokeObjectURL === 'function') {
+      window.URL.revokeObjectURL(objectUrl);
+    }
+  }, []);
+
+  const closeBlobPreview = useCallback(() => {
+    setBlobPreview((previous) => {
+      if (previous?.objectUrl) {
+        releasePreviewObjectUrl(previous.objectUrl);
+      }
+      return null;
+    });
+  }, [releasePreviewObjectUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (blobPreview?.objectUrl) {
+        releasePreviewObjectUrl(blobPreview.objectUrl);
+      }
+    };
+  }, [blobPreview, releasePreviewObjectUrl]);
+
+  useEffect(() => {
+    if (!blobPreview) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        closeBlobPreview();
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, [blobPreview, closeBlobPreview]);
+
+  const renderMetadataPreview = useCallback((metadata) => {
+    if (!metadata || typeof metadata !== 'object' || Object.keys(metadata).length === 0) {
+      return <span className="text-gray-400">No metadata</span>;
+    }
+
+    const entries = Object.entries(metadata);
+    const visibleEntries = entries.slice(0, 4);
+
+    return (
+      <div className="flex flex-wrap gap-1">
+        {visibleEntries.map(([key, value]) => (
+          <span
+            key={key}
+            className="px-2 py-0.5 bg-gray-100 border border-gray-200 rounded text-gray-700"
+          >
+            <span className="font-medium text-gray-800">{key}</span>: {formatMetadataValue(value)}
+          </span>
+        ))}
+        {entries.length > 4 && (
+          <span className="px-2 py-0.5 bg-gray-50 border border-dashed border-gray-200 rounded text-gray-500">
+            +{entries.length - 4} more
+          </span>
+        )}
+      </div>
+    );
+  }, []);
 
   const loadAdminData = useCallback(async () => {
     setIsLoading(true);
@@ -167,7 +296,7 @@ const AdminScreen = ({ user, onBack }) => {
     try {
       const tokenInfo = getTokenInfo();
       const token = await getToken();
-      
+
       return {
         tokenInfo,
         hasValidToken: !!token,
@@ -183,6 +312,84 @@ const AdminScreen = ({ user, onBack }) => {
       };
     }
   };
+
+  const loadBlobInventory = useCallback(
+    async (overridePrefix) => {
+      if (!isAdmin) {
+        return;
+      }
+
+      const sanitizedOverride =
+        typeof overridePrefix === 'string'
+          ? overridePrefix.trim().replace(/^\/+|\/+$/g, '')
+          : null;
+
+      const prefixToUse = sanitizedOverride !== null ? sanitizedOverride : appliedBlobPrefix;
+
+      if (sanitizedOverride !== null && sanitizedOverride !== appliedBlobPrefix) {
+        setAppliedBlobPrefix(sanitizedOverride);
+      }
+
+      setBlobError(null);
+      setIsBlobLoading(true);
+
+      try {
+        const response = await blobAdminService.listBlobs({
+          user,
+          prefix: prefixToUse || undefined,
+        });
+
+        const normalized = Array.isArray(response?.blobs)
+          ? response.blobs.map((blob) => ({
+              key: blob.key,
+              relativeKey: blob.relativeKey || blob.key,
+              userId: blob.userId || null,
+              documentId: blob.documentId || null,
+              filename: blob.filename || null,
+              size:
+                typeof blob.size === 'number' && Number.isFinite(blob.size)
+                  ? Number(blob.size)
+                  : null,
+              contentType: typeof blob.contentType === 'string' ? blob.contentType : null,
+              uploadedAt: typeof blob.uploadedAt === 'string' ? blob.uploadedAt : null,
+              etag: blob.etag || null,
+              metadata:
+                blob.metadata && typeof blob.metadata === 'object' ? blob.metadata : {},
+              segments: Array.isArray(blob.segments) ? blob.segments : [],
+            }))
+          : [];
+
+        setBlobFiles(normalized);
+        setBlobMetadata({
+          store: response?.store || '',
+          prefix: response?.prefix || prefixToUse || '',
+          timestamp: response?.timestamp || new Date().toISOString(),
+          total: typeof response?.total === 'number' ? response.total : normalized.length,
+          truncated: Boolean(response?.truncated),
+        });
+        setHasLoadedBlobInventory(true);
+      } catch (inventoryError) {
+        console.error('Failed to load Netlify blobs:', inventoryError);
+        setBlobError(inventoryError.message || 'Failed to load Netlify blob inventory.');
+        setHasLoadedBlobInventory(false);
+      } finally {
+        setIsBlobLoading(false);
+      }
+    },
+    [appliedBlobPrefix, isAdmin, user]
+  );
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadAdminData();
+    }
+  }, [isAdmin, loadAdminData]);
+
+  useEffect(() => {
+    if (activeTab === 'blobStorage' && isAdmin && !hasLoadedBlobInventory && !isBlobLoading) {
+      loadBlobInventory();
+    }
+  }, [activeTab, hasLoadedBlobInventory, isAdmin, isBlobLoading, loadBlobInventory]);
 
   // System health check
   const getSystemHealth = async () => {
@@ -275,6 +482,9 @@ const AdminScreen = ({ user, onBack }) => {
   // Refresh data
   const handleRefresh = () => {
     loadAdminData();
+    if (activeTab === 'blobStorage') {
+      loadBlobInventory();
+    }
   };
 
   // Export system data
@@ -303,6 +513,142 @@ const AdminScreen = ({ user, onBack }) => {
     }
   };
 
+  const handleBlobPrefixSubmit = useCallback(
+    (event) => {
+      event.preventDefault();
+      const sanitized = blobPrefixInput.trim().replace(/^\/+|\/+$/g, '');
+      setBlobPrefixInput(sanitized);
+      loadBlobInventory(sanitized);
+    },
+    [blobPrefixInput, loadBlobInventory]
+  );
+
+  const handleBlobPrefixReset = useCallback(() => {
+    if (!blobPrefixInput && !appliedBlobPrefix) {
+      return;
+    }
+    setBlobPrefixInput('');
+    loadBlobInventory('');
+  }, [appliedBlobPrefix, blobPrefixInput, loadBlobInventory]);
+
+  const markBlobDownloading = useCallback(
+    (key, isDownloading) => {
+      if (!key) {
+        return;
+      }
+
+      setDownloadingBlobKeys((previous) => {
+        const next = new Set(previous);
+        if (isDownloading) {
+          next.add(key);
+        } else {
+          next.delete(key);
+        }
+        return next;
+      });
+    },
+    [setDownloadingBlobKeys]
+  );
+
+  const openBlobPreviewInNewTab = useCallback(() => {
+    if (!blobPreview?.objectUrl) {
+      return;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      window.open(blobPreview.objectUrl, '_blank', 'noopener,noreferrer');
+    }
+  }, [blobPreview]);
+
+  const handleBlobDownload = useCallback(
+    async (file) => {
+      if (!file?.key) {
+        setBlobError('Unable to download file: missing blob key.');
+        return;
+      }
+
+      if (
+        typeof window === 'undefined' ||
+        typeof window.URL?.createObjectURL !== 'function' ||
+        typeof document === 'undefined'
+      ) {
+        setBlobError('File downloads are not supported in this environment.');
+        return;
+      }
+
+      const blobKey = file.key;
+      markBlobDownloading(blobKey, true);
+      setBlobError(null);
+
+      try {
+        const result = await blobAdminService.downloadBlob({ key: blobKey });
+
+        if (result.encoding && result.encoding !== 'base64') {
+          throw new Error(`Unsupported blob encoding: ${result.encoding}`);
+        }
+
+        const base64Data = result.data;
+        if (typeof base64Data !== 'string' || !base64Data) {
+          throw new Error('Received an empty blob payload.');
+        }
+
+        let binaryString;
+        if (typeof window !== 'undefined' && typeof window.atob === 'function') {
+          binaryString = window.atob(base64Data);
+        } else if (typeof atob === 'function') {
+          binaryString = atob(base64Data);
+        } else if (typeof Buffer !== 'undefined') {
+          binaryString = Buffer.from(base64Data, 'base64').toString('binary');
+        } else {
+          throw new Error('Base64 decoding is not supported in this environment.');
+        }
+
+        const byteLength = binaryString.length;
+        const bytes = new Uint8Array(byteLength);
+        for (let index = 0; index < byteLength; index += 1) {
+          bytes[index] = binaryString.charCodeAt(index);
+        }
+
+        const contentType = result.contentType || file.contentType || 'application/octet-stream';
+        const blob = new Blob([bytes], { type: contentType });
+        const objectUrl = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        const downloadName =
+          result.filename ||
+          file.filename ||
+          result.relativeKey ||
+          file.relativeKey ||
+          blobKey.split('/').pop() ||
+          'download';
+        anchor.download = downloadName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        setBlobPreview((previous) => {
+          if (previous?.objectUrl) {
+            releasePreviewObjectUrl(previous.objectUrl);
+          }
+
+          return {
+            objectUrl,
+            filename: downloadName,
+            contentType,
+            size: Number.isFinite(file?.size) ? file.size : bytes.length,
+            key: blobKey,
+            downloadedAt: new Date().toISOString(),
+          };
+        });
+      } catch (error) {
+        console.error('Failed to download blob file:', error);
+        setBlobError(error.message || 'Failed to download file from Netlify blobs.');
+      } finally {
+        markBlobDownloading(blobKey, false);
+      }
+    },
+    [markBlobDownloading, releasePreviewObjectUrl, setBlobError]
+  );
+
   // Test system components
   const runSystemTests = async () => {
     setIsLoading(true);
@@ -327,6 +673,122 @@ const AdminScreen = ({ user, onBack }) => {
       setIsLoading(false);
     }
   };
+
+  const filteredBlobFiles = useMemo(() => {
+    const search = blobSearchTerm.trim().toLowerCase();
+    const files = Array.isArray(blobFiles) ? [...blobFiles] : [];
+
+    const getTime = (value) => {
+      if (!value) return 0;
+      const timestamp = new Date(value).getTime();
+      return Number.isNaN(timestamp) ? 0 : timestamp;
+    };
+
+    const sizeForLargest = (value) =>
+      Number.isFinite(value) && value >= 0 ? value : -1;
+
+    const sizeForSmallest = (value) =>
+      Number.isFinite(value) && value >= 0 ? value : Number.MAX_SAFE_INTEGER;
+
+    let result = files;
+
+    if (search) {
+      result = result.filter((file) => {
+        const searchTargets = [
+          file.key,
+          file.relativeKey,
+          file.userId,
+          file.documentId,
+          file.filename,
+          file.contentType,
+          file.etag,
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).toLowerCase());
+
+        if (searchTargets.some((value) => value.includes(search))) {
+          return true;
+        }
+
+        if (file.metadata && typeof file.metadata === 'object') {
+          return Object.entries(file.metadata).some(([key, value]) => {
+            if (String(key).toLowerCase().includes(search)) {
+              return true;
+            }
+
+            if (value === null || value === undefined) {
+              return false;
+            }
+
+            const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+            return text.toLowerCase().includes(search);
+          });
+        }
+
+        return false;
+      });
+    }
+
+    const sorted = [...result];
+    sorted.sort((a, b) => {
+      switch (blobSort) {
+        case 'oldest':
+          return getTime(a.uploadedAt) - getTime(b.uploadedAt);
+        case 'largest':
+          return sizeForLargest(b.size) - sizeForLargest(a.size);
+        case 'smallest':
+          return sizeForSmallest(a.size) - sizeForSmallest(b.size);
+        case 'alphabetical':
+          return (a.relativeKey || a.key || '').localeCompare(
+            b.relativeKey || b.key || '',
+            undefined,
+            { sensitivity: 'base' }
+          );
+        case 'newest':
+        default:
+          return getTime(b.uploadedAt) - getTime(a.uploadedAt);
+      }
+    });
+
+    return sorted;
+  }, [blobFiles, blobSearchTerm, blobSort]);
+
+  const totalBlobSize = useMemo(
+    () =>
+      blobFiles.reduce(
+        (sum, file) =>
+          Number.isFinite(file?.size) && file.size >= 0 ? sum + Number(file.size) : sum,
+        0
+      ),
+    [blobFiles]
+  );
+
+  const uniqueBlobUsers = useMemo(() => {
+    const ids = new Set();
+    blobFiles.forEach((file) => {
+      if (file?.userId) {
+        ids.add(file.userId);
+      }
+    });
+    return ids.size;
+  }, [blobFiles]);
+
+  const uniqueBlobDocuments = useMemo(() => {
+    const ids = new Set();
+    blobFiles.forEach((file) => {
+      if (file?.documentId) {
+        ids.add(file.documentId);
+      }
+    });
+    return ids.size;
+  }, [blobFiles]);
+
+  const displayedBlobCount = filteredBlobFiles.length;
+  const blobStoreName = blobMetadata?.store || 'rag-documents';
+  const blobPrefixDisplay = blobMetadata?.prefix || (appliedBlobPrefix || '');
+  const blobLastUpdated = blobMetadata?.timestamp;
+  const blobTotalCount = typeof blobMetadata?.total === 'number' ? blobMetadata.total : blobFiles.length;
+  const blobInventoryTruncated = Boolean(blobMetadata?.truncated);
 
   // Don't render if user is not admin
   if (!isAdmin) {
@@ -430,6 +892,7 @@ const AdminScreen = ({ user, onBack }) => {
               { id: 'users', label: 'Users & Auth', icon: Users },
               { id: 'backend', label: 'Backend', icon: Database },
               { id: 'rag', label: 'RAG System', icon: FileText },
+              { id: 'blobStorage', label: 'Netlify Blobs', icon: Cloud },
               { id: 'ragConfig', label: 'My Resources', icon: Search },
               { id: 'system', label: 'System Health', icon: Activity },
               { id: 'usage', label: 'Token Usage', icon: BarChart3 },
@@ -723,6 +1186,229 @@ const AdminScreen = ({ user, onBack }) => {
             </div>
           )}
 
+          {/* Netlify Blob Storage Tab */}
+          {activeTab === 'blobStorage' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                      <Cloud className="h-5 w-5 text-blue-600 mr-2" />
+                      Netlify Blob Storage
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Store <span className="font-medium text-gray-900">{blobStoreName}</span>
+                      {blobPrefixDisplay && (
+                        <>
+                          {' '}• Prefix{' '}
+                          <code className="text-xs bg-gray-100 border border-gray-200 px-1 py-0.5 rounded">
+                            {blobPrefixDisplay}
+                          </code>
+                        </>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Last refreshed {formatDateTime(blobLastUpdated)} • Showing {displayedBlobCount}
+                      {blobTotalCount != null && ` of ${blobTotalCount}`} files
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => loadBlobInventory(appliedBlobPrefix)}
+                      disabled={isBlobLoading}
+                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isBlobLoading ? 'animate-spin' : ''}`} />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+                </div>
+
+                {blobError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-start space-x-3">
+                      <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="font-medium text-red-800">Unable to load Netlify blobs</h4>
+                        <p className="text-sm text-red-700 mt-1">{blobError}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <form
+                  onSubmit={handleBlobPrefixSubmit}
+                  className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6"
+                >
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Prefix filter
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={blobPrefixInput}
+                        onChange={(event) => setBlobPrefixInput(event.target.value)}
+                        placeholder="rag-documents/user-id"
+                        className="flex-1 rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBlobPrefixReset}
+                        className="px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                        disabled={!blobPrefixInput && !appliedBlobPrefix}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Search
+                    </label>
+                    <input
+                      type="text"
+                      value={blobSearchTerm}
+                      onChange={(event) => setBlobSearchTerm(event.target.value)}
+                      placeholder="Filter by key, user, metadata..."
+                      className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Sort by
+                    </label>
+                    <select
+                      value={blobSort}
+                      onChange={(event) => setBlobSort(event.target.value)}
+                      className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="largest">Largest size</option>
+                      <option value="smallest">Smallest size</option>
+                      <option value="alphabetical">Alphabetical</option>
+                    </select>
+                  </div>
+                </form>
+
+                <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
+                  <span>
+                    <span className="font-semibold text-gray-900">{blobFiles.length}</span> files loaded
+                  </span>
+                  <span>
+                    <span className="font-semibold text-gray-900">{formatBytes(totalBlobSize)}</span> total size
+                  </span>
+                  <span>
+                    <span className="font-semibold text-gray-900">{uniqueBlobUsers}</span> unique users
+                  </span>
+                  <span>
+                    <span className="font-semibold text-gray-900">{uniqueBlobDocuments}</span> unique documents
+                  </span>
+                  {blobInventoryTruncated && (
+                    <span className="text-yellow-600">
+                      Displaying first {displayedBlobCount} entries. Narrow the prefix to load more.
+                    </span>
+                  )}
+                </div>
+
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-600">Blob Key</th>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-600">Size</th>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-600">Content Type</th>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-600">Uploaded</th>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-600">Metadata</th>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-600">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {isBlobLoading && filteredBlobFiles.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                              <RefreshCw className="h-5 w-5 inline-block animate-spin mr-2" />
+                              Loading Netlify blob inventory…
+                            </td>
+                          </tr>
+                        ) : filteredBlobFiles.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                              No blob files found for the selected filters.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredBlobFiles.map((file) => (
+                            <tr key={file.key} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 align-top">
+                                <div className="font-medium text-gray-900 break-all">
+                                  {file.relativeKey || file.key}
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
+                                  {file.userId && (
+                                    <span className="px-2 py-0.5 bg-gray-100 border border-gray-200 rounded">
+                                      User: {file.userId}
+                                    </span>
+                                  )}
+                                  {file.documentId && (
+                                    <span className="px-2 py-0.5 bg-gray-100 border border-gray-200 rounded">
+                                      Doc: {file.documentId}
+                                    </span>
+                                  )}
+                                  {file.filename && (
+                                    <span className="px-2 py-0.5 bg-gray-100 border border-gray-200 rounded">
+                                      File: {file.filename}
+                                    </span>
+                                  )}
+                                  {file.etag && (
+                                    <span className="px-2 py-0.5 bg-gray-100 border border-gray-200 rounded">
+                                      ETag: {file.etag.slice(0, 10)}{file.etag.length > 10 ? '…' : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 align-top text-gray-900">{formatBytes(file.size)}</td>
+                              <td className="px-4 py-3 align-top text-gray-600">{file.contentType || '—'}</td>
+                              <td className="px-4 py-3 align-top text-gray-600">{formatDateTime(file.uploadedAt)}</td>
+                              <td className="px-4 py-3 align-top text-xs text-gray-600">
+                                {renderMetadataPreview(file.metadata)}
+                              </td>
+                              <td className="px-4 py-3 align-top">
+                                <button
+                                  type="button"
+                                  onClick={() => handleBlobDownload(file)}
+                                  className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                  disabled={downloadingBlobKeys.has(file.key)}
+                                >
+                                  {downloadingBlobKeys.has(file.key) ? (
+                                    <RefreshCw className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Download className="h-4 w-4" />
+                                  )}
+                                  <span>{downloadingBlobKeys.has(file.key) ? 'Preparing…' : 'Download'}</span>
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* System Health Tab */}
           {activeTab === 'system' && (
             <div className="space-y-6">
@@ -906,6 +1592,68 @@ const AdminScreen = ({ user, onBack }) => {
           )}
         </div>
       </div>
+      {blobPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="blob-preview-dialog-title"
+        >
+          <div
+            className="absolute inset-0 bg-gray-900/70"
+            onClick={closeBlobPreview}
+            aria-hidden="true"
+          />
+          <div className="relative z-10 w-full max-w-5xl max-h-full bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-gray-200">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  <span
+                    id="blob-preview-dialog-title"
+                    className="truncate"
+                    title={blobPreview.filename}
+                  >
+                    {blobPreview.filename}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {blobPreview.contentType || 'application/octet-stream'} • {formatBytes(blobPreview.size)}
+                  {blobPreview.downloadedAt && ` • Retrieved ${formatDateTime(blobPreview.downloadedAt)}`}
+                </p>
+                {blobPreview.key && (
+                  <p className="text-[11px] text-gray-400 mt-1 break-all">Blob key: {blobPreview.key}</p>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openBlobPreviewInNewTab}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                >
+                  <Eye className="h-4 w-4" />
+                  <span>Open in new tab</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={closeBlobPreview}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Close</span>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-gray-100">
+              <iframe
+                title={`Preview of ${blobPreview.filename}`}
+                src={blobPreview.objectUrl}
+                className="w-full h-full min-h-[420px] bg-white"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

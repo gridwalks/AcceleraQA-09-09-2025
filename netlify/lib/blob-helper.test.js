@@ -146,3 +146,103 @@ describe('Netlify Blob environment fallback', () => {
     expect(storeSet).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('listBlobFiles', () => {
+  afterEach(() => {
+    delete process.env.RAG_BLOB_PREFIX;
+    delete process.env.RAG_BLOB_STORE;
+    jest.resetModules();
+    jest.restoreAllMocks();
+  });
+
+  test('returns normalized blob metadata with derived fields', async () => {
+    jest.resetModules();
+
+    const listMock = jest.fn().mockResolvedValue({
+      blobs: [
+        { key: 'rag-documents/user-1/doc-abc/report.pdf', etag: 'etag-1' },
+        { key: 'rag-documents/user-2/doc-def/manual.txt', etag: 'etag-2' },
+      ],
+      directories: [],
+    });
+
+    const getMetadataMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        etag: 'etag-1',
+        metadata: {
+          'x-user-id': 'user-1',
+          'x-document-id': 'doc-abc',
+          'size-bytes': '2048',
+          'content-type': 'application/pdf',
+          uploadedAt: '2024-02-01T10:00:00.000Z',
+        },
+      })
+      .mockResolvedValueOnce({ etag: 'etag-2', metadata: {} });
+
+    jest.unstable_mockModule('@netlify/blobs', () => ({
+      getStore: jest.fn().mockReturnValue({
+        list: listMock,
+        getMetadata: getMetadataMock,
+      }),
+    }));
+
+    const module = await import('./blob-helper.js');
+    const result = await module.listBlobFiles();
+
+    expect(listMock).toHaveBeenCalledWith({ prefix: 'rag-documents/' });
+    expect(result.store).toBe('rag-documents');
+    expect(result.blobs).toHaveLength(2);
+    expect(result.blobs[0]).toEqual(
+      expect.objectContaining({
+        key: 'rag-documents/user-1/doc-abc/report.pdf',
+        userId: 'user-1',
+        documentId: 'doc-abc',
+        size: 2048,
+        contentType: 'application/pdf',
+        uploadedAt: '2024-02-01T10:00:00.000Z',
+      })
+    );
+    expect(result.blobs[0].metadata['x-user-id']).toBe('user-1');
+    expect(result.blobs[1]).toEqual(
+      expect.objectContaining({
+        key: 'rag-documents/user-2/doc-def/manual.txt',
+        userId: 'user-2',
+        documentId: 'doc-def',
+        size: null,
+      })
+    );
+    expect(result.truncated).toBe(false);
+  });
+
+  test('honors custom prefix and limit options', async () => {
+    jest.resetModules();
+
+    process.env.RAG_BLOB_PREFIX = 'custom-prefix';
+
+    const listMock = jest.fn().mockResolvedValue({
+      blobs: [
+        { key: 'custom-prefix/user-a/doc-1/file-one.txt', etag: 'etag-1' },
+        { key: 'custom-prefix/user-b/doc-2/file-two.txt', etag: 'etag-2' },
+      ],
+      directories: [],
+    });
+
+    const getMetadataMock = jest.fn().mockResolvedValue({ etag: 'etag-1', metadata: {} });
+
+    jest.unstable_mockModule('@netlify/blobs', () => ({
+      getStore: jest.fn().mockReturnValue({
+        list: listMock,
+        getMetadata: getMetadataMock,
+      }),
+    }));
+
+    const module = await import('./blob-helper.js');
+    const result = await module.listBlobFiles({ prefix: 'custom-prefix', limit: 1 });
+
+    expect(listMock).toHaveBeenCalledWith({ prefix: 'custom-prefix/' });
+    expect(result.blobs).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+    expect(result.prefix).toBe('custom-prefix');
+  });
+});

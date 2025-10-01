@@ -54,7 +54,7 @@ Deep Dive Example:
 AcceleraQA, Deep Dive: Assess whether electronic signatures in a vendor-hosted CTMS require validation under 21 CFR Part 11.
 Quick Check Example:
 AcceleraQA, Quick Check: Is audit trail review mandatory under EMA Annex 11?
-
+`,
 };
 // Auth0 Configuration with enhanced validation
 export const AUTH0_CONFIG = {

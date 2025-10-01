@@ -134,7 +134,7 @@ const resolveExternalResourceId = (resource) => {
   );
 };
 
-const formatS3Timestamp = (value) => {
+const formatStorageTimestamp = (value) => {
   if (!value) {
     return null;
   }
@@ -146,28 +146,28 @@ const formatS3Timestamp = (value) => {
     }
     return date.toLocaleString();
   } catch (error) {
-    console.warn('Failed to format S3 error timestamp:', error);
+    console.warn('Failed to format Storage error timestamp:', error);
     return value;
   }
 };
 
-const buildS3ClipboardText = (details) => {
+const buildStorageClipboardText = (details) => {
   if (!details || typeof details !== 'object') {
-    return 'S3 upload error details unavailable.';
+    return 'Storage upload error details unavailable.';
   }
 
   const lines = [
-    `Message: ${details.message || 'S3 upload failed.'}`,
+    `Message: ${details.message || 'Netlify Blob upload failed.'}`,
   ];
 
   if (details.statusCode) {
     lines.push(`Status Code: ${details.statusCode}`);
   }
   if (details.code) {
-    lines.push(`AWS Error Code: ${details.code}`);
+    lines.push(`Error Code: ${details.code}`);
   }
-  if (details.bucket) {
-    lines.push(`Bucket: ${details.bucket}`);
+  if (details.store) {
+    lines.push(`Store: ${details.store}`);
   }
   if (details.prefix) {
     lines.push(`Prefix: ${details.prefix}`);
@@ -178,14 +178,14 @@ const buildS3ClipboardText = (details) => {
   if (details.hostId) {
     lines.push(`Host ID: ${details.hostId}`);
   }
-  if (details.s3Message) {
-    lines.push(`S3 Message: ${details.s3Message}`);
+  if (details.storageMessage) {
+    lines.push(`Storage Message: ${details.storageMessage}`);
   }
   if (details.suggestion) {
     lines.push(`Suggestion: ${details.suggestion}`);
   }
   if (details.timestamp) {
-    lines.push(`Captured: ${formatS3Timestamp(details.timestamp)}`);
+    lines.push(`Captured: ${formatStorageTimestamp(details.timestamp)}`);
   }
   if (details.responseBody) {
     lines.push('Response Body:');
@@ -195,16 +195,16 @@ const buildS3ClipboardText = (details) => {
   return lines.join('\n');
 };
 
-const extractS3ErrorDetails = (error) => {
+const extractStorageErrorDetails = (error) => {
   if (!error || typeof error !== 'object') {
     return null;
   }
 
-  const message = typeof error.message === 'string' ? error.message : 'S3 upload failed.';
+  const message = typeof error.message === 'string' ? error.message : 'Netlify Blob upload failed.';
   const details = error.details && typeof error.details === 'object' ? error.details : null;
 
   if (!details) {
-    if (!/\bS3\b/i.test(message)) {
+    if (!/Netlify Blob|storage/i.test(message)) {
       return null;
     }
 
@@ -214,7 +214,7 @@ const extractS3ErrorDetails = (error) => {
     };
   }
 
-  if (details.provider && details.provider !== 's3') {
+  if (details.provider && details.provider !== 'netlify-blobs') {
     return null;
   }
 
@@ -222,11 +222,11 @@ const extractS3ErrorDetails = (error) => {
     message,
     statusCode: details.statusCode ?? error.statusCode ?? null,
     code: details.code ?? null,
-    bucket: details.bucket ?? null,
+    store: details.store ?? null,
     prefix: details.prefix ?? null,
     suggestion: details.suggestion ?? null,
     responseBody: details.responseBody ?? null,
-    s3Message: details.s3Message ?? null,
+    storageMessage: details.storageMessage ?? details.s3Message ?? null,
     requestId: details.requestId ?? null,
     hostId: details.hostId ?? null,
     timestamp: details.timestamp ?? null,
@@ -234,7 +234,7 @@ const extractS3ErrorDetails = (error) => {
   };
 };
 
-const S3ErrorModal = ({ isOpen, onClose, details }) => {
+const StorageErrorModal = ({ isOpen, onClose, details }) => {
   const [copyFeedback, setCopyFeedback] = useState(null);
 
   useEffect(() => {
@@ -250,12 +250,12 @@ const S3ErrorModal = ({ isOpen, onClose, details }) => {
     return null;
   }
 
-  const formattedTimestamp = formatS3Timestamp(details.timestamp);
+  const formattedTimestamp = formatStorageTimestamp(details.timestamp);
   const detailItems = [
     { label: 'Status Code', value: details.statusCode },
-    { label: 'AWS Error Code', value: details.code },
-    { label: 'S3 Message', value: details.s3Message },
-    { label: 'Bucket', value: details.bucket },
+    { label: 'Error Code', value: details.code },
+    { label: 'Storage Message', value: details.storageMessage },
+    { label: 'Store', value: details.store },
     { label: 'Prefix', value: details.prefix },
     { label: 'Request ID', value: details.requestId },
     { label: 'Host ID', value: details.hostId },
@@ -268,10 +268,10 @@ const S3ErrorModal = ({ isOpen, onClose, details }) => {
         return;
       }
 
-      await navigator.clipboard.writeText(buildS3ClipboardText(details));
+      await navigator.clipboard.writeText(buildStorageClipboardText(details));
       setCopyFeedback('Copied!');
     } catch (copyError) {
-      console.error('Failed to copy S3 error details:', copyError);
+      console.error('Failed to copy Storage error details:', copyError);
       setCopyFeedback('Copy failed');
     }
   };
@@ -285,15 +285,15 @@ const S3ErrorModal = ({ isOpen, onClose, details }) => {
               <AlertTriangle className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">S3 Upload Error</h3>
-              <p className="text-sm text-gray-500">The document could not be stored in Amazon S3.</p>
+              <h3 className="text-lg font-semibold text-gray-900">Storage Upload Error</h3>
+              <p className="text-sm text-gray-500">The document could not be stored in the Netlify Blob store.</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
-            aria-label="Close S3 error details"
+            aria-label="Close Storage error details"
           >
             <X className="h-5 w-5" />
           </button>
@@ -326,7 +326,7 @@ const S3ErrorModal = ({ isOpen, onClose, details }) => {
 
           {details.responseBody && (
             <div>
-              <h4 className="mb-2 text-sm font-semibold text-gray-900">S3 Response</h4>
+              <h4 className="mb-2 text-sm font-semibold text-gray-900">Storage Response</h4>
               <pre className="max-h-56 overflow-auto rounded-lg border border-gray-200 bg-gray-900 p-4 text-xs text-gray-100">
                 {details.responseBody}
               </pre>
@@ -392,18 +392,18 @@ const RAGConfigurationPage = ({ user, onClose }) => {
   const [editingTrainingForm, setEditingTrainingForm] = useState({ ...TRAINING_RESOURCE_FORM_INITIAL_STATE });
   const [isSavingTrainingEdit, setIsSavingTrainingEdit] = useState(false);
   const [trainingEditError, setTrainingEditError] = useState(null);
-  const [s3ErrorDetails, setS3ErrorDetails] = useState(null);
-  const [showS3ErrorModal, setShowS3ErrorModal] = useState(false);
+  const [storageErrorDetails, setStorageErrorDetails] = useState(null);
+  const [showStorageErrorModal, setShowStorageErrorModal] = useState(false);
   const isMountedRef = useRef(false);
 
-  const openS3ErrorModal = useCallback(() => {
-    if (s3ErrorDetails) {
-      setShowS3ErrorModal(true);
+  const openStorageErrorModal = useCallback(() => {
+    if (storageErrorDetails) {
+      setShowStorageErrorModal(true);
     }
-  }, [s3ErrorDetails]);
+  }, [storageErrorDetails]);
 
-  const closeS3ErrorModal = useCallback(() => {
-    setShowS3ErrorModal(false);
+  const closeStorageErrorModal = useCallback(() => {
+    setShowStorageErrorModal(false);
   }, []);
 
   useEffect(() => {
@@ -852,8 +852,8 @@ const RAGConfigurationPage = ({ user, onClose }) => {
       if (fileInput) fileInput.value = '';
 
       await loadDocuments();
-      setS3ErrorDetails(null);
-      setShowS3ErrorModal(false);
+      setStorageErrorDetails(null);
+      setShowStorageErrorModal(false);
 
     } catch (error) {
       console.error('Error uploading document:', error);
@@ -863,13 +863,13 @@ const RAGConfigurationPage = ({ user, onClose }) => {
       });
       setError(`Upload failed: ${error.message}`);
 
-      const s3Details = extractS3ErrorDetails(error);
-      if (s3Details) {
-        setS3ErrorDetails(s3Details);
-        setShowS3ErrorModal(true);
+      const storageDetails = extractStorageErrorDetails(error);
+      if (storageDetails) {
+        setStorageErrorDetails(storageDetails);
+        setShowStorageErrorModal(true);
       } else {
-        setS3ErrorDetails(null);
-        setShowS3ErrorModal(false);
+        setStorageErrorDetails(null);
+        setShowStorageErrorModal(false);
       }
 
       // If it's an auth error, check authentication
@@ -1028,11 +1028,11 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
   return (
     <>
-      {s3ErrorDetails && (
-        <S3ErrorModal
-          isOpen={showS3ErrorModal}
-          onClose={closeS3ErrorModal}
-          details={s3ErrorDetails}
+      {storageErrorDetails && (
+        <StorageErrorModal
+          isOpen={showStorageErrorModal}
+          onClose={closeStorageErrorModal}
+          details={storageErrorDetails}
         />
       )}
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1149,21 +1149,21 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                     Check Authentication Status
                   </button>
                 )}
-                {s3ErrorDetails && (
+                {storageErrorDetails && (
                   <button
                     type="button"
-                    onClick={openS3ErrorModal}
+                    onClick={openStorageErrorModal}
                     className="mt-2 text-sm text-red-600 underline transition-colors hover:text-red-800"
                   >
-                    View S3 error details
+                    View Storage error details
                   </button>
                 )}
               </div>
               <button
                 onClick={() => {
                   setError(null);
-                  setS3ErrorDetails(null);
-                  setShowS3ErrorModal(false);
+                  setStorageErrorDetails(null);
+                  setShowStorageErrorModal(false);
                 }}
                 className="ml-auto text-red-500 hover:text-red-700"
               >
@@ -1469,7 +1469,7 @@ const RAGConfigurationPage = ({ user, onClose }) => {
                                               View item
                                             </a>
                                           ) : (
-                                            <span className="text-gray-600">S3 object</span>
+                                            <span className="text-gray-600">Netlify Blob item</span>
                                           )}
                                           {doc.metadata.storage.path && (
                                             <span className="block text-[11px] text-gray-400 break-all">

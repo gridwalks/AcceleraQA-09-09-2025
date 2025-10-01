@@ -1,6 +1,8 @@
 // src/services/neonService.js
 // Remote conversation and resource persistence have been disabled.
 
+import { logVerboseInfo } from '../utils/logging';
+
 class NeonService {
   constructor() {
     this.isInitialized = false;
@@ -12,30 +14,30 @@ class NeonService {
     this.userId = user?.sub || null;
     this.isInitialized = Boolean(this.userId);
     if (this.isInitialized) {
-      console.info('Neon conversation storage disabled - initialization acknowledged for user:', this.userId);
+      logVerboseInfo('Neon conversation storage disabled - initialization acknowledged for user:', this.userId);
     } else {
-      console.info('Neon conversation storage disabled - no user provided.');
+      logVerboseInfo('Neon conversation storage disabled - no user provided.');
     }
     return this.isInitialized;
   }
 
   async saveConversation() {
-    console.info('Neon conversation storage is disabled. Skipping save operation.');
+    logVerboseInfo('Neon conversation storage is disabled. Skipping save operation.');
     return { success: false, disabled: true };
   }
 
   async loadConversations() {
-    console.info('Neon conversation storage is disabled. Returning empty history.');
+    logVerboseInfo('Neon conversation storage is disabled. Returning empty history.');
     return [];
   }
 
   async clearConversations() {
-    console.info('Neon conversation storage is disabled. Nothing to clear.');
+    logVerboseInfo('Neon conversation storage is disabled. Nothing to clear.');
     return { success: true, cleared: 0, disabled: true };
   }
 
   autoSaveConversation() {
-    console.info('Neon auto-save is disabled.');
+    logVerboseInfo('Neon auto-save is disabled.');
     return null;
   }
 
@@ -60,12 +62,12 @@ class NeonService {
   }
 
   async addTrainingResource() {
-    console.info('Neon training resource storage is disabled.');
+    logVerboseInfo('Neon training resource storage is disabled.');
     return null;
   }
 
   async getTrainingResources() {
-    console.info('Neon training resource storage is disabled. Returning empty list.');
+    logVerboseInfo('Neon training resource storage is disabled. Returning empty list.');
     return [];
   }
 

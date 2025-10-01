@@ -18,6 +18,12 @@ jest.mock('../services/learningSuggestionsService', () => ({
   },
 }));
 
+jest.mock('../config/featureFlags', () => ({
+  FEATURE_FLAGS: {
+    ENABLE_AI_SUGGESTIONS: false,
+  },
+}));
+
 jest.mock('../services/ragService', () => ({
   __esModule: true,
   default: {
@@ -28,7 +34,9 @@ jest.mock('../services/ragService', () => ({
 // eslint-disable-next-line import/first
 import { gzipSync, gunzipSync } from 'zlib';
 // eslint-disable-next-line import/first
-import { DocumentViewer, decodeBase64ToUint8Array } from './ResourcesView';
+import ResourcesView, { DocumentViewer, decodeBase64ToUint8Array, buildNetlifyBlobDownloadUrl } from './ResourcesView';
+// eslint-disable-next-line import/first
+import ragService from '../services/ragService';
 
 if (typeof global.TextEncoder === 'undefined') {
   // eslint-disable-next-line global-require
@@ -41,6 +49,10 @@ if (typeof global.TextDecoder === 'undefined') {
   const { TextDecoder: PolyfillTextDecoder } = require('util');
   global.TextDecoder = PolyfillTextDecoder;
 }
+
+beforeEach(() => {
+  ragService.downloadDocument.mockReset();
+});
 
 describe('DocumentViewer', () => {
   beforeEach(() => {
@@ -215,5 +227,130 @@ describe('DocumentViewer', () => {
       document.body.removeChild(container);
       global.fetch = originalFetch;
     }
+  });
+});
+
+describe('ResourcesView component', () => {
+  it('fetches Netlify blob documents directly from metadata when available', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+
+    const originalCreateObjectURL = typeof URL !== 'undefined' ? URL.createObjectURL : undefined;
+    const originalRevokeObjectURL = typeof URL !== 'undefined' ? URL.revokeObjectURL : undefined;
+
+    const createObjectURLMock = jest.fn(() => 'blob:mock-url');
+    const revokeObjectURLMock = jest.fn();
+
+    if (typeof URL !== 'undefined') {
+      URL.createObjectURL = createObjectURLMock;
+      URL.revokeObjectURL = revokeObjectURLMock;
+    }
+
+    const headers = {
+      get: (key) => (key && key.toLowerCase() === 'content-type' ? 'application/pdf' : null),
+    };
+
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers,
+      blob: async () => ({
+        type: 'application/pdf',
+        arrayBuffer: async () => pdfBytes.buffer,
+      }),
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const resource = {
+      title: 'Policy Document',
+      type: 'Guideline',
+      metadata: {
+        documentId: 'doc-123',
+        filename: 'Policy.pdf',
+        contentType: 'application/pdf',
+        storage: {
+          provider: 'netlify-blobs',
+          path: 'rag-documents/user/doc-123.pdf',
+          contentType: 'application/pdf',
+        },
+      },
+    };
+
+    try {
+      await act(async () => {
+        root.render(<ResourcesView currentResources={[resource]} user={{ sub: 'user-1' }} />);
+      });
+
+      const card = container.querySelector('[role="button"]');
+      expect(card).not.toBeNull();
+
+      await act(async () => {
+        card.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/.netlify/blobs/blob/rag-documents/user/doc-123.pdf',
+        { credentials: 'include' }
+      );
+      expect(ragService.downloadDocument).not.toHaveBeenCalled();
+      expect(createObjectURLMock).toHaveBeenCalled();
+      expect(revokeObjectURLMock).not.toHaveBeenCalled();
+
+      const pdfViewer = container.querySelector('[data-testid="pdf-blob-viewer"]');
+      expect(pdfViewer).not.toBeNull();
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      document.body.removeChild(container);
+      global.fetch = originalFetch;
+      if (typeof URL !== 'undefined') {
+        if (originalCreateObjectURL) {
+          URL.createObjectURL = originalCreateObjectURL;
+        } else {
+          delete URL.createObjectURL;
+        }
+        if (originalRevokeObjectURL) {
+          URL.revokeObjectURL = originalRevokeObjectURL;
+        } else {
+          delete URL.revokeObjectURL;
+        }
+      }
+    }
+  });
+});
+
+describe('buildNetlifyBlobDownloadUrl', () => {
+  it('returns direct url when provided', () => {
+    const url = buildNetlifyBlobDownloadUrl({ url: 'https://example.com/file.pdf' });
+    expect(url).toBe('https://example.com/file.pdf');
+  });
+
+  it('constructs a blob url from path metadata', () => {
+    const url = buildNetlifyBlobDownloadUrl({ path: 'rag-documents/user/file.pdf' });
+    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/file.pdf');
+  });
+
+  it('constructs a blob url from store and key metadata', () => {
+    const url = buildNetlifyBlobDownloadUrl({ store: 'rag-documents', key: 'rag-documents/user/file.pdf' });
+    expect(url).toBe('/.netlify/blobs/blob/rag-documents/rag-documents/user/file.pdf');
+  });
+
+  it('returns empty string when metadata is incomplete', () => {
+    expect(buildNetlifyBlobDownloadUrl()).toBe('');
+    expect(buildNetlifyBlobDownloadUrl({})).toBe('');
+    expect(buildNetlifyBlobDownloadUrl({ store: 'rag-documents' })).toBe('');
   });
 });

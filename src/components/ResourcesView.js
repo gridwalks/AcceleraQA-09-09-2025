@@ -328,6 +328,52 @@ export const decodeBase64ToUint8Array = async (base64) => {
   }
 };
 
+const NETLIFY_BLOB_PROVIDER = 'netlify-blobs';
+
+export const buildNetlifyBlobDownloadUrl = (storageLocation = {}) => {
+  if (!storageLocation || typeof storageLocation !== 'object') {
+    return '';
+  }
+
+  const directUrl = typeof storageLocation.url === 'string' ? storageLocation.url.trim() : '';
+  if (directUrl) {
+    return directUrl;
+  }
+
+  const normalizePath = (input) => {
+    if (typeof input !== 'string') {
+      return '';
+    }
+    const trimmed = input.trim().replace(/^\/+/, '');
+    if (!trimmed) {
+      return '';
+    }
+    return trimmed
+      .split('/')
+      .filter(Boolean)
+      .map(segment => encodeURIComponent(segment))
+      .join('/');
+  };
+
+  const normalizedPath = normalizePath(storageLocation.path);
+  if (normalizedPath) {
+    return `/.netlify/blobs/blob/${normalizedPath}`;
+  }
+
+  const normalizedStore = normalizePath(storageLocation.store);
+  const normalizedKey = normalizePath(storageLocation.key);
+
+  if (normalizedStore && normalizedKey) {
+    return `/.netlify/blobs/blob/${normalizedStore}/${normalizedKey}`;
+  }
+
+  if (normalizedKey) {
+    return `/.netlify/blobs/blob/${normalizedKey}`;
+  }
+
+  return '';
+};
+
 const createInitialViewerState = () => ({
   isOpen: false,
   title: '',
@@ -585,6 +631,68 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         return;
       }
 
+      const storageLocation =
+        (response && typeof response.storageLocation === 'object' && response.storageLocation) ||
+        (response && typeof response.metadata === 'object' && response.metadata?.storage);
+
+      if (storageLocation?.provider === NETLIFY_BLOB_PROVIDER) {
+        const downloadUrl = buildNetlifyBlobDownloadUrl(storageLocation);
+        if (!downloadUrl) {
+          throw new Error('Netlify Blob storage location is missing a downloadable path.');
+        }
+
+        if (typeof fetch !== 'function') {
+          throw new Error('This environment does not support fetching Netlify Blob documents.');
+        }
+
+        const blobResponse = await fetch(downloadUrl, { credentials: 'include' });
+        if (!blobResponse.ok) {
+          throw new Error(`Failed to download Netlify Blob document (status ${blobResponse.status}).`);
+        }
+
+        const blob = await blobResponse.blob();
+        const objectUrlResult = createObjectUrlFromBlob(blob);
+        if (!objectUrlResult) {
+          throw new Error('Unable to create object URL for Netlify Blob document.');
+        }
+
+        const arrayBuffer = await blob.arrayBuffer();
+        const byteArray = new Uint8Array(arrayBuffer);
+
+        if (viewerRequestRef.current !== requestId) {
+          objectUrlResult.revoke();
+          return;
+        }
+
+        activeObjectUrlRef.current = objectUrlResult;
+
+        let transportableBytes = null;
+        try {
+          const { buffer, byteOffset, byteLength } = byteArray;
+          transportableBytes = buffer.slice(byteOffset, byteOffset + byteLength);
+        } catch (sliceError) {
+          console.warn('Unable to create ArrayBuffer copy for Netlify Blob viewer state:', sliceError);
+        }
+
+        const resolvedContentType =
+          response.contentType || blobResponse.headers.get('content-type') || blob.type || contentType;
+
+        logDocumentUrl(downloadUrl, 'netlify blob download URL');
+        logDocumentUrl(objectUrlResult.url, 'netlify blob object URL');
+
+        setViewerState({
+          isOpen: true,
+          title: fallbackTitle,
+          url: objectUrlResult.url,
+          filename: response.filename || fallbackFilename,
+          contentType: resolvedContentType,
+          allowDownload: true,
+          blobData: transportableBytes || byteArray,
+        });
+        setIsViewerLoading(false);
+        return;
+      }
+
       // Fallback: backend returned base64 content; build a blob URL
       const base64Content = typeof response.content === 'string' ? response.content.trim() : '';
       const byteArray = await decodeBase64ToUint8Array(base64Content);
@@ -629,7 +737,14 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     } finally {
       setDownloadingResourceId((current) => (current === resourceKey ? null : current));
     }
-  }, [createObjectUrlFromBlob, decodeBase64ToUint8Array, getResourceKey, revokeActiveObjectUrl, userId]);
+  }, [
+    createObjectUrlFromBlob,
+    decodeBase64ToUint8Array,
+    getResourceKey,
+    logDocumentUrl,
+    revokeActiveObjectUrl,
+    userId,
+  ]);
 
   const handleSuggestionClick = (suggestion) => {
     if (suggestion?.url) {

@@ -575,6 +575,7 @@ describe('ResourcesView component', () => {
       const debugDetails = container.querySelector('details pre');
       expect(debugDetails).not.toBeNull();
       expect(debugDetails.textContent).toContain('Failed to download Netlify Blob document (status 404)');
+      expect(debugDetails.textContent).not.toContain('This document could not be found in Netlify Blob storage.');
     } finally {
       await act(async () => {
         root.unmount();

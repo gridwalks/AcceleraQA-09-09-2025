@@ -893,26 +893,54 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         }
 
         const debugMessages = [];
-        if (error?.message) {
-          debugMessages.push(error.message);
+        const addDebugMessage = (value) => {
+          if (!value) return;
+          const normalized = typeof value === 'string' ? value.trim() : String(value).trim();
+          if (!normalized) return;
+          if (debugMessages.includes(normalized)) return;
+          debugMessages.push(normalized);
+        };
+
+        if (error?.message && error.message !== message) {
+          addDebugMessage(error.message);
         }
-        if (error?.status && !debugMessages.some((entry) => entry.includes('Status'))) {
-          debugMessages.push(`Status: ${error.status}`);
+        if (error?.status) {
+          addDebugMessage(`Status: ${error.status}`);
         }
-        if (error?.cause?.message) {
-          debugMessages.push(`Cause: ${error.cause.message}`);
+
+        const causeMessage = error?.cause?.message;
+        if (causeMessage) {
+          addDebugMessage(`Cause: ${causeMessage}`);
         } else if (lastNetlifyError && lastNetlifyError !== error && lastNetlifyError?.message) {
-          debugMessages.push(`Netlify Blob error: ${lastNetlifyError.message}`);
+          addDebugMessage(`Netlify Blob error: ${lastNetlifyError.message}`);
         }
+
         if (lastNetlifyError?.status && lastNetlifyError !== error) {
-          debugMessages.push(`Netlify Blob status: ${lastNetlifyError.status}`);
+          addDebugMessage(`Netlify Blob status: ${lastNetlifyError.status}`);
         }
         if (lastNetlifyError?.statusText) {
-          debugMessages.push(`Netlify Blob status text: ${lastNetlifyError.statusText}`);
+          addDebugMessage(`Netlify Blob status text: ${lastNetlifyError.statusText}`);
         }
 
-        const debugMessage = debugMessages.filter(Boolean).join('\n');
+        let debugMessage = '';
+        if (debugMessages.length > 0) {
+          debugMessage = debugMessages.join('\n');
+        } else {
+          const fallbackCandidates = [];
+          if (error?.message) fallbackCandidates.push(error.message.trim());
+          const errorString = typeof error === 'string' ? error : String(error);
+          if (errorString) fallbackCandidates.push(errorString.trim());
 
+          const fallbackDebug = fallbackCandidates.find((candidate) => {
+            if (!candidate) return false;
+            if (candidate === message) return false;
+            if (candidate === `Error: ${message}`) return false;
+            return true;
+          });
+
+          debugMessage = fallbackDebug || 'No additional technical details are available.';
+        }
+        
         setViewerErrorInfo({
           message,
           hint,

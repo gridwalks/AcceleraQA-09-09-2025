@@ -263,6 +263,10 @@ describe('DocumentViewer', () => {
       const attemptedPathContainer = container.querySelector('[data-testid="document-viewer-error-paths"]');
       expect(attemptedPathContainer).not.toBeNull();
 
+      const primaryPathContainer = container.querySelector('[data-testid="document-viewer-error-primary-path"]');
+      expect(primaryPathContainer).not.toBeNull();
+      expect(primaryPathContainer.textContent).toContain('/.netlify/blobs/blob/path/to/document.pdf');
+
       const pathEntries = Array.from(
         container.querySelectorAll('[data-testid="document-viewer-error-path"]')
       ).map((node) => node.textContent);
@@ -442,6 +446,10 @@ describe('ResourcesView component', () => {
         'user-2'
       );
 
+      const primaryPathContainer = container.querySelector('[data-testid="document-viewer-error-primary-path"]');
+      expect(primaryPathContainer).not.toBeNull();
+      expect(primaryPathContainer.textContent).toContain('/.netlify/blobs/blob/rag-documents/user/doc-404.pdf');
+
       const attemptedPathsContainer = container.querySelector('[data-testid="document-viewer-error-paths"]');
       expect(attemptedPathsContainer).not.toBeNull();
 
@@ -493,6 +501,16 @@ describe('buildNetlifyBlobDownloadUrl', () => {
   it('constructs a blob url from store and key metadata', () => {
     const url = buildNetlifyBlobDownloadUrl({ store: 'rag-documents', key: 'rag-documents/user/file.pdf' });
     expect(url).toBe('/.netlify/blobs/blob/rag-documents/rag-documents/user/file.pdf');
+  });
+
+  it('avoids double encoding already escaped path segments', () => {
+    const url = buildNetlifyBlobDownloadUrl({ path: 'rag-documents/user/My%20File%20(1).pdf' });
+    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/My%20File%20(1).pdf');
+  });
+
+  it('preserves encoded forward slashes within segments', () => {
+    const url = buildNetlifyBlobDownloadUrl({ key: 'rag-documents/user/some%2Fnested%2Fname.txt' });
+    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/some%2Fnested%2Fname.txt');
   });
 
   it('returns empty string when metadata is incomplete', () => {

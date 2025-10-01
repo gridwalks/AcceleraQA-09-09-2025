@@ -344,14 +344,34 @@ export const buildNetlifyBlobDownloadUrl = (storageLocation = {}) => {
     if (typeof input !== 'string') {
       return '';
     }
+
     const trimmed = input.trim().replace(/^\/+/, '');
     if (!trimmed) {
       return '';
     }
+
     return trimmed
       .split('/')
       .filter(Boolean)
-      .map(segment => encodeURIComponent(segment))
+      .map((segment) => {
+        const safeSegment = segment.trim();
+        if (!safeSegment) {
+          return '';
+        }
+
+        let decodedSegment = safeSegment;
+        try {
+          decodedSegment = decodeURIComponent(safeSegment);
+        } catch (decodeError) {
+          // If the segment is not a valid encoded URI component we fall back to the raw value.
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn('Unable to decode Netlify Blob path segment:', decodeError);
+          }
+        }
+
+        return encodeURIComponent(decodedSegment);
+      })
+      .filter(Boolean)
       .join('/');
   };
 
@@ -824,11 +844,15 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     } catch (error) {
       console.error('Failed to open resource document:', error);
       if (viewerRequestRef.current === requestId) {
+        const primaryAttempt = attemptedSources.find((entry) => entry?.path);
+
         setViewerErrorInfo({
           message: 'We were unable to load this document in the viewer.',
           hint: 'If a download option is available, please try that instead.',
           attemptedPaths: attemptedSources,
           debugMessage: error?.message || String(error),
+          targetPath: primaryAttempt?.path || '',
+          targetLabel: primaryAttempt?.label || '',
         });
         setIsViewerLoading(false);
       }
@@ -1399,6 +1423,11 @@ export const DocumentViewer = ({
   const errorHint = resolvedError?.hint || '';
   const errorDebugMessage = resolvedError?.debugMessage || '';
   const hasError = Boolean(resolvedError);
+  const targetPath = typeof resolvedError?.targetPath === 'string' ? resolvedError.targetPath.trim() : '';
+  const targetLabel = typeof resolvedError?.targetLabel === 'string' ? resolvedError.targetLabel.trim() : '';
+  const primaryAttempt = !targetPath && attemptedPaths.length > 0 ? attemptedPaths[0] : null;
+  const resolvedTargetPath = targetPath || primaryAttempt?.path || '';
+  const resolvedTargetLabel = targetLabel || primaryAttempt?.label || '';
 
   let viewerContent = null;
 
@@ -1493,6 +1522,20 @@ export const DocumentViewer = ({
                   <h3 className="text-base font-semibold text-gray-900">{errorMessage}</h3>
                   {errorHint ? <p className="text-sm text-gray-600">{errorHint}</p> : null}
                 </div>
+                {resolvedTargetPath ? (
+                  <div
+                    className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left"
+                    data-testid="document-viewer-error-primary-path"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+                      Attempted file path
+                    </p>
+                    <p className="mt-2 text-xs text-amber-900/90">
+                      {resolvedTargetLabel ? <span className="font-semibold">{resolvedTargetLabel}: </span> : null}
+                      <code className="break-all rounded bg-white/70 px-1.5 py-0.5">{resolvedTargetPath}</code>
+                    </p>
+                  </div>
+                ) : null}
                 {attemptedPaths.length > 0 ? (
                   <div
                     className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left"

@@ -470,6 +470,79 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     console.log(`Document viewer URL (${sourceLabel}):`, url);
   }, []);
 
+  const loadNetlifyBlobDocument = useCallback(
+    async ({
+      storageLocation,
+      requestId,
+      fallbackTitle,
+      fallbackFilename,
+      fallbackContentType,
+      responseFilename,
+      responseContentType,
+    }) => {
+      const downloadUrl = buildNetlifyBlobDownloadUrl(storageLocation);
+      if (!downloadUrl) {
+        throw new Error('Netlify Blob storage location is missing a downloadable path.');
+      }
+
+      if (typeof fetch !== 'function') {
+        throw new Error('This environment does not support fetching Netlify Blob documents.');
+      }
+
+      const blobResponse = await fetch(downloadUrl, { credentials: 'include' });
+      if (!blobResponse.ok) {
+        throw new Error(`Failed to download Netlify Blob document (status ${blobResponse.status}).`);
+      }
+
+      const blob = await blobResponse.blob();
+      const objectUrlResult = createObjectUrlFromBlob(blob);
+      if (!objectUrlResult) {
+        throw new Error('Unable to create object URL for Netlify Blob document.');
+      }
+
+      const arrayBuffer = await blob.arrayBuffer();
+      const byteArray = new Uint8Array(arrayBuffer);
+
+      if (viewerRequestRef.current !== requestId) {
+        objectUrlResult.revoke();
+        return 'stale';
+      }
+
+      activeObjectUrlRef.current = objectUrlResult;
+
+      let transportableBytes = null;
+      try {
+        const { buffer, byteOffset, byteLength } = byteArray;
+        transportableBytes = buffer.slice(byteOffset, byteOffset + byteLength);
+      } catch (sliceError) {
+        console.warn('Unable to create ArrayBuffer copy for Netlify Blob viewer state:', sliceError);
+      }
+
+      const resolvedContentType =
+        responseContentType ||
+        storageLocation?.contentType ||
+        (typeof blobResponse.headers?.get === 'function' ? blobResponse.headers.get('content-type') : null) ||
+        blob.type ||
+        fallbackContentType;
+
+      logDocumentUrl(downloadUrl, 'netlify blob download URL');
+      logDocumentUrl(objectUrlResult.url, 'netlify blob object URL');
+
+      setViewerState({
+        isOpen: true,
+        title: fallbackTitle,
+        url: objectUrlResult.url,
+        filename: responseFilename || fallbackFilename,
+        contentType: resolvedContentType,
+        allowDownload: true,
+        blobData: transportableBytes || byteArray,
+      });
+      setIsViewerLoading(false);
+      return 'success';
+    },
+    [createObjectUrlFromBlob, logDocumentUrl]
+  );
+
   const closeDocumentViewer = useCallback(() => {
     viewerRequestRef.current += 1;
     revokeActiveObjectUrl();
@@ -596,6 +669,11 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       return;
     }
 
+    const storageLocationFromMetadata =
+      (metadata && typeof metadata.storage === 'object' && metadata.storage) ||
+      (metadata && typeof metadata.storageLocation === 'object' && metadata.storageLocation) ||
+      null;
+
     const resourceKey = getResourceKey(resource, index);
     setDownloadingResourceId(resourceKey);
     setIsViewerLoading(true);
@@ -610,6 +688,26 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     });
 
     try {
+      if (storageLocationFromMetadata?.provider === NETLIFY_BLOB_PROVIDER) {
+        try {
+          const netlifyResult = await loadNetlifyBlobDocument({
+            storageLocation: storageLocationFromMetadata,
+            requestId,
+            fallbackTitle,
+            fallbackFilename,
+            fallbackContentType: contentType,
+            responseFilename: metadata.filename,
+            responseContentType: metadata.contentType,
+          });
+
+          if (netlifyResult === 'success' || netlifyResult === 'stale') {
+            return;
+          }
+        } catch (netlifyError) {
+          console.warn('Failed to load Netlify Blob document from resource metadata:', netlifyError);
+        }
+      }
+
       const response = await ragService.downloadDocument({ documentId, fileId }, userId);
       if (viewerRequestRef.current !== requestId) return;
       if (!response) throw new Error('No response received from download request');
@@ -636,61 +734,19 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         (response && typeof response.metadata === 'object' && response.metadata?.storage);
 
       if (storageLocation?.provider === NETLIFY_BLOB_PROVIDER) {
-        const downloadUrl = buildNetlifyBlobDownloadUrl(storageLocation);
-        if (!downloadUrl) {
-          throw new Error('Netlify Blob storage location is missing a downloadable path.');
-        }
+        const netlifyResult = await loadNetlifyBlobDocument({
+          storageLocation,
+          requestId,
+          fallbackTitle,
+          fallbackFilename,
+          fallbackContentType: contentType,
+          responseFilename: response.filename,
+          responseContentType: response.contentType,
+        });
 
-        if (typeof fetch !== 'function') {
-          throw new Error('This environment does not support fetching Netlify Blob documents.');
-        }
-
-        const blobResponse = await fetch(downloadUrl, { credentials: 'include' });
-        if (!blobResponse.ok) {
-          throw new Error(`Failed to download Netlify Blob document (status ${blobResponse.status}).`);
-        }
-
-        const blob = await blobResponse.blob();
-        const objectUrlResult = createObjectUrlFromBlob(blob);
-        if (!objectUrlResult) {
-          throw new Error('Unable to create object URL for Netlify Blob document.');
-        }
-
-        const arrayBuffer = await blob.arrayBuffer();
-        const byteArray = new Uint8Array(arrayBuffer);
-
-        if (viewerRequestRef.current !== requestId) {
-          objectUrlResult.revoke();
+        if (netlifyResult === 'success' || netlifyResult === 'stale') {
           return;
         }
-
-        activeObjectUrlRef.current = objectUrlResult;
-
-        let transportableBytes = null;
-        try {
-          const { buffer, byteOffset, byteLength } = byteArray;
-          transportableBytes = buffer.slice(byteOffset, byteOffset + byteLength);
-        } catch (sliceError) {
-          console.warn('Unable to create ArrayBuffer copy for Netlify Blob viewer state:', sliceError);
-        }
-
-        const resolvedContentType =
-          response.contentType || blobResponse.headers.get('content-type') || blob.type || contentType;
-
-        logDocumentUrl(downloadUrl, 'netlify blob download URL');
-        logDocumentUrl(objectUrlResult.url, 'netlify blob object URL');
-
-        setViewerState({
-          isOpen: true,
-          title: fallbackTitle,
-          url: objectUrlResult.url,
-          filename: response.filename || fallbackFilename,
-          contentType: resolvedContentType,
-          allowDownload: true,
-          blobData: transportableBytes || byteArray,
-        });
-        setIsViewerLoading(false);
-        return;
       }
 
       // Fallback: backend returned base64 content; build a blob URL
@@ -741,6 +797,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     createObjectUrlFromBlob,
     decodeBase64ToUint8Array,
     getResourceKey,
+    loadNetlifyBlobDocument,
     logDocumentUrl,
     revokeActiveObjectUrl,
     userId,

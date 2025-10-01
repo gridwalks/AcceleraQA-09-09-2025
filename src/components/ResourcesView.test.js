@@ -28,7 +28,7 @@ jest.mock('../services/ragService', () => ({
 // eslint-disable-next-line import/first
 import { gzipSync, gunzipSync } from 'zlib';
 // eslint-disable-next-line import/first
-import { DocumentViewer, decodeBase64ToUint8Array } from './ResourcesView';
+import { DocumentViewer, decodeBase64ToUint8Array, buildNetlifyBlobDownloadUrl } from './ResourcesView';
 
 if (typeof global.TextEncoder === 'undefined') {
   // eslint-disable-next-line global-require
@@ -215,5 +215,28 @@ describe('DocumentViewer', () => {
       document.body.removeChild(container);
       global.fetch = originalFetch;
     }
+  });
+});
+
+describe('buildNetlifyBlobDownloadUrl', () => {
+  it('returns direct url when provided', () => {
+    const url = buildNetlifyBlobDownloadUrl({ url: 'https://example.com/file.pdf' });
+    expect(url).toBe('https://example.com/file.pdf');
+  });
+
+  it('constructs a blob url from path metadata', () => {
+    const url = buildNetlifyBlobDownloadUrl({ path: 'rag-documents/user/file.pdf' });
+    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/file.pdf');
+  });
+
+  it('constructs a blob url from store and key metadata', () => {
+    const url = buildNetlifyBlobDownloadUrl({ store: 'rag-documents', key: 'rag-documents/user/file.pdf' });
+    expect(url).toBe('/.netlify/blobs/blob/rag-documents/rag-documents/user/file.pdf');
+  });
+
+  it('returns empty string when metadata is incomplete', () => {
+    expect(buildNetlifyBlobDownloadUrl()).toBe('');
+    expect(buildNetlifyBlobDownloadUrl({})).toBe('');
+    expect(buildNetlifyBlobDownloadUrl({ store: 'rag-documents' })).toBe('');
   });
 });

@@ -892,27 +892,26 @@ const handleDownloadDocument = async (sql, userId, payload, requestContext = {})
 
   const record = rows[0];
   if (!record) {
-    const numericDocumentId = Number(documentId);
     let neonRow = null;
 
     if (documentId) {
-      if (Number.isFinite(numericDocumentId)) {
-        const neonRowsById = await sql`
-          SELECT id, user_id, filename, file_type, file_size, metadata
-          FROM rag_documents
-          WHERE (
-              user_id = ${userId}
-              OR metadata->>'sharedWithAllUsers' = 'true'
-              OR metadata->>'shared_with_all_users' = 'true'
-              OR LOWER(COALESCE(metadata->>'visibility', '')) IN ('global', 'public', 'everyone', 'all')
-              OR LOWER(COALESCE(metadata->>'audience', '')) IN ('global', 'public', 'everyone', 'all')
-              OR LOWER(COALESCE(metadata->>'sharedAudience', '')) IN ('all-users', 'all', 'everyone')
-            )
-            AND id = ${numericDocumentId}
-          LIMIT 1
-        `;
-        neonRow = neonRowsById[0] || null;
-      } else {
+      const neonRowsByIdText = await sql`
+        SELECT id, user_id, filename, file_type, file_size, metadata
+        FROM rag_documents
+        WHERE (
+            user_id = ${userId}
+            OR metadata->>'sharedWithAllUsers' = 'true'
+            OR metadata->>'shared_with_all_users' = 'true'
+            OR LOWER(COALESCE(metadata->>'visibility', '')) IN ('global', 'public', 'everyone', 'all')
+            OR LOWER(COALESCE(metadata->>'audience', '')) IN ('global', 'public', 'everyone', 'all')
+            OR LOWER(COALESCE(metadata->>'sharedAudience', '')) IN ('all-users', 'all', 'everyone')
+          )
+          AND id::text = ${String(documentId)}
+        LIMIT 1
+      `;
+      neonRow = neonRowsByIdText[0] || null;
+
+      if (!neonRow) {
         const neonRowsByDocId = await sql`
           SELECT id, user_id, filename, file_type, file_size, metadata
           FROM rag_documents

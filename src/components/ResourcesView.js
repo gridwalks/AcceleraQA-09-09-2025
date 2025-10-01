@@ -502,6 +502,12 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       responseFilename,
       responseContentType,
     }) => {
+      console.log('loadNetlifyBlobDocument called with:', {
+        storageLocation,
+        requestId,
+        fallbackTitle,
+        fallbackFilename
+      });
       const downloadUrl = buildNetlifyBlobDownloadUrl(storageLocation);
       if (!downloadUrl) {
         throw new Error('Netlify Blob storage location is missing a downloadable path.');
@@ -665,6 +671,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const toggleSection = (section) => setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
 
   const handleResourceClick = useCallback(async (resource, index = 0) => {
+    console.log('handleResourceClick called with:', { resource, index });
     if (!resource) return;
 
     const requestId = viewerRequestRef.current + 1;
@@ -723,6 +730,13 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       (metadata && typeof metadata.storage === 'object' && metadata.storage) ||
       (metadata && typeof metadata.storageLocation === 'object' && metadata.storageLocation) ||
       null;
+    
+    console.log('Document viewer debug:', {
+      metadata,
+      storageLocationFromMetadata,
+      provider: storageLocationFromMetadata?.provider,
+      isNetlifyBlob: storageLocationFromMetadata?.provider === NETLIFY_BLOB_PROVIDER
+    });
 
     const resourceKey = getResourceKey(resource, index);
     setDownloadingResourceId(resourceKey);

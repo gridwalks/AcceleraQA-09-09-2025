@@ -288,6 +288,44 @@ describe('ragService neon backend integration', () => {
     expect(result.answer).toContain('References');
     expect(result.resources).toEqual(chatResponse.resources);
   });
+
+  test('generateNeonRagResponse incorporates conversation history into prompt', async () => {
+    const neonResponses = {
+      search: () => ({
+        results: [
+          {
+            documentId: 'doc-99',
+            filename: 'Procedure.pdf',
+            chunkIndex: 1,
+            text: 'Ensure batch release reviews cover prior deviations.',
+          },
+        ],
+      }),
+    };
+
+    const { ragService, chatSpy } = await setupNeonRagService({
+      neonResponses,
+      chatResponse: { answer: 'Context aware response', resources: [] },
+    });
+
+    const conversationHistory = [
+      { role: 'user', content: 'How should we prepare for the audit?' },
+      { role: 'assistant', content: 'Review SOP QA-101 and compile recent CAPAs.' },
+    ];
+
+    await ragService.generateNeonRagResponse(
+      'What should we emphasize in the follow-up report?',
+      'user-7',
+      {},
+      conversationHistory
+    );
+
+    expect(chatSpy).toHaveBeenCalled();
+    const promptArgument = chatSpy.mock.calls[0][0];
+    expect(promptArgument).toContain('User: How should we prepare for the audit?');
+    expect(promptArgument).toContain('Assistant: Review SOP QA-101 and compile recent CAPAs.');
+    expect(promptArgument).toContain('Latest question: What should we emphasize in the follow-up report?');
+  });
 });
 
 describe('shared document retention for OpenAI backend', () => {

@@ -344,14 +344,34 @@ export const buildNetlifyBlobDownloadUrl = (storageLocation = {}) => {
     if (typeof input !== 'string') {
       return '';
     }
+
     const trimmed = input.trim().replace(/^\/+/, '');
     if (!trimmed) {
       return '';
     }
+
     return trimmed
       .split('/')
       .filter(Boolean)
-      .map(segment => encodeURIComponent(segment))
+      .map((segment) => {
+        const safeSegment = segment.trim();
+        if (!safeSegment) {
+          return '';
+        }
+
+        let decodedSegment = safeSegment;
+        try {
+          decodedSegment = decodeURIComponent(safeSegment);
+        } catch (decodeError) {
+          // If the segment is not a valid encoded URI component we fall back to the raw value.
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn('Unable to decode Netlify Blob path segment:', decodeError);
+          }
+        }
+
+        return encodeURIComponent(decodedSegment);
+      })
+      .filter(Boolean)
       .join('/');
   };
 

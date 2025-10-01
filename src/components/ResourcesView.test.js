@@ -495,6 +495,16 @@ describe('buildNetlifyBlobDownloadUrl', () => {
     expect(url).toBe('/.netlify/blobs/blob/rag-documents/rag-documents/user/file.pdf');
   });
 
+  it('avoids double encoding already escaped path segments', () => {
+    const url = buildNetlifyBlobDownloadUrl({ path: 'rag-documents/user/My%20File%20(1).pdf' });
+    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/My%20File%20(1).pdf');
+  });
+
+  it('preserves encoded forward slashes within segments', () => {
+    const url = buildNetlifyBlobDownloadUrl({ key: 'rag-documents/user/some%2Fnested%2Fname.txt' });
+    expect(url).toBe('/.netlify/blobs/blob/rag-documents/user/some%2Fnested%2Fname.txt');
+  });
+
   it('returns empty string when metadata is incomplete', () => {
     expect(buildNetlifyBlobDownloadUrl()).toBe('');
     expect(buildNetlifyBlobDownloadUrl({})).toBe('');

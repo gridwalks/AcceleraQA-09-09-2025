@@ -139,6 +139,27 @@ const createResponse = (statusCode, body) => ({
   body: JSON.stringify(body),
 });
 
+const parseJson = (value, fallback = {}) => {
+  if (!value) return { ...fallback };
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return { ...fallback, ...value };
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { ...fallback, ...parsed };
+      }
+    } catch (error) {
+      console.warn('Failed to parse JSON metadata value:', error);
+    }
+  }
+
+  return { ...fallback };
+};
+
 const mapDocumentRow = (row) => {
   const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
   const storageLocation =
@@ -156,6 +177,49 @@ const mapDocumentRow = (row) => {
     storageLocation,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+};
+
+const mapNeonDocumentRow = (row) => {
+  const metadata = parseJson(row.metadata, {});
+  if (!metadata.processingMode) {
+    metadata.processingMode = 'neon-postgresql';
+  }
+
+  const storageLocation =
+    metadata.storage && typeof metadata.storage === 'object' ? { ...metadata.storage } : null;
+
+  if (storageLocation) {
+    metadata.storage = storageLocation;
+  }
+
+  const normalizedFilename =
+    getFirstNonEmptyString(
+      metadata.filename,
+      metadata.fileName,
+      metadata.originalFilename,
+      row.filename,
+    ) || `document-${row.id}`;
+
+  const normalizedContentType =
+    getFirstNonEmptyString(metadata.contentType, metadata.mimeType, row.file_type) ||
+    'application/octet-stream';
+
+  const fileId = getFirstNonEmptyString(metadata.fileId, metadata.file_id, metadata.openaiFileId);
+
+  const sizeCandidates = [row.file_size, storageLocation?.size];
+  const resolvedSize = sizeCandidates
+    .map(value => (Number.isFinite(Number(value)) ? Number(value) : null))
+    .find(value => value != null);
+
+  return {
+    documentId: row.id,
+    fileId: fileId || null,
+    filename: normalizedFilename,
+    contentType: normalizedContentType,
+    size: resolvedSize != null ? resolvedSize : 0,
+    metadata,
+    storageLocation,
   };
 };
 
@@ -643,7 +707,57 @@ const handleDownloadDocument = async (sql, userId, payload) => {
 
   const record = rows[0];
   if (!record) {
-    return createResponse(404, { error: 'Document not found for this user' });
+    const numericDocumentId = Number(documentId);
+    let neonRow = null;
+
+    if (documentId) {
+      if (Number.isFinite(numericDocumentId)) {
+        const neonRowsById = await sql`
+          SELECT id, filename, file_type, file_size, metadata
+          FROM rag_documents
+          WHERE user_id = ${userId}
+            AND id = ${numericDocumentId}
+          LIMIT 1
+        `;
+        neonRow = neonRowsById[0] || null;
+      } else {
+        const neonRowsByDocId = await sql`
+          SELECT id, filename, file_type, file_size, metadata
+          FROM rag_documents
+          WHERE user_id = ${userId}
+            AND (metadata->>'documentId' = ${documentId} OR metadata->>'document_id' = ${documentId})
+          LIMIT 1
+        `;
+        neonRow = neonRowsByDocId[0] || null;
+      }
+    }
+
+    if (!neonRow && fileId) {
+      const neonRowsByFileId = await sql`
+        SELECT id, filename, file_type, file_size, metadata
+        FROM rag_documents
+        WHERE user_id = ${userId}
+          AND (metadata->>'fileId' = ${fileId} OR metadata->>'file_id' = ${fileId})
+        LIMIT 1
+      `;
+      neonRow = neonRowsByFileId[0] || null;
+    }
+
+    if (!neonRow) {
+      return createResponse(404, { error: 'Document not found for this user' });
+    }
+
+    const normalized = mapNeonDocumentRow(neonRow);
+
+    return createResponse(200, {
+      documentId: String(normalized.documentId),
+      fileId: normalized.fileId,
+      filename: normalized.filename,
+      contentType: normalized.contentType,
+      size: normalized.size,
+      metadata: normalized.metadata,
+      storageLocation: normalized.storageLocation,
+    });
   }
 
   const metadata = record.metadata && typeof record.metadata === 'object' ? record.metadata : {};
@@ -887,4 +1001,5 @@ export const __testHelpers = {
   isJsonLikeContentType,
   payloadContainsVectorStoreDescriptor,
   handleSaveDocument,
+  handleDownloadDocument,
 };

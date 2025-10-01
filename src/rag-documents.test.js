@@ -4,6 +4,7 @@ const uploadDocumentToBlobMock = jest.fn();
 
 let downloadDocumentContentFromOpenAI;
 let handleSaveDocument;
+let handleDownloadDocument;
 
 const loadModule = async () => {
   jest.resetModules();
@@ -25,6 +26,7 @@ const loadModule = async () => {
   const module = await import('../netlify/functions/rag-documents.js');
   downloadDocumentContentFromOpenAI = module.__testHelpers.downloadDocumentContentFromOpenAI;
   handleSaveDocument = module.__testHelpers.handleSaveDocument;
+  handleDownloadDocument = module.__testHelpers.handleDownloadDocument;
 };
 
 beforeEach(async () => {
@@ -156,6 +158,77 @@ describe('rag-documents Netlify Blob integration', () => {
     expect(parsed.document.metadata.storage).toEqual(
       expect.objectContaining({ provider: 'netlify-blobs', store: 'rag-documents' })
     );
+  });
+});
+
+describe('handleDownloadDocument', () => {
+  test('returns Neon metadata when rag_user_documents has no entry', async () => {
+    const storageLocation = {
+      provider: 'netlify-blobs',
+      url: 'https://example.com/blob',
+      size: 2048,
+      contentType: 'application/pdf',
+    };
+
+    const neonRow = {
+      id: 42,
+      filename: 'Doc.pdf',
+      file_type: 'application/pdf',
+      file_size: 2048,
+      metadata: {
+        storage: storageLocation,
+        fileName: 'Doc.pdf',
+      },
+    };
+
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (query.includes('FROM rag_user_documents')) {
+        expect(values).toEqual(expect.arrayContaining(['user-1']));
+        return [];
+      }
+
+      if (query.includes('FROM rag_documents') && query.includes('id =')) {
+        expect(values).toEqual(expect.arrayContaining(['user-1', 42]));
+        return [neonRow];
+      }
+
+      throw new Error(`Unexpected query executed: ${query}`);
+    });
+
+    const response = await handleDownloadDocument(sqlMock, 'user-1', { documentId: '42' });
+    expect(response.statusCode).toBe(200);
+
+    const payload = JSON.parse(response.body);
+    expect(payload).toMatchObject({
+      documentId: '42',
+      filename: 'Doc.pdf',
+      storageLocation,
+      contentType: 'application/pdf',
+      size: 2048,
+    });
+  });
+
+  test('returns 404 when neither table contains a match', async () => {
+    const sqlMock = jest.fn(async (strings, ...values) => {
+      const query = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (query.includes('FROM rag_user_documents')) {
+        return [];
+      }
+
+      if (query.includes('FROM rag_documents')) {
+        return [];
+      }
+
+      throw new Error(`Unexpected query executed: ${query}`);
+    });
+
+    const response = await handleDownloadDocument(sqlMock, 'user-1', { documentId: '99' });
+    expect(response.statusCode).toBe(404);
+    const payload = JSON.parse(response.body);
+    expect(payload.error).toBe('Document not found for this user');
   });
 });
 

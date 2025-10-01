@@ -263,6 +263,10 @@ describe('DocumentViewer', () => {
       const attemptedPathContainer = container.querySelector('[data-testid="document-viewer-error-paths"]');
       expect(attemptedPathContainer).not.toBeNull();
 
+      const primaryPathContainer = container.querySelector('[data-testid="document-viewer-error-primary-path"]');
+      expect(primaryPathContainer).not.toBeNull();
+      expect(primaryPathContainer.textContent).toContain('/.netlify/blobs/blob/path/to/document.pdf');
+
       const pathEntries = Array.from(
         container.querySelectorAll('[data-testid="document-viewer-error-path"]')
       ).map((node) => node.textContent);
@@ -441,6 +445,10 @@ describe('ResourcesView component', () => {
         { documentId: 'doc-404', fileId: 'file-404' },
         'user-2'
       );
+
+      const primaryPathContainer = container.querySelector('[data-testid="document-viewer-error-primary-path"]');
+      expect(primaryPathContainer).not.toBeNull();
+      expect(primaryPathContainer.textContent).toContain('/.netlify/blobs/blob/rag-documents/user/doc-404.pdf');
 
       const attemptedPathsContainer = container.querySelector('[data-testid="document-viewer-error-paths"]');
       expect(attemptedPathsContainer).not.toBeNull();

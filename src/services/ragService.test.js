@@ -118,6 +118,24 @@ describe('ragService neon backend integration', () => {
     );
   });
 
+  test('downloadDocument delegates to document metadata endpoint for Neon backend', async () => {
+    const { ragService, makeNeonRequestSpy } = await setupNeonRagService();
+
+    const metadataSpy = jest
+      .spyOn(ragService, 'makeDocumentMetadataRequest')
+      .mockResolvedValue({ downloadUrl: 'https://example.com/doc.pdf', filename: 'doc.pdf' });
+
+    const result = await ragService.downloadDocument({ documentId: 'doc-42' }, 'user-9');
+
+    expect(metadataSpy).toHaveBeenCalledWith(
+      'download_document',
+      'user-9',
+      expect.objectContaining({ documentId: 'doc-42' })
+    );
+    expect(makeNeonRequestSpy).not.toHaveBeenCalledWith('download_document', expect.anything(), expect.anything());
+    expect(result).toEqual(expect.objectContaining({ downloadUrl: 'https://example.com/doc.pdf' }));
+  });
+
   test('getDocuments returns Neon document list', async () => {
     const neonResponses = {
       list: () => ({

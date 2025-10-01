@@ -1068,10 +1068,6 @@ class RAGService {
   }
 
   async downloadDocument(documentReference, userId) {
-    if (this.isNeonBackend()) {
-      throw new Error('Document downloads are not supported when using the Neon backend');
-    }
-
     const reference =
       typeof documentReference === 'string'
         ? { documentId: documentReference }

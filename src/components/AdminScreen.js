@@ -114,6 +114,85 @@ const formatMetadataValue = (value) => {
   return text.length > 60 ? `${text.slice(0, 57)}…` : text;
 };
 
+const TEXT_PREVIEW_BYTE_LIMIT = 200 * 1024; // 200KB of text content for preview rendering
+
+const getFileExtension = (filename) => {
+  if (typeof filename !== 'string') {
+    return '';
+  }
+
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === filename.length - 1) {
+    return '';
+  }
+
+  return filename.slice(lastDot + 1).trim().toLowerCase();
+};
+
+const determinePreviewType = (contentType, filename) => {
+  const normalizedType = (contentType || '').toLowerCase();
+  const extension = getFileExtension(filename);
+
+  if (normalizedType.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'].includes(extension)) {
+    return 'image';
+  }
+
+  if (normalizedType === 'application/pdf' || extension === 'pdf') {
+    return 'pdf';
+  }
+
+  if (normalizedType.startsWith('video/') || ['mp4', 'webm', 'ogg', 'mov'].includes(extension)) {
+    return 'video';
+  }
+
+  if (normalizedType.startsWith('audio/') || ['mp3', 'wav', 'm4a', 'ogg'].includes(extension)) {
+    return 'audio';
+  }
+
+  if (
+    normalizedType.startsWith('text/') ||
+    /json|xml|csv|yaml|yml|javascript|typescript|markdown/.test(normalizedType) ||
+    ['json', 'xml', 'csv', 'yaml', 'yml', 'md', 'txt', 'log', 'js', 'ts'].includes(extension)
+  ) {
+    return 'text';
+  }
+
+  return 'unsupported';
+};
+
+const decodeTextPreview = (bytes, contentType, filename) => {
+  if (!(bytes instanceof Uint8Array)) {
+    return { text: null, truncated: false };
+  }
+
+  const limitedBytes = bytes.length > TEXT_PREVIEW_BYTE_LIMIT ? bytes.slice(0, TEXT_PREVIEW_BYTE_LIMIT) : bytes;
+  let decoded = null;
+
+  try {
+    decoded = new TextDecoder('utf-8', { fatal: false }).decode(limitedBytes);
+  } catch (error) {
+    console.warn('Failed to decode blob bytes for preview:', error);
+    return { text: null, truncated: false };
+  }
+
+  const normalizedType = (contentType || '').toLowerCase();
+  const extension = getFileExtension(filename);
+
+  if (/json/.test(normalizedType) || extension === 'json') {
+    try {
+      const parsed = JSON.parse(decoded);
+      decoded = JSON.stringify(parsed, null, 2);
+    } catch (error) {
+      // Ignore JSON parse errors and fall back to raw text
+    }
+  }
+
+  return {
+    text: decoded,
+    truncated: bytes.length > TEXT_PREVIEW_BYTE_LIMIT,
+  };
+};
+
 const AdminScreen = ({ user, onBack }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(false);
@@ -612,6 +691,12 @@ const AdminScreen = ({ user, onBack }) => {
         const contentType = result.contentType || file.contentType || 'application/octet-stream';
         const blob = new Blob([bytes], { type: contentType });
         const objectUrl = window.URL.createObjectURL(blob);
+        const previewType = determinePreviewType(contentType, downloadName);
+        let textPreview = { text: null, truncated: false };
+
+        if (previewType === 'text') {
+          textPreview = decodeTextPreview(bytes, contentType, downloadName);
+        }
         const anchor = document.createElement('a');
         anchor.href = objectUrl;
         const downloadName =
@@ -637,6 +722,8 @@ const AdminScreen = ({ user, onBack }) => {
             size: Number.isFinite(file?.size) ? file.size : bytes.length,
             key: blobKey,
             downloadedAt: new Date().toISOString(),
+            previewType,
+            textPreview,
           };
         });
       } catch (error) {
@@ -1645,11 +1732,67 @@ const AdminScreen = ({ user, onBack }) => {
               </div>
             </div>
             <div className="flex-1 bg-gray-100">
-              <iframe
-                title={`Preview of ${blobPreview.filename}`}
-                src={blobPreview.objectUrl}
-                className="w-full h-full min-h-[420px] bg-white"
-              />
+              {blobPreview.previewType === 'image' && (
+                <div className="flex h-full items-center justify-center bg-white p-6">
+                  <img
+                    src={blobPreview.objectUrl}
+                    alt={`Preview of ${blobPreview.filename}`}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              )}
+              {blobPreview.previewType === 'pdf' && (
+                <object
+                  data={blobPreview.objectUrl}
+                  type={blobPreview.contentType || 'application/pdf'}
+                  className="w-full h-full min-h-[420px] bg-white"
+                >
+                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-gray-600">
+                    <p className="font-medium">Unable to display PDF preview due to browser restrictions.</p>
+                    <p>Use the “Open in new tab” button above to view the full document.</p>
+                  </div>
+                </object>
+              )}
+              {blobPreview.previewType === 'video' && (
+                <div className="flex h-full items-center justify-center bg-black">
+                  <video
+                    src={blobPreview.objectUrl}
+                    controls
+                    className="h-full w-full"
+                  >
+                    <track kind="captions" />
+                    Your browser does not support embedded video playback.
+                  </video>
+                </div>
+              )}
+              {blobPreview.previewType === 'audio' && (
+                <div className="flex h-full flex-col items-center justify-center gap-4 bg-white p-6">
+                  <audio src={blobPreview.objectUrl} controls className="w-full">
+                    Your browser does not support embedded audio playback.
+                  </audio>
+                  <p className="text-xs text-gray-500">If playback fails, use the “Open in new tab” option.</p>
+                </div>
+              )}
+              {blobPreview.previewType === 'text' && blobPreview.textPreview?.text && (
+                <div className="h-full overflow-auto bg-white p-6">
+                  <pre className="whitespace-pre-wrap break-words text-xs leading-5 text-gray-800">
+                    {blobPreview.textPreview.text}
+                  </pre>
+                  {blobPreview.textPreview.truncated && (
+                    <p className="mt-3 text-xs text-gray-500">
+                      Preview truncated to {Math.round(TEXT_PREVIEW_BYTE_LIMIT / 1024)}KB. Use “Open in new tab” to view the complete file.
+                    </p>
+                  )}
+                </div>
+              )}
+              {(!blobPreview.previewType ||
+                !['image', 'pdf', 'video', 'audio', 'text'].includes(blobPreview.previewType) ||
+                (blobPreview.previewType === 'text' && !blobPreview.textPreview?.text)) && (
+                <div className="flex h-full flex-col items-center justify-center gap-3 bg-white p-6 text-center text-sm text-gray-600">
+                  <p className="font-medium">This file type cannot be previewed securely within the dashboard.</p>
+                  <p>Use the “Open in new tab” button to view or download the document.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

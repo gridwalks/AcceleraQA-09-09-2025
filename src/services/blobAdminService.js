@@ -96,6 +96,7 @@ async function listBlobs({ user, prefix, limit } = {}) {
 
   return data;
 }
+
 async function downloadBlob({ user, key } = {}) {
   const { headers } = await ensureAdminUser(user);
 

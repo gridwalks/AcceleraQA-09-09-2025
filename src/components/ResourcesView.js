@@ -401,7 +401,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
 
   const [viewerState, setViewerState] = useState(() => createInitialViewerState());
   const [isViewerLoading, setIsViewerLoading] = useState(false);
-  const [viewerError, setViewerError] = useState(null);
+  const [viewerErrorInfo, setViewerErrorInfo] = useState(null);
   const activeObjectUrlRef = useRef(null);
   const viewerRequestRef = useRef(0);
   const userId = user?.sub || null;
@@ -547,7 +547,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     viewerRequestRef.current += 1;
     revokeActiveObjectUrl();
     setViewerState(createInitialViewerState());
-    setViewerError(null);
+    setViewerErrorInfo(null);
     setIsViewerLoading(false);
   }, [revokeActiveObjectUrl]);
 
@@ -633,7 +633,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     const resolvedUrl = directUrl || metadataUrl;
 
     revokeActiveObjectUrl();
-    setViewerError(null);
+    setViewerErrorInfo(null);
 
     if (resolvedUrl) {
       setViewerState({
@@ -664,7 +664,10 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         url: '',
         blobData: null,
       });
-      setViewerError('This resource does not include a downloadable document.');
+      setViewerErrorInfo({
+        message: 'This resource does not include a downloadable document.',
+        hint: 'No document reference or storage path was provided with this resource.',
+      });
       setIsViewerLoading(false);
       return;
     }
@@ -687,8 +690,23 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       blobData: null,
     });
 
+    const attemptedSources = [];
+    const recordAttemptedSource = (label, path) => {
+      if (!path) return;
+      const trimmed = `${path}`.trim();
+      if (!trimmed) return;
+      attemptedSources.push({ label, path: trimmed });
+    };
+
     try {
       if (storageLocationFromMetadata?.provider === NETLIFY_BLOB_PROVIDER) {
+        const netlifyPathCandidate =
+          buildNetlifyBlobDownloadUrl(storageLocationFromMetadata) ||
+          storageLocationFromMetadata?.path ||
+          storageLocationFromMetadata?.key ||
+          '';
+        recordAttemptedSource('Netlify Blob', netlifyPathCandidate);
+
         try {
           const netlifyResult = await loadNetlifyBlobDocument({
             storageLocation: storageLocationFromMetadata,
@@ -706,6 +724,13 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         } catch (netlifyError) {
           console.warn('Failed to load Netlify Blob document from resource metadata:', netlifyError);
         }
+      }
+
+      if (documentId || fileId) {
+        const referenceParts = [];
+        if (documentId) referenceParts.push(`documentId=${documentId}`);
+        if (fileId) referenceParts.push(`fileId=${fileId}`);
+        recordAttemptedSource('Document reference', referenceParts.join(' '));
       }
 
       const response = await ragService.downloadDocument({ documentId, fileId }, userId);
@@ -799,7 +824,12 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     } catch (error) {
       console.error('Failed to open resource document:', error);
       if (viewerRequestRef.current === requestId) {
-        setViewerError('We were unable to load this document in the viewer. If a download option is available, please try that instead.');
+        setViewerErrorInfo({
+          message: 'We were unable to load this document in the viewer.',
+          hint: 'If a download option is available, please try that instead.',
+          attemptedPaths: attemptedSources,
+          debugMessage: error?.message || String(error),
+        });
         setIsViewerLoading(false);
       }
     } finally {
@@ -1055,7 +1085,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         contentType={viewerState.contentType}
         filename={viewerState.filename}
         isLoading={isViewerLoading}
-        error={viewerError}
+        error={viewerErrorInfo}
         allowDownload={viewerState.allowDownload}
         onClose={closeDocumentViewer}
       />
@@ -1335,7 +1365,7 @@ export const DocumentViewer = ({
   isLoading,
   onClose,
   filename,
-  error,
+  error: errorInfo,
   allowDownload,
 }) => {
   if (!isOpen) return null;
@@ -1351,6 +1381,24 @@ export const DocumentViewer = ({
   const isImageDocument =
     normalizedContentType.startsWith('image/') ||
     /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(normalizedFilename);
+
+  const resolvedError = errorInfo
+    ? typeof errorInfo === 'string'
+      ? { message: errorInfo }
+      : errorInfo
+    : null;
+  const attemptedPaths = Array.isArray(resolvedError?.attemptedPaths)
+    ? resolvedError.attemptedPaths
+        .filter((entry) => entry && typeof entry.path === 'string' && `${entry.path}`.trim())
+        .map((entry) => ({
+          label: entry.label || '',
+          path: `${entry.path}`.trim(),
+        }))
+    : [];
+  const errorMessage = resolvedError?.message || 'Document preview is not available.';
+  const errorHint = resolvedError?.hint || '';
+  const errorDebugMessage = resolvedError?.debugMessage || '';
+  const hasError = Boolean(resolvedError);
 
   let viewerContent = null;
 
@@ -1437,20 +1485,56 @@ export const DocumentViewer = ({
               <Loader2 className="h-8 w-8 animate-spin" />
               <p className="text-sm font-medium">Loading document...</p>
             </div>
-          ) : error ? (
-            <div className="flex h-full flex-col items-center justify-center space-y-3 px-6 text-center text-gray-600">
-              <AlertCircle className="h-10 w-10 text-amber-500" />
-              <p className="text-sm">{error}</p>
-              {allowDownload && url && (
-                <a
-                  href={url}
-                  download={filename || true}
-                  className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Download document</span>
-                </a>
-              )}
+          ) : hasError ? (
+            <div className="flex h-full flex-col items-center justify-center px-6 text-center text-gray-600">
+              <div className="w-full max-w-lg space-y-4">
+                <div className="flex flex-col items-center space-y-3">
+                  <AlertCircle className="h-10 w-10 text-amber-500" />
+                  <h3 className="text-base font-semibold text-gray-900">{errorMessage}</h3>
+                  {errorHint ? <p className="text-sm text-gray-600">{errorHint}</p> : null}
+                </div>
+                {attemptedPaths.length > 0 ? (
+                  <div
+                    className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left"
+                    data-testid="document-viewer-error-paths"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Attempted document paths</p>
+                    <ul className="mt-2 space-y-2">
+                      {attemptedPaths.map((entry, index) => (
+                        <li key={`${entry.label || 'path'}-${index}`} className="text-xs text-amber-900/90">
+                          {entry.label ? <span className="font-semibold">{entry.label}: </span> : null}
+                          <code
+                            className="break-all rounded bg-white/70 px-1.5 py-0.5"
+                            data-testid="document-viewer-error-path"
+                          >
+                            {entry.path}
+                          </code>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {errorDebugMessage ? (
+                  <details className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-left text-xs text-gray-600">
+                    <summary className="cursor-pointer text-gray-700">Technical details</summary>
+                    <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] text-gray-500">
+                      {errorDebugMessage}
+                    </pre>
+                  </details>
+                ) : null}
+                {allowDownload && url ? (
+                  <div className="flex justify-center">
+                    <a
+                      href={url}
+                      download={filename || true}
+                      className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>Download document</span>
+                    </a>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : viewerContent ? (
             viewerContent

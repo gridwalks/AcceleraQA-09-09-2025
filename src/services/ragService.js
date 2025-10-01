@@ -63,6 +63,37 @@ const getFirstNonEmptyString = (...values) => {
   return '';
 };
 
+const formatConversationHistoryForPrompt = (history, { maxTurns = 6 } = {}) => {
+  if (!Array.isArray(history) || history.length === 0) {
+    return '';
+  }
+
+  const normalizedTurns = history
+    .map(turn => {
+      if (!turn || typeof turn !== 'object') {
+        return null;
+      }
+
+      const role = typeof turn.role === 'string' ? turn.role.trim().toLowerCase() : '';
+      const content = typeof turn.content === 'string' ? turn.content.trim() : '';
+
+      if (!content || (role !== 'user' && role !== 'assistant')) {
+        return null;
+      }
+
+      const roleLabel = role === 'assistant' ? 'Assistant' : 'User';
+      return { roleLabel, content };
+    })
+    .filter(Boolean);
+
+  if (normalizedTurns.length === 0) {
+    return '';
+  }
+
+  const recentTurns = normalizedTurns.slice(-Math.max(1, maxTurns));
+  return recentTurns.map(turn => `${turn.roleLabel}: ${turn.content}`).join('\n');
+};
+
 const toFiniteNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
 const metadataIndicatesGlobalSharing = (metadata) => {
@@ -1719,11 +1750,6 @@ class RAGService {
       throw new Error('Search query is required');
     }
 
-    if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
-      // Neon backend currently builds prompts without multi-turn context.
-      // The parameter is accepted to keep parity with the OpenAI search implementation.
-    }
-
     const searchOptions = {
       limit: options.limit || options?.searchOptions?.limit || 5,
       ...options.searchOptions,
@@ -1756,18 +1782,29 @@ class RAGService {
       })
       .join('\n\n');
 
-    const prompt = [
+    const formattedHistory = formatConversationHistoryForPrompt(conversationHistory);
+
+    const promptSections = [
       'You are AcceleraQA, an expert assistant for pharmaceutical quality and compliance.',
       'Use only the provided document excerpts to answer the user question. Cite the document name when referencing a source.',
       'If the excerpts do not contain enough information, say so clearly.',
       '',
+    ];
+
+    if (formattedHistory) {
+      promptSections.push('Relevant prior conversation:', formattedHistory, '');
+    }
+
+    promptSections.push(
       'Document excerpts:',
       contextSections,
       '',
-      `Question: ${trimmedQuery}`,
+      `Latest question: ${trimmedQuery}`,
       '',
-      'Answer:',
-    ].join('\n');
+      'Answer:'
+    );
+
+    const prompt = promptSections.join('\n');
 
     const aiResult = await openaiService.getChatResponse(prompt);
     const rawAnswer = typeof aiResult?.answer === 'string' ? aiResult.answer : '';

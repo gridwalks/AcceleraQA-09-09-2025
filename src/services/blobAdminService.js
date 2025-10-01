@@ -60,13 +60,11 @@ const ensureAdminUser = async (user) => {
   if (typeof currentUser?.organization === 'string' && currentUser.organization.trim()) {
     headers['x-user-organization'] = currentUser.organization.trim();
   }
-
   return { headers, userId, roles, currentUser };
 };
 
 async function listBlobs({ user, prefix, limit } = {}) {
   const { headers } = await ensureAdminUser(user);
-
   const numericLimit = Number(limit);
   const queryString = buildQueryString({
     prefix: sanitizeQueryParam(prefix),

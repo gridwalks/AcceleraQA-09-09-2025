@@ -22,7 +22,8 @@ import {
   Bug,
   Monitor,
   Search,
-  BookOpen
+  BookOpen,
+  X
 } from 'lucide-react';
 
 // Import services
@@ -133,11 +134,61 @@ const AdminScreen = ({ user, onBack }) => {
   const [blobSearchTerm, setBlobSearchTerm] = useState('');
   const [blobSort, setBlobSort] = useState('newest');
   const [downloadingBlobKeys, setDownloadingBlobKeys] = useState(() => new Set());
+  const [blobPreview, setBlobPreview] = useState(null);
   const ragBackendLabel = getRagBackendLabel();
   const neonBackendEnabled = isNeonBackend();
 
   // Check if user has admin role
   const isAdmin = hasAdminRole(user);
+
+  const releasePreviewObjectUrl = useCallback((objectUrl) => {
+    if (!objectUrl) {
+      return;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.URL?.revokeObjectURL === 'function') {
+      window.URL.revokeObjectURL(objectUrl);
+    }
+  }, []);
+
+  const closeBlobPreview = useCallback(() => {
+    setBlobPreview((previous) => {
+      if (previous?.objectUrl) {
+        releasePreviewObjectUrl(previous.objectUrl);
+      }
+      return null;
+    });
+  }, [releasePreviewObjectUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (blobPreview?.objectUrl) {
+        releasePreviewObjectUrl(blobPreview.objectUrl);
+      }
+    };
+  }, [blobPreview, releasePreviewObjectUrl]);
+
+  useEffect(() => {
+    if (!blobPreview) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        closeBlobPreview();
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, [blobPreview, closeBlobPreview]);
 
   const renderMetadataPreview = useCallback((metadata) => {
     if (!metadata || typeof metadata !== 'object' || Object.keys(metadata).length === 0) {
@@ -499,6 +550,16 @@ const AdminScreen = ({ user, onBack }) => {
     [setDownloadingBlobKeys]
   );
 
+  const openBlobPreviewInNewTab = useCallback(() => {
+    if (!blobPreview?.objectUrl) {
+      return;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      window.open(blobPreview.objectUrl, '_blank', 'noopener,noreferrer');
+    }
+  }, [blobPreview]);
+
   const handleBlobDownload = useCallback(
     async (file) => {
       if (!file?.key) {
@@ -564,7 +625,20 @@ const AdminScreen = ({ user, onBack }) => {
         document.body.appendChild(anchor);
         anchor.click();
         document.body.removeChild(anchor);
-        window.URL.revokeObjectURL(objectUrl);
+        setBlobPreview((previous) => {
+          if (previous?.objectUrl) {
+            releasePreviewObjectUrl(previous.objectUrl);
+          }
+
+          return {
+            objectUrl,
+            filename: downloadName,
+            contentType,
+            size: Number.isFinite(file?.size) ? file.size : bytes.length,
+            key: blobKey,
+            downloadedAt: new Date().toISOString(),
+          };
+        });
       } catch (error) {
         console.error('Failed to download blob file:', error);
         setBlobError(error.message || 'Failed to download file from Netlify blobs.');
@@ -572,7 +646,7 @@ const AdminScreen = ({ user, onBack }) => {
         markBlobDownloading(blobKey, false);
       }
     },
-    [markBlobDownloading, setBlobError]
+    [markBlobDownloading, releasePreviewObjectUrl, setBlobError]
   );
 
   // Test system components
@@ -1256,6 +1330,7 @@ const AdminScreen = ({ user, onBack }) => {
                           <th className="px-4 py-2 text-left font-semibold text-gray-600">Content Type</th>
                           <th className="px-4 py-2 text-left font-semibold text-gray-600">Uploaded</th>
                           <th className="px-4 py-2 text-left font-semibold text-gray-600">Metadata</th>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-600">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -1517,6 +1592,68 @@ const AdminScreen = ({ user, onBack }) => {
           )}
         </div>
       </div>
+      {blobPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="blob-preview-dialog-title"
+        >
+          <div
+            className="absolute inset-0 bg-gray-900/70"
+            onClick={closeBlobPreview}
+            aria-hidden="true"
+          />
+          <div className="relative z-10 w-full max-w-5xl max-h-full bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-gray-200">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  <span
+                    id="blob-preview-dialog-title"
+                    className="truncate"
+                    title={blobPreview.filename}
+                  >
+                    {blobPreview.filename}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {blobPreview.contentType || 'application/octet-stream'} • {formatBytes(blobPreview.size)}
+                  {blobPreview.downloadedAt && ` • Retrieved ${formatDateTime(blobPreview.downloadedAt)}`}
+                </p>
+                {blobPreview.key && (
+                  <p className="text-[11px] text-gray-400 mt-1 break-all">Blob key: {blobPreview.key}</p>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openBlobPreviewInNewTab}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                >
+                  <Eye className="h-4 w-4" />
+                  <span>Open in new tab</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={closeBlobPreview}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Close</span>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-gray-100">
+              <iframe
+                title={`Preview of ${blobPreview.filename}`}
+                src={blobPreview.objectUrl}
+                className="w-full h-full min-h-[420px] bg-white"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

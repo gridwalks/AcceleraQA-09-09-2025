@@ -1246,6 +1246,84 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
           </div>
         )}
 
+        <div className="border border-gray-200 rounded-lg">
+          <button
+            type="button"
+            onClick={() => toggleSection('resources')}
+            className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
+          >
+            <div className="flex items-center space-x-2">
+              <BookOpen className="h-4 w-4" />
+              <span>Resources</span>
+              {currentResources.length > 0 && (
+                <span className="bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {currentResources.length}
+                </span>
+              )}
+            </div>
+            <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.resources ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.resources && (
+            <div className="p-4 space-y-4 border-t border-gray-200">
+              {currentResources.length > 0 && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search resources..."
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+
+              {currentResources.length > 0 ? (
+                filteredResources.length > 0 ? (
+                  filteredResources.map((resource, index) => {
+                    const key = getResourceKey(resource, index);
+                    const addedKey = resource?.url || resource?.id || resource?.title;
+                    return (
+                      <ResourceCard
+                        key={`${key}-${index}`}
+                        resource={resource}
+                        onClick={() => handleResourceClick(resource, index)}
+                        colorClass={resourceTypeColors[resource.type] || resourceTypeColors.default}
+                        onAdd={() => handleAdd(resource)}
+                        isAdded={addedResources.has(addedKey)}
+                        isDownloading={downloadingResourceId === key}
+                      />
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8">
+                    <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">
+                      No resources match "{searchTerm}"
+                    </p>
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Clear search
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                    <BookOpen className="h-6 w-6 text-gray-400" />
+                  </div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">No resources yet</h4>
+                  <p className="text-gray-600">
+                    Ask a question to see relevant learning resources
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Chat Histories Section */}
         <div className="border border-gray-200 rounded-lg">
           <button
@@ -1337,84 +1415,6 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
                       Save Current Chat
                     </button>
                   )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="border border-gray-200 rounded-lg">
-          <button
-            type="button"
-            onClick={() => toggleSection('resources')}
-            className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
-          >
-            <div className="flex items-center space-x-2">
-              <BookOpen className="h-4 w-4" />
-              <span>Resources</span>
-              {currentResources.length > 0 && (
-                <span className="bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full">
-                  {currentResources.length}
-                </span>
-              )}
-            </div>
-            <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.resources ? 'rotate-90' : ''}`} />
-          </button>
-          {openSections.resources && (
-            <div className="p-4 space-y-4 border-t border-gray-200">
-              {currentResources.length > 0 && (
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search resources..."
-                    value={searchTerm}
-                    onChange={handleSearchChange}
-                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
-                </div>
-              )}
-
-              {currentResources.length > 0 ? (
-                filteredResources.length > 0 ? (
-                  filteredResources.map((resource, index) => {
-                    const key = getResourceKey(resource, index);
-                    const addedKey = resource?.url || resource?.id || resource?.title;
-                    return (
-                      <ResourceCard
-                        key={`${key}-${index}`}
-                        resource={resource}
-                        onClick={() => handleResourceClick(resource, index)}
-                        colorClass={resourceTypeColors[resource.type] || resourceTypeColors.default}
-                        onAdd={() => handleAdd(resource)}
-                        isAdded={addedResources.has(addedKey)}
-                        isDownloading={downloadingResourceId === key}
-                      />
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-8">
-                    <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600 text-sm">
-                      No resources match "{searchTerm}"
-                    </p>
-                    <button
-                      onClick={() => setSearchTerm('')}
-                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      Clear search
-                    </button>
-                  </div>
-                )
-              ) : (
-                <div className="text-center py-12">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                    <BookOpen className="h-6 w-6 text-gray-400" />
-                  </div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">No resources yet</h4>
-                  <p className="text-gray-600">
-                    Ask a question to see relevant learning resources
-                  </p>
                 </div>
               )}
             </div>

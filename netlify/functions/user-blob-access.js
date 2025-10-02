@@ -62,6 +62,10 @@ const isUserAuthorizedForBlob = (blobKey, userId) => {
 };
 
 export const handler = async (event, context) => {
+  console.log('user-blob-access function called');
+  console.log('Event headers:', JSON.stringify(event.headers, null, 2));
+  console.log('Context:', JSON.stringify(context, null, 2));
+  
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
@@ -82,10 +86,19 @@ export const handler = async (event, context) => {
     const userId = extractUserId(event, context);
     console.log('Extracted userId:', userId);
     if (!userId) {
+      console.log('No userId found, returning 401');
       return {
         statusCode: 401,
         headers,
-        body: JSON.stringify({ error: 'User authentication required' }),
+        body: JSON.stringify({ 
+          error: 'User authentication required',
+          debug: {
+            headers: Object.keys(event.headers || {}),
+            hasContext: !!context,
+            hasClientContext: !!context?.clientContext,
+            hasUser: !!context?.clientContext?.user
+          }
+        }),
       };
     }
 
@@ -102,12 +115,18 @@ export const handler = async (event, context) => {
 
     // Check if user is authorized to access this blob
     if (!isUserAuthorizedForBlob(keyParam, userId)) {
+      console.log('Authorization failed for user:', userId, 'key:', keyParam);
       return {
         statusCode: 403,
         headers,
         body: JSON.stringify({ 
           error: 'Access denied', 
-          message: 'You can only access your own documents' 
+          message: 'You can only access your own documents',
+          debug: {
+            userId,
+            keyParam,
+            normalizedUserId: userId.replace(/\|/g, '-')
+          }
         }),
       };
     }

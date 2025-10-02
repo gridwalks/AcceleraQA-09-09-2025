@@ -583,7 +583,22 @@ const AdminScreen = ({ user, onBack }) => {
       try {
         // Use user blob access instead of admin service
         const userBlobUrl = `/.netlify/functions/user-blob-access?key=${encodeURIComponent(blobKey)}`;
-        const response = await fetch(userBlobUrl, { credentials: 'include' });
+        
+        // Get authentication token and user ID
+        const token = await getToken();
+        const tokenInfo = getTokenInfo();
+        const userId = tokenInfo?.sub || user?.sub;
+        
+        const headers = {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'x-user-id': userId,
+        };
+        
+        const response = await fetch(userBlobUrl, { 
+          credentials: 'include',
+          headers
+        });
         
         if (!response.ok) {
           throw new Error(`Failed to fetch blob: ${response.status} ${response.statusText}`);

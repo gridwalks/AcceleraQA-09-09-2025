@@ -1567,7 +1567,7 @@ export const DocumentViewer = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      className="fixed inset-0 z-50 flex items-center justify-center px-6 py-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="document-viewer-title"
@@ -1577,7 +1577,7 @@ export const DocumentViewer = ({
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative z-10 w-full max-w-5xl max-h-full bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative z-10 w-full max-w-7xl h-[90vh] bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden">
         <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-gray-200">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">

@@ -245,7 +245,7 @@ async function handleTextSearch(userId, query, options = {}) {
       };
     }
 
-    const { limit = 10, threshold = 0.3 } = options;
+    const { limit = 10, threshold = 0.2 } = options;
     const userChunks = storage.getUserChunks(userId);
     
     console.log(`Searching ${userChunks.length} chunks`);

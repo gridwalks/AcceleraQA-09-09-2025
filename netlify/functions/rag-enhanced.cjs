@@ -321,7 +321,7 @@ async function handleSearch(userId, query, options = {}) {
       };
     }
 
-    const { limit = 10, threshold = 0.7 } = options;
+    const { limit = 10, threshold = 0.5 } = options;
     
     // Generate embedding for the search query
     let queryEmbedding;
@@ -329,8 +329,8 @@ async function handleSearch(userId, query, options = {}) {
       queryEmbedding = await generateEmbedding(query);
     } catch (embeddingError) {
       console.warn('Could not generate query embedding:', embeddingError);
-      // Fallback to text-based search
-      return handleTextBasedSearch(userId, query, options);
+      // Fallback to text-based search with more permissive settings
+      return handleTextBasedSearch(userId, query, { ...options, threshold: 0.2 });
     }
     
     const userChunks = storage.getUserChunks(userId);
@@ -402,37 +402,68 @@ async function handleSearch(userId, query, options = {}) {
  * Fallback text-based search when embeddings aren't available
  */
 function handleTextBasedSearch(userId, query, options = {}) {
-  const { limit = 10 } = options;
+  const { limit = 10, threshold = 0.2 } = options;
   const userChunks = storage.getUserChunks(userId);
   const lowerQuery = query.toLowerCase();
+  const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 2);
   
   const results = [];
   
   for (const chunk of userChunks) {
     const lowerText = chunk.text.toLowerCase();
+    
+    // Multi-level scoring approach
+    let score = 0;
+    let matches = 0;
+    
+    // Exact phrase bonus
     if (lowerText.includes(lowerQuery)) {
+      score += 10;
+      matches++;
+    }
+    
+    // Individual word scoring with word boundaries
+    queryWords.forEach(word => {
+      const wordMatches = (lowerText.match(new RegExp(`\\b${word}\\b`, 'g')) || []).length;
+      if (wordMatches > 0) {
+        score += wordMatches * 2;
+        matches++;
+      }
+    });
+    
+    // Partial word matches (for typos and variations)
+    queryWords.forEach(word => {
+      if (word.length > 3) {
+        const partialMatches = (lowerText.match(new RegExp(word.substring(0, Math.max(3, word.length - 1)), 'g')) || []).length;
+        if (partialMatches > 0) {
+          score += partialMatches * 0.5;
+        }
+      }
+    });
+    
+    // Normalize score (0-1 range)
+    const maxPossibleScore = 10 + (queryWords.length * 3);
+    const normalizedScore = Math.min(score / maxPossibleScore, 1);
+    
+    if (normalizedScore >= threshold) {
       const document = storage.documents.get(chunk.documentId);
-      
-      // Simple relevance scoring based on term frequency
-      const queryWords = lowerQuery.split(/\s+/);
-      let score = 0;
-      queryWords.forEach(word => {
-        const matches = (lowerText.match(new RegExp(word, 'g')) || []).length;
-        score += matches;
-      });
       
       results.push({
         documentId: chunk.documentId,
         filename: document?.filename || 'Unknown',
         chunkIndex: chunk.index,
         text: chunk.text,
-        similarity: Math.min(score / 10, 1), // Normalize to 0-1
+        similarity: normalizedScore,
+        matches: matches,
+        score: score,
         metadata: document?.metadata || {}
       });
     }
   }
   
   results.sort((a, b) => b.similarity - a.similarity);
+  
+  console.log(`Text-based search found ${results.length} results for query: "${query}"`);
   
   return {
     statusCode: 200,
@@ -445,6 +476,7 @@ function handleTextBasedSearch(userId, query, options = {}) {
       query: {
         text: query,
         limit,
+        threshold,
         hasEmbedding: false
       }
     }),

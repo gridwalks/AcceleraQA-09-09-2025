@@ -1312,6 +1312,12 @@ async function handleSearch(sql, userId, payload = {}) {
   }
 
   const limit = Math.max(1, Math.min(Number(payload.options?.limit) || 10, 50));
+  
+  console.log('Neon RAG Search:', {
+    query: query.substring(0, 100) + (query.length > 100 ? '...' : ''),
+    userId: userId?.substring(0, 8) + '...',
+    limit
+  });
 
   const rows = await sql`
     SELECT c.id,
@@ -1342,6 +1348,11 @@ async function handleSearch(sql, userId, payload = {}) {
   `;
 
   const results = rows.map(buildSearchResult);
+  
+  console.log('Neon RAG Search completed:', {
+    resultsFound: results.length,
+    query: query.substring(0, 50) + '...'
+  });
 
   return {
     statusCode: 200,

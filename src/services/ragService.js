@@ -1771,7 +1771,7 @@ class RAGService {
       .join('\n')
       .trim();
 
-    let answer = answerWithCitations || plainAnswerFromContent || outputTextFallback || 'The document search returned no results.';
+    let answer = answerWithCitations || plainAnswerFromContent || outputTextFallback || 'I searched through your documents but couldn\'t find specific information related to your question. This could be because the information might be phrased differently in the documents, or it may not be covered in the uploaded materials. Would you like me to help you rephrase your question or search for related topics?';
     answer = deduplicateText(answer);
     answer = appendReferencesSection(answer, sources);
 
@@ -1810,7 +1810,7 @@ class RAGService {
 
     if (results.length === 0) {
       return {
-        answer: 'No relevant documents were found for your question.',
+        answer: 'I searched through your documents but couldn\'t find specific information related to your question. This could be because the information might be phrased differently in the documents, or it may not be covered in the uploaded materials. Would you like me to help you rephrase your question or search for related topics?',
         sources: [],
         resources: [],
         ragMetadata: {
@@ -1899,15 +1899,43 @@ class RAGService {
 
   async search(query, userId, options = {}, conversationHistory = []) {
     try {
+      console.log('RAG Search initiated:', {
+        query: query?.substring(0, 100) + (query?.length > 100 ? '...' : ''),
+        userId: userId?.substring(0, 8) + '...',
+        options: { limit: options.limit, threshold: options.threshold },
+        conversationHistoryLength: conversationHistory?.length || 0
+      });
+
       const response = await this.generateRAGResponse(query, userId, options, conversationHistory);
+      
+      console.log('RAG Search completed:', {
+        answerLength: response.answer?.length || 0,
+        sourcesCount: response.sources?.length || 0,
+        resourcesCount: response.resources?.length || 0,
+        processingMode: response.ragMetadata?.processingMode || 'unknown'
+      });
+
       return {
         answer: response.answer,
         sources: response.sources || [],
         resources: response.resources || [],
       };
     } catch (error) {
-      console.error('Error performing RAG search:', error);
-      throw error;
+      console.error('RAG Search failed:', {
+        error: error.message,
+        stack: error.stack,
+        query: query?.substring(0, 100),
+        userId: userId?.substring(0, 8) + '...',
+        options
+      });
+      
+      // Return a helpful error response instead of throwing
+      return {
+        answer: `I encountered an issue while searching your documents: ${error.message}. Please try rephrasing your question or contact support if the problem persists.`,
+        sources: [],
+        resources: [],
+        error: true
+      };
     }
   }
 

@@ -102,12 +102,16 @@ const RAG_EMPTY_RESPONSE_MARKERS = [
   'no relevant documents were found for your question',
   'no relevant guidance was generated from the provided excerpts',
   'the document search returned no results',
+  'no results found',
+  'no matching documents',
+  'no relevant information found',
 ];
 
 const DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE =
   'Document Search did not find relevant documents. Switched to AI Knowledge.';
 
 const isMeaningfulDocumentSearchResponse = (answer, sources) => {
+  // If we have sources, consider it meaningful
   if (Array.isArray(sources) && sources.length > 0) {
     return true;
   }
@@ -122,9 +126,14 @@ const isMeaningfulDocumentSearchResponse = (answer, sources) => {
     return false;
   }
 
-  return !RAG_EMPTY_RESPONSE_MARKERS.some((marker) =>
+  // Check if answer contains any meaningful content (more than just empty markers)
+  const hasContent = normalizedAnswer.length > 50; // At least 50 characters
+  const isNotJustEmptyMarker = !RAG_EMPTY_RESPONSE_MARKERS.some((marker) =>
     normalizedAnswer.startsWith(marker)
   );
+  
+  // Consider it meaningful if it has substantial content OR is not just an empty marker
+  return hasContent || isNotJustEmptyMarker;
 };
 
 const getDocumentSearchFallbackExplanation = (answer) => {
@@ -738,6 +747,14 @@ function App() {
             ragSearchOptions,
             conversationHistory
           );
+          
+          console.log('RAG Response received:', {
+            hasAnswer: !!ragResponse?.answer,
+            answerLength: ragResponse?.answer?.length || 0,
+            sourcesCount: ragResponse?.sources?.length || 0,
+            hasError: ragResponse?.error || false
+          });
+
           const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
           const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
 
@@ -745,13 +762,19 @@ function App() {
             response = ragResponse;
             modeUsed = 'Document Search';
             documentSearchProvidedMeaningfulAnswer = true;
+            console.log('Document search provided meaningful response');
           } else {
             documentSearchFallbackExplanation = getDocumentSearchFallbackExplanation(
               ragAnswer
             );
+            console.log('Document search response not meaningful, falling back:', documentSearchFallbackExplanation);
           }
         } catch (ragError) {
-          console.error('Document search failed, falling back to AI Knowledge:', ragError);
+          console.error('Document search failed, falling back to AI Knowledge:', {
+            error: ragError.message,
+            stack: ragError.stack,
+            query: rawInput?.substring(0, 100)
+          });
           documentSearchFallbackExplanation = getDocumentSearchFallbackExplanation();
         }
       } else if (!preparedFile && manualOverrideDisabled) {

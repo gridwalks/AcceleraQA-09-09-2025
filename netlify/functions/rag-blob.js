@@ -222,7 +222,7 @@ async function handleSearch(userId, queryEmbedding, options = {}) {
     const chunkStore = getStore('rag-chunks');
     const documentStore = getStore('rag-documents');
     
-    const { limit = 10, threshold = 0.7, documentIds = null } = options;
+    const { limit = 10, threshold = 0.5, documentIds = null } = options;
     
     console.log('Search options:', { limit, threshold, documentIds });
 

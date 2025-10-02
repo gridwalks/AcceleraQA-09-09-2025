@@ -518,7 +518,22 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         throw new Error('This environment does not support fetching Netlify Blob documents.');
       }
 
-      const blobResponse = await fetch(downloadUrl, { credentials: 'include' });
+      // Get authentication token and user ID (matching admin panel approach)
+      const { getToken, getTokenInfo } = await import('../services/authService');
+      const token = await getToken();
+      const tokenInfo = getTokenInfo();
+      const userId = tokenInfo?.sub || user?.sub;
+      
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      };
+      
+      const blobResponse = await fetch(downloadUrl, { 
+        credentials: 'include',
+        headers
+      });
       if (!blobResponse.ok) {
         const error = new Error(`Failed to download Netlify Blob document (status ${blobResponse.status}).`);
         error.status = blobResponse.status;
@@ -594,7 +609,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       setIsViewerLoading(false);
       return 'success';
     },
-    [createObjectUrlFromBlob, logDocumentUrl]
+    [createObjectUrlFromBlob, logDocumentUrl, user]
   );
 
   const closeDocumentViewer = useCallback(() => {

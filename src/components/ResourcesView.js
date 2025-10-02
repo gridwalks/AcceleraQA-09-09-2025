@@ -1525,27 +1525,6 @@ export const DocumentViewer = ({
   if (!isOpen) return null;
 
   const safeTitle = title || 'Document';
-  const normalizedContentType = (contentType || '').toLowerCase();
-  const normalizedFilename = (filename || '').toLowerCase();
-  const hasUrl = typeof url === 'string' && url.length > 0;
-  const blobUrl = hasUrl && isBlobLikeUrl(url);
-  const isPdfDocument =
-    normalizedContentType.includes('pdf') ||
-    normalizedFilename.endsWith('.pdf');
-  const isImageDocument =
-    normalizedContentType.startsWith('image/') ||
-    /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(normalizedFilename);
-  
-  console.log('DocumentViewer debug:', {
-    title: safeTitle,
-    contentType: normalizedContentType,
-    filename: normalizedFilename,
-    hasUrl,
-    blobUrl,
-    isPdfDocument,
-    isImageDocument,
-    url: url?.substring(0, 50) + '...'
-  });
 
   const resolvedError = errorInfo
     ? typeof errorInfo === 'string'
@@ -1570,55 +1549,6 @@ export const DocumentViewer = ({
   const resolvedTargetPath = targetPath || primaryAttempt?.path || '';
   const resolvedTargetLabel = targetLabel || primaryAttempt?.label || '';
 
-  let viewerContent = null;
-
-  if (hasUrl) {
-    if (isImageDocument) {
-      viewerContent = (
-        <div className="flex h-full items-center justify-center bg-white">
-          <img
-            src={url}
-            alt={safeTitle}
-            className="max-h-full max-w-full object-contain"
-          />
-        </div>
-      );
-    } else if (isPdfDocument && blobUrl) {
-      viewerContent = (
-        <PdfBlobViewer url={url} title={safeTitle} blobData={blobData} />
-      );
-    } else if (isPdfDocument) {
-      viewerContent = (
-        <iframe 
-          title={safeTitle} 
-          src={url} 
-          className="w-full h-full min-h-[420px] bg-white"
-          onLoad={() => console.log('Document iframe loaded successfully')}
-          onError={(e) => console.error('Document iframe load error:', e)}
-        />
-      );
-    } else if (!blobUrl) {
-      viewerContent = (
-        <iframe 
-          title={safeTitle} 
-          src={url} 
-          className="w-full h-full min-h-[420px] bg-white"
-          onLoad={() => console.log('Document iframe loaded successfully')}
-          onError={(e) => console.error('Document iframe load error:', e)}
-        />
-      );
-    } else {
-      viewerContent = (
-        <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
-          <FileText className="h-10 w-10 text-gray-300" />
-          <p className="text-sm">This document format cannot be previewed securely.</p>
-          {allowDownload ? (
-            <p className="text-xs text-gray-400">Use the download button to view it in a new tab.</p>
-          ) : null}
-        </div>
-      );
-    }
-  }
 
   return (
     <div
@@ -1696,49 +1626,6 @@ export const DocumentViewer = ({
                   <h3 className="text-base font-semibold text-gray-900">{errorMessage}</h3>
                   {errorHint ? <p className="text-sm text-gray-600">{errorHint}</p> : null}
                 </div>
-                {resolvedTargetPath ? (
-                  <div
-                    className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left"
-                    data-testid="document-viewer-error-primary-path"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">
-                      Attempted file path
-                    </p>
-                    <p className="mt-2 text-xs text-amber-900/90">
-                      {resolvedTargetLabel ? <span className="font-semibold">{resolvedTargetLabel}: </span> : null}
-                      <code className="break-all rounded bg-white/70 px-1.5 py-0.5">{resolvedTargetPath}</code>
-                    </p>
-                  </div>
-                ) : null}
-                {attemptedPaths.length > 0 ? (
-                  <div
-                    className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left"
-                    data-testid="document-viewer-error-paths"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Attempted document paths</p>
-                    <ul className="mt-2 space-y-2">
-                      {attemptedPaths.map((entry, index) => (
-                        <li key={`${entry.label || 'path'}-${index}`} className="text-xs text-amber-900/90">
-                          {entry.label ? <span className="font-semibold">{entry.label}: </span> : null}
-                          <code
-                            className="break-all rounded bg-white/70 px-1.5 py-0.5"
-                            data-testid="document-viewer-error-path"
-                          >
-                            {entry.path}
-                          </code>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {errorDebugMessage ? (
-                  <details className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-left text-xs text-gray-600">
-                    <summary className="cursor-pointer text-gray-700">Technical details</summary>
-                    <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] text-gray-500">
-                      {errorDebugMessage}
-                    </pre>
-                  </details>
-                ) : null}
                 {allowDownload && url ? (
                   <div className="flex justify-center">
                     <a
@@ -1753,8 +1640,14 @@ export const DocumentViewer = ({
                 ) : null}
               </div>
             </div>
-          ) : viewerContent ? (
-            viewerContent
+          ) : url ? (
+            <iframe
+              title={`Preview of ${safeTitle}`}
+              src={url}
+              className="w-full h-full min-h-[420px] bg-white"
+              onLoad={() => console.log('Document iframe loaded successfully')}
+              onError={(e) => console.error('Document iframe load error:', e)}
+            />
           ) : (
             <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
               <FileText className="h-10 w-10 text-gray-300" />

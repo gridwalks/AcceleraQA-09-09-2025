@@ -1,5 +1,38 @@
 import React, { memo } from 'react';
 import { MessageSquare } from 'lucide-react';
+import { parseMarkdown } from '../utils/messageUtils';
+
+// Simple component to render markdown-parsed text
+const MarkdownText = ({ text }) => {
+  const segments = parseMarkdown(text);
+  
+  return (
+    <>
+      {segments.map((segment, index) => {
+        switch (segment.type) {
+          case 'bold':
+            return <strong key={index}>{segment.content}</strong>;
+          case 'italic':
+            return <em key={index}>{segment.content}</em>;
+          case 'code':
+            return (
+              <code 
+                key={index} 
+                className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono"
+              >
+                {segment.content}
+              </code>
+            );
+          case 'break':
+            return <br key={index} />;
+          case 'text':
+          default:
+            return segment.content;
+        }
+      })}
+    </>
+  );
+};
 
 /**
  * Displays a list of recent conversations and notifies parent when one is selected
@@ -112,13 +145,13 @@ const ConversationList = memo(({ conversations = [], onSelect = () => {} }) => {
                   {message.userContent && (
                     <p className="text-xs text-gray-700 whitespace-pre-wrap break-words">
                       <span className="font-semibold text-gray-900">You:</span>{' '}
-                      {message.userContent}
+                      <MarkdownText text={message.userContent} />
                     </p>
                   )}
                   {message.aiContent && (
                     <p className="mt-1 text-xs text-gray-700 whitespace-pre-wrap break-words">
                       <span className="font-semibold text-gray-900">AcceleraQA:</span>{' '}
-                      {message.aiContent}
+                      <MarkdownText text={message.aiContent} />
                     </p>
                   )}
                 </div>

@@ -3,6 +3,39 @@
 import React, { useCallback } from 'react';
 import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown, Trash2 } from 'lucide-react';
 import { exportToWord } from '../utils/exportUtils';
+import { parseMarkdown } from '../utils/messageUtils';
+
+// Simple component to render markdown-parsed text
+const MarkdownText = ({ text }) => {
+  const segments = parseMarkdown(text);
+  
+  return (
+    <>
+      {segments.map((segment, index) => {
+        switch (segment.type) {
+          case 'bold':
+            return <strong key={index}>{segment.content}</strong>;
+          case 'italic':
+            return <em key={index}>{segment.content}</em>;
+          case 'code':
+            return (
+              <code 
+                key={index} 
+                className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono"
+              >
+                {segment.content}
+              </code>
+            );
+          case 'break':
+            return <br key={index} />;
+          case 'text':
+          default:
+            return segment.content;
+        }
+      })}
+    </>
+  );
+};
 
 const createUnicodeLetterRegex = () => {
   try {
@@ -782,7 +815,7 @@ const ChatArea = ({
                       {/* Message Content */}
                       {hasMessageText && (
                         <div className="whitespace-pre-wrap text-sm sm:text-base leading-relaxed">
-                          {messageText}
+                          <MarkdownText text={messageText} />
                         </div>
                       )}
 

@@ -1360,3 +1360,109 @@ export function getCurrentSessionConversations(conversations, currentMessageIds)
     return false;
   });
 }
+
+/**
+ * Processes text with basic markdown formatting and returns structured data
+ * for rendering components. Supports **bold**, *italic*, and `code`.
+ * @param {string} text - Text with markdown formatting
+ * @returns {Array} - Array of text segments with formatting info
+ */
+export function parseMarkdown(text) {
+  if (!text || typeof text !== 'string') {
+    return [{ type: 'text', content: text || '' }];
+  }
+
+  const result = [];
+  const lines = text.split('\n');
+
+  lines.forEach((line, lineIndex) => {
+    if (lineIndex > 0) {
+      result.push({ type: 'break' });
+    }
+
+    if (!line.trim()) {
+      result.push({ type: 'text', content: '' });
+      return;
+    }
+
+    // Find all markdown matches in the line
+    const matches = [];
+    
+    // Find **bold** text
+    let boldMatch;
+    const boldRegex = /\*\*([^*]+)\*\*/g;
+    while ((boldMatch = boldRegex.exec(line)) !== null) {
+      matches.push({
+        start: boldMatch.index,
+        end: boldMatch.index + boldMatch[0].length,
+        content: boldMatch[1],
+        type: 'bold'
+      });
+    }
+
+    // Find *italic* text (but not if it's part of bold)
+    let italicMatch;
+    const italicRegex = /\*([^*]+)\*/g;
+    while ((italicMatch = italicRegex.exec(line)) !== null) {
+      const isPartOfBold = matches.some(match => 
+        match.type === 'bold' && 
+        italicMatch.index >= match.start && 
+        italicMatch.index < match.end
+      );
+      if (!isPartOfBold) {
+        matches.push({
+          start: italicMatch.index,
+          end: italicMatch.index + italicMatch[0].length,
+          content: italicMatch[1],
+          type: 'italic'
+        });
+      }
+    }
+
+    // Find `code` text
+    let codeMatch;
+    const codeRegex = /`([^`]+)`/g;
+    while ((codeMatch = codeRegex.exec(line)) !== null) {
+      matches.push({
+        start: codeMatch.index,
+        end: codeMatch.index + codeMatch[0].length,
+        content: codeMatch[1],
+        type: 'code'
+      });
+    }
+
+    // Sort matches by position
+    matches.sort((a, b) => a.start - b.start);
+
+    // Process the line with matches
+    let currentIndex = 0;
+    matches.forEach((match) => {
+      // Add text before this match
+      if (match.start > currentIndex) {
+        const textBefore = line.substring(currentIndex, match.start);
+        if (textBefore) {
+          result.push({ type: 'text', content: textBefore });
+        }
+      }
+
+      // Add the formatted segment
+      result.push({ type: match.type, content: match.content });
+      currentIndex = match.end;
+    });
+
+    // Add remaining text after last match
+    if (currentIndex < line.length) {
+      const remainingText = line.substring(currentIndex);
+      if (remainingText) {
+        result.push({ type: 'text', content: remainingText });
+      }
+    }
+
+    // If no matches found, add the whole line
+    if (matches.length === 0) {
+      result.push({ type: 'text', content: line });
+    }
+  });
+
+  return result;
+}

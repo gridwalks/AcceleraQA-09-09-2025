@@ -1,6 +1,38 @@
 import React, { memo, useMemo } from 'react';
-import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages } from '../utils/messageUtils';
+import { combineMessagesIntoConversations, mergeCurrentAndStoredMessages, parseMarkdown } from '../utils/messageUtils';
 import { Cloud, Smartphone, Trash2, ExternalLink } from 'lucide-react';
+
+// Simple component to render markdown-parsed text
+const MarkdownText = ({ text }) => {
+  const segments = parseMarkdown(text);
+  
+  return (
+    <>
+      {segments.map((segment, index) => {
+        switch (segment.type) {
+          case 'bold':
+            return <strong key={index}>{segment.content}</strong>;
+          case 'italic':
+            return <em key={index}>{segment.content}</em>;
+          case 'code':
+            return (
+              <code 
+                key={index} 
+                className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono"
+              >
+                {segment.content}
+              </code>
+            );
+          case 'break':
+            return <br key={index} />;
+          case 'text':
+          default:
+            return segment.content;
+        }
+      })}
+    </>
+  );
+};
 
 const normalizeResourceValue = (value) =>
   typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -473,7 +505,7 @@ const ConversationCard = memo(({
             <div className="mb-3">
               <div className="text-xs font-medium text-blue-600 mb-1">QUESTION:</div>
               <p className="text-sm text-gray-700 leading-relaxed bg-blue-50 p-2 rounded line-clamp-3">
-                {conversation.userContent}
+                <MarkdownText text={conversation.userContent} />
               </p>
             </div>
           )}
@@ -482,7 +514,7 @@ const ConversationCard = memo(({
             <div className="mb-3">
               <div className="text-xs font-medium text-green-600 mb-1">RESPONSE:</div>
               <p className="text-sm text-gray-700 leading-relaxed line-clamp-4 bg-green-50 p-2 rounded">
-                {conversation.aiContent}
+                <MarkdownText text={conversation.aiContent} />
               </p>
             </div>
           )}

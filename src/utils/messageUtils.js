@@ -1434,33 +1434,33 @@ export function parseMarkdown(text) {
     // Sort matches by position
     matches.sort((a, b) => a.start - b.start);
 
-    // Process the line with matches
-    let currentIndex = 0;
-    matches.forEach((match) => {
-      // Add text before this match
-      if (match.start > currentIndex) {
-        const textBefore = line.substring(currentIndex, match.start);
-        if (textBefore) {
-          result.push({ type: 'text', content: textBefore });
-        }
-      }
-
-      // Add the formatted segment
-      result.push({ type: match.type, content: match.content });
-      currentIndex = match.end;
-    });
-
-    // Add remaining text after last match
-    if (currentIndex < line.length) {
-      const remainingText = line.substring(currentIndex);
-      if (remainingText) {
-        result.push({ type: 'text', content: remainingText });
-      }
-    }
-
     // If no matches found, add the whole line
     if (matches.length === 0) {
       result.push({ type: 'text', content: line });
+    } else {
+      // Process the line with matches
+      let currentIndex = 0;
+      matches.forEach((match) => {
+        // Add text before this match
+        if (match.start > currentIndex) {
+          const textBefore = line.substring(currentIndex, match.start);
+          if (textBefore) {
+            result.push({ type: 'text', content: textBefore });
+          }
+        }
+
+        // Add the formatted segment
+        result.push({ type: match.type, content: match.content });
+        currentIndex = match.end;
+      });
+
+      // Add remaining text after last match
+      if (currentIndex < line.length) {
+        const remainingText = line.substring(currentIndex);
+        if (remainingText) {
+          result.push({ type: 'text', content: remainingText });
+        }
+      }
     }
   });
 

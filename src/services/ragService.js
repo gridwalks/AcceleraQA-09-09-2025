@@ -277,6 +277,27 @@ const insertCitationsIntoText = (text, annotations, annotationMetadataMap) => {
   return result;
 };
 
+const deduplicateText = (text) => {
+  if (typeof text !== 'string') {
+    return text;
+  }
+
+  // Split by common sentence boundaries and check for duplicates
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const seenSentences = new Set();
+  const uniqueSentences = [];
+
+  sentences.forEach(sentence => {
+    const trimmed = sentence.trim();
+    if (trimmed && !seenSentences.has(trimmed)) {
+      seenSentences.add(trimmed);
+      uniqueSentences.push(trimmed);
+    }
+  });
+
+  return uniqueSentences.join(' ');
+};
+
 const appendReferencesSection = (answerText, sources) => {
   if (typeof answerText !== 'string') {
     return answerText;
@@ -1469,12 +1490,18 @@ class RAGService {
     const contentSegments = [];
     const annotations = [];
 
+    const seenTexts = new Set();
+    
     contentItems.forEach(item => {
       const textValue = getTextFromContentItem(item);
       const textAnnotations = Array.isArray(item?.text?.annotations) ? item.text.annotations : [];
       const additionalAnnotations = Array.isArray(item?.annotations) ? item.annotations : [];
 
-      contentSegments.push({ text: textValue, annotations: textAnnotations });
+      // Only add if we haven't seen this exact text before
+      if (textValue && !seenTexts.has(textValue)) {
+        seenTexts.add(textValue);
+        contentSegments.push({ text: textValue, annotations: textAnnotations });
+      }
 
       if (textAnnotations.length > 0) {
         annotations.push(...textAnnotations);
@@ -1745,6 +1772,7 @@ class RAGService {
       .trim();
 
     let answer = answerWithCitations || plainAnswerFromContent || outputTextFallback || 'The document search returned no results.';
+    answer = deduplicateText(answer);
     answer = appendReferencesSection(answer, sources);
 
     return {
@@ -1855,6 +1883,7 @@ class RAGService {
     });
 
     let answer = rawAnswer.trim() || 'No relevant guidance was generated from the provided excerpts.';
+    answer = deduplicateText(answer);
     answer = appendReferencesSection(answer, sources);
 
     return {

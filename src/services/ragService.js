@@ -842,7 +842,16 @@ class RAGService {
         throw new Error('User ID is required to upload documents');
       }
 
-      const textContent = await this.extractTextFromFile(file);
+      // Convert file to PDF if needed for Neon backend
+      const {
+        file: convertedFile,
+        converted,
+        originalFileName,
+        originalMimeType,
+        conversion: conversionType,
+      } = await convertDocxToPdfIfNeeded(file);
+
+      const textContent = await this.extractTextFromFile(convertedFile);
       const baseMetadata = {
         ...sanitizedMetadata,
       };
@@ -881,14 +890,22 @@ class RAGService {
         baseMetadata.version = baseMetadata.version || normalizedVersion;
       }
 
-      baseMetadata.fileName = baseMetadata.fileName || file.name;
+      baseMetadata.fileName = baseMetadata.fileName || convertedFile.name;
 
-      const capturedContent = await this.captureBlobContent(file);
+      // Add conversion metadata if file was converted
+      if (converted) {
+        baseMetadata.originalFilename = originalFileName;
+        baseMetadata.originalMimeType = originalMimeType;
+        baseMetadata.conversion = conversionType;
+        baseMetadata.converted = true;
+      }
+
+      const capturedContent = await this.captureBlobContent(convertedFile);
 
       const documentPayload = {
-        filename: file.name,
-        size: file.size,
-        type: file.type,
+        filename: convertedFile.name,
+        size: convertedFile.size,
+        type: convertedFile.type,
         text: textContent,
         metadata: {
           processingMode: 'neon-postgresql',

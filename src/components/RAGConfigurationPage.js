@@ -833,12 +833,20 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
       const savedDocument = result?.document || null;
       const savedMetadata = savedDocument?.metadata || result?.metadata || {};
-      const isDocxConversion = savedMetadata?.conversion === 'docx-to-pdf';
+      const conversionType = savedMetadata?.conversion;
+      const wasConverted = savedMetadata?.converted || !!conversionType;
       const originalName = savedMetadata?.originalFilename || selectedFile.name;
       const storedName = savedDocument?.filename || selectedFile.name;
-      const successMessage = isDocxConversion
-        ? `Converted "${originalName}" to PDF and uploaded as "${storedName}"`
-        : `Successfully uploaded "${storedName}"`;
+      
+      let successMessage;
+      if (wasConverted && conversionType) {
+        const sourceType = describeConversionSource(conversionType);
+        successMessage = sourceType 
+          ? `Converted "${originalName}" from ${sourceType} to PDF and uploaded as "${storedName}"`
+          : `Converted "${originalName}" to PDF and uploaded as "${storedName}"`;
+      } else {
+        successMessage = `Successfully uploaded "${storedName}"`;
+      }
 
       setUploadStatus({
         type: 'success',

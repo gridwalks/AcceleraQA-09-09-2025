@@ -11,6 +11,7 @@ const storage = {
   documents: new Map(),
   chunks: new Map(),
   embeddings: new Map(),
+  searchCache: new Map(),
   
   // User-specific storage
   getUserDocuments: (userId) => {
@@ -31,6 +32,32 @@ const storage = {
       }
     }
     return userChunks;
+  },
+  
+  // Search caching
+  getCachedSearch: (query, userId) => {
+    const key = `${userId}_${query.toLowerCase()}`;
+    const cached = storage.searchCache.get(key);
+    if (cached && Date.now() - cached.timestamp < 300000) { // 5 minute cache
+      return cached.results;
+    }
+    return null;
+  },
+  
+  setCachedSearch: (query, userId, results) => {
+    const key = `${userId}_${query.toLowerCase()}`;
+    storage.searchCache.set(key, {
+      results,
+      timestamp: Date.now()
+    });
+    // Clean old cache entries (keep only last 100)
+    if (storage.searchCache.size > 100) {
+      const entries = Array.from(storage.searchCache.entries());
+      entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+      for (let i = 0; i < entries.length - 100; i++) {
+        storage.searchCache.delete(entries[i][0]);
+      }
+    }
   }
 };
 
@@ -321,16 +348,43 @@ async function handleSearch(userId, query, options = {}) {
       };
     }
 
+    // Check cache first
+    const cachedResults = storage.getCachedSearch(query, userId);
+    if (cachedResults) {
+      console.log('Returning cached search results');
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          results: cachedResults,
+          totalFound: cachedResults.length,
+          searchType: 'cached',
+          storage: 'enhanced-memory',
+          query: {
+            text: query,
+            limit: options.limit || 10,
+            threshold: options.threshold || 0.5,
+            hasEmbedding: true,
+            cached: true
+          }
+        }),
+      };
+    }
+
     const { limit = 10, threshold = 0.5 } = options;
+    
+    // Preprocess the query for better results
+    const processedQuery = preprocessQuery(query);
+    console.log('Query preprocessing:', { original: query, processed: processedQuery });
     
     // Generate embedding for the search query
     let queryEmbedding;
     try {
-      queryEmbedding = await generateEmbedding(query);
+      queryEmbedding = await generateEmbedding(processedQuery);
     } catch (embeddingError) {
       console.warn('Could not generate query embedding:', embeddingError);
       // Fallback to text-based search with more permissive settings
-      return handleTextBasedSearch(userId, query, { ...options, threshold: 0.2 });
+      return handleTextBasedSearch(userId, processedQuery, { ...options, threshold: 0.2 });
     }
     
     const userChunks = storage.getUserChunks(userId);
@@ -348,18 +402,24 @@ async function handleSearch(userId, query, options = {}) {
         // Calculate cosine similarity
         const similarity = cosineSimilarity(queryEmbedding, chunk.embedding);
         
-        if (similarity >= threshold) {
-          const document = storage.documents.get(chunk.documentId);
-          
-          results.push({
-            documentId: chunk.documentId,
-            filename: document?.filename || 'Unknown',
-            chunkIndex: chunk.index,
-            text: chunk.text,
-            similarity: similarity,
-            metadata: document?.metadata || {}
-          });
-        }
+    if (similarity >= threshold) {
+      const document = storage.documents.get(chunk.documentId);
+      
+      // Get overlapping context from adjacent chunks
+      const contextChunks = getContextualChunks(chunk, userChunks, 1); // 1 chunk before and after
+      const contextualText = contextChunks.map(ctx => ctx.text).join(' ... ');
+      
+      results.push({
+        documentId: chunk.documentId,
+        filename: document?.filename || 'Unknown',
+        chunkIndex: chunk.index,
+        text: chunk.text,
+        contextualText: contextualText,
+        contextChunks: contextChunks.length,
+        similarity: similarity,
+        metadata: document?.metadata || {}
+      });
+    }
       } catch (error) {
         console.warn(`Error calculating similarity for chunk ${chunk.id}:`, error);
       }
@@ -368,6 +428,9 @@ async function handleSearch(userId, query, options = {}) {
     // Sort by similarity and limit results
     results.sort((a, b) => b.similarity - a.similarity);
     const limitedResults = results.slice(0, limit);
+    
+    // Cache the results
+    storage.setCachedSearch(query, userId, limitedResults);
     
     return {
       statusCode: 200,
@@ -398,11 +461,43 @@ async function handleSearch(userId, query, options = {}) {
   }
 }
 
-/**
- * Fallback text-based search when embeddings aren't available
- */
-function handleTextBasedSearch(userId, query, options = {}) {
-  const { limit = 10, threshold = 0.2 } = options;
+// Multi-strategy search implementation
+async function performSemanticSearch(queryEmbedding, userId, threshold, limit) {
+  const userChunks = storage.getUserChunks(userId);
+  const results = [];
+  
+  for (const chunk of userChunks) {
+    if (!chunk.embedding) continue;
+    
+    try {
+      const similarity = cosineSimilarity(queryEmbedding, chunk.embedding);
+      if (similarity >= threshold) {
+        const document = storage.documents.get(chunk.documentId);
+        const contextChunks = getContextualChunks(chunk, userChunks, 1);
+        const contextualText = contextChunks.map(ctx => ctx.text).join(' ... ');
+        
+        results.push({
+          documentId: chunk.documentId,
+          filename: document?.filename || 'Unknown',
+          chunkIndex: chunk.index,
+          text: chunk.text,
+          contextualText: contextualText,
+          contextChunks: contextChunks.length,
+          similarity: similarity,
+          searchType: 'semantic',
+          metadata: document?.metadata || {}
+        });
+      }
+    } catch (error) {
+      console.warn(`Error in semantic search for chunk ${chunk.id}:`, error);
+    }
+  }
+  
+  return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+}
+
+// Fuzzy search implementation
+async function performFuzzySearch(query, userId, threshold, limit) {
   const userChunks = storage.getUserChunks(userId);
   const lowerQuery = query.toLowerCase();
   const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 2);
@@ -411,27 +506,25 @@ function handleTextBasedSearch(userId, query, options = {}) {
   
   for (const chunk of userChunks) {
     const lowerText = chunk.text.toLowerCase();
-    
-    // Multi-level scoring approach
     let score = 0;
     let matches = 0;
     
-    // Exact phrase bonus
-    if (lowerText.includes(lowerQuery)) {
-      score += 10;
-      matches++;
-    }
-    
-    // Individual word scoring with word boundaries
+    // Levenshtein distance-based fuzzy matching
     queryWords.forEach(word => {
-      const wordMatches = (lowerText.match(new RegExp(`\\b${word}\\b`, 'g')) || []).length;
-      if (wordMatches > 0) {
-        score += wordMatches * 2;
-        matches++;
-      }
+      const words = lowerText.split(/\s+/);
+      words.forEach(textWord => {
+        const distance = levenshteinDistance(word, textWord);
+        const maxLength = Math.max(word.length, textWord.length);
+        const similarity = 1 - (distance / maxLength);
+        
+        if (similarity >= 0.7) { // 70% similarity threshold
+          score += similarity * 2;
+          matches++;
+        }
+      });
     });
     
-    // Partial word matches (for typos and variations)
+    // Partial substring matching
     queryWords.forEach(word => {
       if (word.length > 3) {
         const partialMatches = (lowerText.match(new RegExp(word.substring(0, Math.max(3, word.length - 1)), 'g')) || []).length;
@@ -441,29 +534,206 @@ function handleTextBasedSearch(userId, query, options = {}) {
       }
     });
     
-    // Normalize score (0-1 range)
-    const maxPossibleScore = 10 + (queryWords.length * 3);
-    const normalizedScore = Math.min(score / maxPossibleScore, 1);
+    const normalizedScore = Math.min(score / (queryWords.length * 3), 1);
     
     if (normalizedScore >= threshold) {
       const document = storage.documents.get(chunk.documentId);
+      const contextChunks = getContextualChunks(chunk, userChunks, 1);
+      const contextualText = contextChunks.map(ctx => ctx.text).join(' ... ');
       
       results.push({
         documentId: chunk.documentId,
         filename: document?.filename || 'Unknown',
         chunkIndex: chunk.index,
         text: chunk.text,
+        contextualText: contextualText,
+        contextChunks: contextChunks.length,
+        similarity: normalizedScore,
+        searchType: 'fuzzy',
+        matches: matches,
+        metadata: document?.metadata || {}
+      });
+    }
+  }
+  
+  return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+}
+
+// Combine results from multiple search strategies
+function combineSearchResults(strategies, limit) {
+  const combinedMap = new Map();
+  
+  strategies.forEach(strategy => {
+    strategy.results.forEach(result => {
+      const key = `${result.documentId}_${result.chunkIndex}`;
+      const existing = combinedMap.get(key);
+      
+      if (existing) {
+        // Combine scores with strategy weight
+        existing.similarity = Math.max(existing.similarity, result.similarity * strategy.weight);
+        existing.searchTypes = existing.searchTypes || [existing.searchType];
+        if (!existing.searchTypes.includes(result.searchType)) {
+          existing.searchTypes.push(result.searchType);
+        }
+        existing.searchType = existing.searchTypes.join('+');
+      } else {
+        combinedMap.set(key, {
+          ...result,
+          similarity: result.similarity * strategy.weight,
+          searchTypes: [result.searchType],
+          originalSimilarity: result.similarity
+        });
+      }
+    });
+  });
+  
+  return Array.from(combinedMap.values())
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+}
+
+// Levenshtein distance calculation for fuzzy matching
+function levenshteinDistance(str1, str2) {
+  const matrix = [];
+  
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
+}
+
+/**
+ * Fallback text-based search when embeddings aren't available
+ */
+function handleTextBasedSearch(userId, query, options = {}) {
+  const { limit = 10, threshold = 0.2 } = options;
+  const userChunks = storage.getUserChunks(userId);
+  const lowerQuery = query.toLowerCase();
+  const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 2);
+  
+  // Query expansion with synonyms and related terms
+  const expandedTerms = expandQueryTerms(queryWords);
+  
+  const results = [];
+  
+  for (const chunk of userChunks) {
+    const lowerText = chunk.text.toLowerCase();
+    
+    // Multi-level scoring approach with query expansion
+    let score = 0;
+    let matches = 0;
+    let exactMatches = 0;
+    let synonymMatches = 0;
+    
+    // Exact phrase bonus (highest priority)
+    if (lowerText.includes(lowerQuery)) {
+      score += 15;
+      matches++;
+      exactMatches++;
+    }
+    
+    // Individual word scoring with word boundaries
+    queryWords.forEach(word => {
+      const wordMatches = (lowerText.match(new RegExp(`\\b${word}\\b`, 'g')) || []).length;
+      if (wordMatches > 0) {
+        score += wordMatches * 3;
+        matches++;
+        exactMatches++;
+      }
+    });
+    
+    // Synonym and related term matching
+    expandedTerms.forEach(term => {
+      if (term !== lowerQuery) { // Don't double-count original terms
+        const termMatches = (lowerText.match(new RegExp(`\\b${term}\\b`, 'g')) || []).length;
+        if (termMatches > 0) {
+          score += termMatches * 1.5;
+          matches++;
+          synonymMatches++;
+        }
+      }
+    });
+    
+    // Partial word matches (for typos and variations)
+    queryWords.forEach(word => {
+      if (word.length > 3) {
+        const partialMatches = (lowerText.match(new RegExp(word.substring(0, Math.max(3, word.length - 1)), 'g')) || []).length;
+        if (partialMatches > 0) {
+          score += partialMatches * 0.8;
+        }
+      }
+    });
+    
+    // Position-based scoring (earlier matches get higher scores)
+    const firstMatchIndex = lowerText.indexOf(lowerQuery);
+    if (firstMatchIndex !== -1) {
+      const positionBonus = Math.max(0, 1 - (firstMatchIndex / lowerText.length));
+      score += positionBonus * 2;
+    }
+    
+    // Length-based scoring (longer chunks with matches get slight bonus)
+    const lengthBonus = Math.min(chunk.text.length / 1000, 1) * 0.5;
+    score += lengthBonus;
+    
+    // Normalize score (0-1 range)
+    const maxPossibleScore = 15 + (queryWords.length * 4) + (expandedTerms.length * 2);
+    const normalizedScore = Math.min(score / maxPossibleScore, 1);
+    
+    if (normalizedScore >= threshold) {
+      const document = storage.documents.get(chunk.documentId);
+      
+      // Get overlapping context from adjacent chunks
+      const contextChunks = getContextualChunks(chunk, userChunks, 1);
+      const contextualText = contextChunks.map(ctx => ctx.text).join(' ... ');
+      
+      results.push({
+        documentId: chunk.documentId,
+        filename: document?.filename || 'Unknown',
+        chunkIndex: chunk.index,
+        text: chunk.text,
+        contextualText: contextualText,
+        contextChunks: contextChunks.length,
         similarity: normalizedScore,
         matches: matches,
+        exactMatches: exactMatches,
+        synonymMatches: synonymMatches,
         score: score,
         metadata: document?.metadata || {}
       });
     }
   }
   
-  results.sort((a, b) => b.similarity - a.similarity);
+  // Enhanced sorting: prioritize exact matches, then similarity, then position
+  results.sort((a, b) => {
+    if (a.exactMatches !== b.exactMatches) {
+      return b.exactMatches - a.exactMatches;
+    }
+    if (Math.abs(a.similarity - b.similarity) > 0.1) {
+      return b.similarity - a.similarity;
+    }
+    return b.matches - a.matches;
+  });
   
-  console.log(`Text-based search found ${results.length} results for query: "${query}"`);
+  console.log(`Enhanced text-based search found ${results.length} results for query: "${query}"`);
   
   return {
     statusCode: 200,
@@ -471,16 +741,128 @@ function handleTextBasedSearch(userId, query, options = {}) {
     body: JSON.stringify({
       results: results.slice(0, limit),
       totalFound: results.length,
-      searchType: 'text-based',
+      searchType: 'enhanced-text-based',
       storage: 'enhanced-memory',
       query: {
         text: query,
+        expandedTerms: expandedTerms,
         limit,
         threshold,
         hasEmbedding: false
       }
     }),
   };
+}
+
+// Query preprocessing for better search results
+function preprocessQuery(query) {
+  if (!query || typeof query !== 'string') return '';
+  
+  let processed = query.trim();
+  
+  // Remove common stop words that might interfere with search
+  const stopWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'];
+  const words = processed.split(/\s+/);
+  const filteredWords = words.filter(word => 
+    word.length > 2 && !stopWords.includes(word.toLowerCase())
+  );
+  
+  // Rejoin and clean up
+  processed = filteredWords.join(' ').trim();
+  
+  // Handle common abbreviations and expand them
+  const abbreviations = {
+    'gmp': 'good manufacturing practice',
+    'gcp': 'good clinical practice',
+    'glp': 'good laboratory practice',
+    'sop': 'standard operating procedure',
+    'qa': 'quality assurance',
+    'qc': 'quality control',
+    'fda': 'food and drug administration',
+    'ema': 'european medicines agency',
+    'ich': 'international council for harmonisation',
+    'api': 'active pharmaceutical ingredient',
+    'ctd': 'common technical document',
+    'dossier': 'regulatory dossier',
+    'nda': 'new drug application',
+    'anda': 'abbreviated new drug application'
+  };
+  
+  let expandedQuery = processed;
+  Object.entries(abbreviations).forEach(([abbr, full]) => {
+    const regex = new RegExp(`\\b${abbr}\\b`, 'gi');
+    expandedQuery = expandedQuery.replace(regex, `${abbr} ${full}`);
+  });
+  
+  return expandedQuery;
+}
+
+// Query expansion function for better search coverage
+function expandQueryTerms(queryWords) {
+  const expandedTerms = new Set();
+  
+  // Add original terms
+  queryWords.forEach(word => expandedTerms.add(word));
+  
+  // Common pharmaceutical/regulatory synonyms
+  const synonyms = {
+    'quality': ['standard', 'specification', 'requirement', 'criteria'],
+    'assurance': ['control', 'management', 'verification', 'validation'],
+    'manufacturing': ['production', 'processing', 'fabrication', 'making'],
+    'pharmaceutical': ['drug', 'medicine', 'therapeutic', 'medicinal'],
+    'regulatory': ['compliance', 'governance', 'oversight', 'supervision'],
+    'documentation': ['records', 'documentation', 'paperwork', 'files'],
+    'procedure': ['process', 'method', 'protocol', 'workflow'],
+    'testing': ['analysis', 'examination', 'evaluation', 'assessment'],
+    'validation': ['verification', 'confirmation', 'certification', 'approval'],
+    'batch': ['lot', 'group', 'set', 'collection'],
+    'specification': ['requirement', 'standard', 'criteria', 'parameter'],
+    'deviation': ['variance', 'exception', 'nonconformity', 'discrepancy'],
+    'investigation': ['analysis', 'examination', 'review', 'study'],
+    'corrective': ['remedial', 'fixing', 'repairing', 'correcting'],
+    'preventive': ['proactive', 'precautionary', 'protective', 'safeguarding'],
+    'good': ['proper', 'appropriate', 'suitable', 'adequate'],
+    'practice': ['procedure', 'method', 'approach', 'technique'],
+    'clinical': ['medical', 'therapeutic', 'patient', 'treatment'],
+    'laboratory': ['lab', 'testing', 'analysis', 'research'],
+    'standard': ['specification', 'requirement', 'criteria', 'guideline'],
+    'operating': ['functional', 'procedural', 'operational', 'working']
+  };
+  
+  // Add synonyms for each query word
+  queryWords.forEach(word => {
+    const wordLower = word.toLowerCase();
+    if (synonyms[wordLower]) {
+      synonyms[wordLower].forEach(synonym => expandedTerms.add(synonym));
+    }
+  });
+  
+  // Add common variations (plurals, different tenses)
+  queryWords.forEach(word => {
+    if (word.endsWith('s')) {
+      expandedTerms.add(word.slice(0, -1)); // singular
+    } else {
+      expandedTerms.add(word + 's'); // plural
+    }
+    if (word.endsWith('ing')) {
+      expandedTerms.add(word.slice(0, -3)); // base form
+    }
+  });
+  
+  return Array.from(expandedTerms);
+}
+
+// Helper function to get contextual chunks for better context
+function getContextualChunks(targetChunk, allChunks, contextRadius = 1) {
+  const documentChunks = allChunks.filter(chunk => chunk.documentId === targetChunk.documentId);
+  const targetIndex = documentChunks.findIndex(chunk => chunk.id === targetChunk.id);
+  
+  if (targetIndex === -1) return [targetChunk];
+  
+  const startIndex = Math.max(0, targetIndex - contextRadius);
+  const endIndex = Math.min(documentChunks.length - 1, targetIndex + contextRadius);
+  
+  return documentChunks.slice(startIndex, endIndex + 1);
 }
 
 /**

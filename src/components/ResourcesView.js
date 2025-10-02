@@ -17,10 +17,14 @@ import {
   Download,
   AlertCircle,
   Eye,
+  MessageSquare,
+  Clock,
+  Trash2,
 } from 'lucide-react';
 import learningSuggestionsService from '../services/learningSuggestionsService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import ragService from '../services/ragService';
+import chatHistoryService from '../services/chatHistoryService';
 
 const isGzipCompressed = (bytes) =>
   bytes && bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
@@ -407,19 +411,22 @@ const createInitialViewerState = () => ({
   blobData: null,
 });
 
-const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource }) => {
+const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [] }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredResources, setFilteredResources] = useState(currentResources);
   const [learningSuggestions, setLearningSuggestions] = useState([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [openSections, setOpenSections] = useState({
     suggestions: false,
-    resources: true
+    resources: true,
+    chatHistories: false
   });
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [addedResources, setAddedResources] = useState(new Set());
   const [showToast, setShowToast] = useState(false);
   const [downloadingResourceId, setDownloadingResourceId] = useState(null);
+  const [chatHistories, setChatHistories] = useState([]);
+  const [filteredHistories, setFilteredHistories] = useState([]);
   const toastTimeoutRef = useRef(null);
 
   const [viewerState, setViewerState] = useState(() => createInitialViewerState());
@@ -645,6 +652,13 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     }
   }, [user]);
 
+  // Load chat histories on mount/user change
+  useEffect(() => {
+    if (user?.sub) {
+      loadChatHistories();
+    }
+  }, [user]);
+
   // Filter resources
   useEffect(() => {
     if (!searchTerm.trim()) {
@@ -667,6 +681,25 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
     setFilteredResources(filtered);
   }, [currentResources, searchTerm]);
 
+  // Filter chat histories
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredHistories(chatHistories);
+      return;
+    }
+    const term = searchTerm.trim().toLowerCase();
+    const filtered = chatHistories.filter(history => {
+      if (!history) return false;
+      const fields = [
+        history.title,
+        history.description,
+        history.metadata?.capturedAt,
+      ];
+      return fields.some(v => typeof v === 'string' && v.toLowerCase().includes(term));
+    });
+    setFilteredHistories(filtered);
+  }, [chatHistories, searchTerm]);
+
   const loadLearningSuggestions = async () => {
     if (!FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS || !user?.sub) return;
 
@@ -680,6 +713,63 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       setLearningSuggestions([]);
     } finally {
       setIsLoadingSuggestions(false);
+    }
+  };
+
+  const loadChatHistories = () => {
+    try {
+      const histories = chatHistoryService.getAllHistories(user?.sub);
+      const resourceFormattedHistories = histories.map(history => 
+        chatHistoryService.historyToResource(history)
+      );
+      setChatHistories(resourceFormattedHistories);
+    } catch (error) {
+      console.error('Error loading chat histories:', error);
+      setChatHistories([]);
+    }
+  };
+
+  const handleCaptureCurrentChat = () => {
+    if (!messages || messages.length === 0) {
+      alert('No messages to capture in current chat');
+      return;
+    }
+
+    try {
+      const historyEntry = chatHistoryService.captureCurrentChat(messages, user);
+      loadChatHistories(); // Refresh the list
+      setShowToast(true);
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = setTimeout(() => setShowToast(false), 3000);
+    } catch (error) {
+      console.error('Error capturing chat:', error);
+      alert('Failed to capture chat: ' + error.message);
+    }
+  };
+
+  const handleHistoryClick = (historyResource) => {
+    // For chat histories, we'll show them in a modal or overlay
+    // For now, we'll just show an alert with the history ID
+    const historyId = historyResource.metadata?.historyId;
+    if (historyId) {
+      const fullHistory = chatHistoryService.getHistoryById(historyId);
+      if (fullHistory) {
+        // TODO: Open history viewer modal
+        console.log('Opening history:', fullHistory);
+        alert(`Opening chat history: ${fullHistory.title}\nCaptured: ${new Date(fullHistory.capturedAt).toLocaleString()}\nConversations: ${fullHistory.conversationCount}`);
+      }
+    }
+  };
+
+  const handleDeleteHistory = (historyResource) => {
+    const historyId = historyResource.metadata?.historyId;
+    if (historyId && confirm('Are you sure you want to delete this chat history?')) {
+      const success = chatHistoryService.deleteHistory(historyId);
+      if (success) {
+        loadChatHistories(); // Refresh the list
+      } else {
+        alert('Failed to delete chat history');
+      }
     }
   };
 
@@ -1159,6 +1249,103 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
             )}
           </div>
         )}
+
+        {/* Chat Histories Section */}
+        <div className="border border-gray-200 rounded-lg">
+          <button
+            type="button"
+            onClick={() => toggleSection('chatHistories')}
+            className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
+          >
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="h-4 w-4" />
+              <span>Chat Histories</span>
+              {chatHistories.length > 0 && (
+                <span className="bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {chatHistories.length}
+                </span>
+              )}
+            </div>
+            <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.chatHistories ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.chatHistories && (
+            <div className="p-4 space-y-4 border-t border-gray-200">
+              {/* Capture Current Chat Button */}
+              {messages && messages.length > 0 && (
+                <button
+                  onClick={handleCaptureCurrentChat}
+                  className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                >
+                  <BookmarkPlus className="h-4 w-4" />
+                  <span>Save Current Chat</span>
+                </button>
+              )}
+
+              {chatHistories.length > 0 && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search chat histories..."
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+
+              {chatHistories.length > 0 ? (
+                filteredHistories.length > 0 ? (
+                  filteredHistories.map((historyResource, index) => {
+                    const key = `history-${historyResource.id}-${index}`;
+                    const addedKey = historyResource.id;
+                    return (
+                      <ChatHistoryCard
+                        key={key}
+                        historyResource={historyResource}
+                        onClick={() => handleHistoryClick(historyResource)}
+                        onAdd={() => handleAdd(historyResource)}
+                        onDelete={() => handleDeleteHistory(historyResource)}
+                        isAdded={addedResources.has(addedKey)}
+                      />
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8">
+                    <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">
+                      No chat histories match "{searchTerm}"
+                    </p>
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="mt-2 text-sm text-green-600 hover:text-green-800"
+                    >
+                      Clear search
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                    <MessageSquare className="h-6 w-6 text-gray-400" />
+                  </div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">No chat histories yet</h4>
+                  <p className="text-gray-600 text-sm mb-4">
+                    Start a conversation and save it to create your first chat history
+                  </p>
+                  {messages && messages.length > 0 && (
+                    <button
+                      onClick={handleCaptureCurrentChat}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors"
+                    >
+                      Save Current Chat
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="border border-gray-200 rounded-lg">
           <button
@@ -1908,8 +2095,102 @@ const ResourceCard = memo(({ resource, onClick, colorClass, onAdd, isAdded, isDo
   );
 });
 
+// Chat History Card component
+const ChatHistoryCard = memo(({ historyResource, onClick, onAdd, onDelete, isAdded = false }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const metadata = historyResource?.metadata || {};
+  const capturedAt = metadata.capturedAt ? new Date(metadata.capturedAt) : null;
+  const messageCount = metadata.messageCount || 0;
+  const conversationCount = metadata.conversationCount || 0;
+
+  return (
+    <div
+      className={`group border rounded-lg transition-all duration-300 ${
+        isAdded ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-green-300 hover:shadow-sm'
+      } cursor-pointer`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+    >
+      <div className="p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center space-x-2 mb-3">
+              <span className="text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full border bg-green-50 text-green-700 border-green-200">
+                Chat History
+              </span>
+              {capturedAt && (
+                <div className="flex items-center space-x-1 text-xs text-gray-500">
+                  <Clock className="h-3 w-3" />
+                  <span>{capturedAt.toLocaleDateString()}</span>
+                </div>
+              )}
+            </div>
+
+            <h4 className="font-semibold text-gray-900 group-hover:text-green-800 mb-2 leading-snug">
+              {historyResource.title}
+            </h4>
+
+            {historyResource.description && (
+              <p className="text-sm text-gray-600 mb-3 line-clamp-3">{historyResource.description}</p>
+            )}
+
+            <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-1">
+                  <MessageSquare className="h-3 w-3" />
+                  <span>{conversationCount} conversation{conversationCount !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <FileText className="h-3 w-3" />
+                  <span>{messageCount} message{messageCount !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+              {capturedAt && (
+                <span className="text-[11px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                  {capturedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); if (!isAdded) onAdd?.(); }}
+              className={`p-1 ${isAdded ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
+              aria-label="Add to notebook"
+              title="Add this chat history to your notebook"
+              disabled={isAdded}
+            >
+              {isAdded ? <Check className="h-4 w-4" /> : <BookmarkPlus className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+              className="p-1 text-gray-400 hover:text-red-600"
+              aria-label="Delete chat history"
+              title="Delete this chat history"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+            <ChevronRight className={`h-4 w-4 text-gray-400 group-hover:text-green-600 transition-all flex-shrink-0 ${isHovered ? 'translate-x-1' : ''}`} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 SuggestionCard.displayName = 'SuggestionCard';
 ResourceCard.displayName = 'ResourceCard';
+ChatHistoryCard.displayName = 'ChatHistoryCard';
 ResourcesView.displayName = 'ResourcesView';
 PdfBlobViewer.displayName = 'PdfBlobViewer';
 DocumentViewer.displayName = 'DocumentViewer';

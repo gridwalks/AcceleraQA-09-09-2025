@@ -26,6 +26,7 @@ const Sidebar = ({
           user={user}
           onSuggestionsUpdate={onSuggestionsUpdate}
           onAddResource={onAddResource}
+          messages={messages}
         />
       </div>
 

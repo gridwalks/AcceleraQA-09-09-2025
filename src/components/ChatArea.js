@@ -766,17 +766,6 @@ const ChatArea = ({
           </div>
         </div>
 
-        {/* Document search status description */}
-        <div className="mt-2 text-sm text-purple-600 bg-purple-50 px-3 py-1 rounded-md flex items-center space-x-2">
-          <Database className="h-3 w-3" />
-          <span>
-            {manualOverrideActive
-              ? 'AI Knowledge is responding because Document Search has been manually disabled.'
-              : usedFallback
-                ? 'AI Knowledge responded automatically when no document answer was found. Document Search will be retried on your next message.'
-                : 'Document Search is prioritized with automatic fallback to AI Knowledge when needed.'}
-          </span>
-        </div>
       </div>
 
       {/* Messages Container */}

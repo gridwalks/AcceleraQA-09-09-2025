@@ -119,9 +119,9 @@ const ProfileScreen = ({ user, onBack }) => {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-sm font-medium text-gray-500">User ID</dt>
+                      <dt className="text-sm font-medium text-gray-500">Auth0 User ID</dt>
                       <dd className="mt-1 text-sm text-gray-900 font-mono">
-                        {user.sub || user.id || 'Not available'}
+                        {user.sub || 'Not available'}
                       </dd>
                     </div>
                   </dl>

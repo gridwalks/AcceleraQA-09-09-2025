@@ -136,6 +136,40 @@ const isMeaningfulDocumentSearchResponse = (answer, sources) => {
   return hasContent || isNotJustEmptyMarker;
 };
 
+// Check if user response is a simple yes/no to a system question
+const isSimpleResponse = (message) => {
+  const normalized = message.trim().toLowerCase();
+  const simpleResponses = ['yes', 'no', 'y', 'n', 'ok', 'okay', 'sure', 'please', 'help'];
+  return simpleResponses.includes(normalized) || normalized.length < 10;
+};
+
+// Check if the last message was a system question asking for help
+const lastMessageWasSystemQuestion = (messages) => {
+  if (messages.length < 2) return false;
+  const lastMessage = messages[messages.length - 1];
+  return lastMessage.role === 'assistant' && 
+         lastMessage.content && 
+         typeof lastMessage.content === 'string' &&
+         (lastMessage.content.includes('rephrase') || 
+          lastMessage.content.includes('different keywords') ||
+          lastMessage.content.includes('related topic'));
+};
+
+// Find the original user query from conversation history
+const findOriginalQuery = (messages) => {
+  // Look for the most recent user message that's not a simple response
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === 'user' && 
+        message.content && 
+        typeof message.content === 'string' &&
+        !isSimpleResponse(message.content)) {
+      return message.content;
+    }
+  }
+  return null;
+};
+
 const getDocumentSearchFallbackExplanation = (answer) => {
   if (typeof answer !== 'string') {
     return DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE;
@@ -738,11 +772,26 @@ function App() {
       let documentSearchFallbackExplanation = '';
       const manualOverrideDisabled = ragManualOverrideRef.current === false;
 
-      if (!preparedFile && !manualOverrideDisabled) {
+      // Check if this is a simple response to a system question
+      const isSimpleUserResponse = isSimpleResponse(rawInput);
+      const wasSystemQuestion = lastMessageWasSystemQuestion(updatedMessages);
+      
+      if (!preparedFile && !manualOverrideDisabled && !(isSimpleUserResponse && wasSystemQuestion)) {
         documentSearchAttempted = true;
         try {
+          // If it's a simple response to a system question, try to find the original query
+          let searchQuery = rawInput;
+          if (isSimpleUserResponse && wasSystemQuestion) {
+            // Look for the original query in the conversation history
+            const originalQuery = findOriginalQuery(updatedMessages);
+            if (originalQuery) {
+              searchQuery = originalQuery;
+              console.log('Using original query for simple response:', originalQuery);
+            }
+          }
+          
           const ragResponse = await ragSearch(
-            rawInput,
+            searchQuery,
             user?.sub,
             ragSearchOptions,
             conversationHistory
@@ -752,7 +801,8 @@ function App() {
             hasAnswer: !!ragResponse?.answer,
             answerLength: ragResponse?.answer?.length || 0,
             sourcesCount: ragResponse?.sources?.length || 0,
-            hasError: ragResponse?.error || false
+            hasError: ragResponse?.error || false,
+            searchQuery: searchQuery
           });
 
           const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
@@ -782,13 +832,36 @@ function App() {
       }
 
       if (!response) {
-        response = await openaiService.getChatResponse(
-          rawInput,
-          preparedFile,
-          conversationHistory,
-          undefined,
-          vectorStoreIdToUse
-        );
+        // Special handling for simple responses to system questions
+        if (isSimpleUserResponse && wasSystemQuestion) {
+          const originalQuery = findOriginalQuery(updatedMessages);
+          if (originalQuery) {
+            // Try to provide helpful suggestions based on the original query
+            response = {
+              answer: `I understand you'd like help with your previous question: "${originalQuery}". Here are some suggestions to help you find the information you need:
+
+1. **Try different keywords**: Use synonyms or related terms (e.g., "quality control" instead of "QA")
+2. **Be more specific**: Add details about what type of information you're looking for
+3. **Use broader terms**: Try searching for general topics that might contain your answer
+4. **Check document titles**: Look at the document names to see if any seem relevant
+
+Would you like to try rephrasing your question with any of these suggestions?`,
+              sources: [],
+              resources: []
+            };
+            modeUsed = 'AI Knowledge (contextual help)';
+          }
+        }
+        
+        if (!response) {
+          response = await openaiService.getChatResponse(
+            rawInput,
+            preparedFile,
+            conversationHistory,
+            undefined,
+            vectorStoreIdToUse
+          );
+        }
 
         if (documentSearchAttempted) {
           modeUsed = 'AI Knowledge (automatic fallback)';

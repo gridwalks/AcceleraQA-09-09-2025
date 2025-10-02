@@ -1771,7 +1771,7 @@ class RAGService {
       .join('\n')
       .trim();
 
-    let answer = answerWithCitations || plainAnswerFromContent || outputTextFallback || 'I searched through your documents but couldn\'t find specific information related to your question. This could be because the information might be phrased differently in the documents, or it may not be covered in the uploaded materials. Would you like me to help you rephrase your question or search for related topics?';
+    let answer = answerWithCitations || plainAnswerFromContent || outputTextFallback || 'I searched through your documents but couldn\'t find specific information related to your question. This could be because the information might be phrased differently in the documents, or it may not be covered in the uploaded materials. Please try rephrasing your question with different keywords or ask about a related topic.';
     answer = deduplicateText(answer);
     answer = appendReferencesSection(answer, sources);
 
@@ -1810,7 +1810,7 @@ class RAGService {
 
     if (results.length === 0) {
       return {
-        answer: 'I searched through your documents but couldn\'t find specific information related to your question. This could be because the information might be phrased differently in the documents, or it may not be covered in the uploaded materials. Would you like me to help you rephrase your question or search for related topics?',
+        answer: 'I searched through your documents but couldn\'t find specific information related to your question. This could be because the information might be phrased differently in the documents, or it may not be covered in the uploaded materials. Please try rephrasing your question with different keywords or ask about a related topic.',
         sources: [],
         resources: [],
         ragMetadata: {

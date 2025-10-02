@@ -10,6 +10,7 @@ import LoadingScreen from './components/LoadingScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 import RAGConfigurationPage from './components/RAGConfigurationPage';
 import AdminScreen from './components/AdminScreen';
+import ProfileScreen from './components/ProfileScreen';
 import NotebookOverlay from './components/NotebookOverlay';
 import SupportRequestOverlay from './components/SupportRequestOverlay';
 import StorageNotification, { useStorageNotifications } from './components/StorageNotification';
@@ -241,6 +242,7 @@ function App() {
   // UI state
   const [showRAGConfig, setShowRAGConfig] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [showNotebook, setShowNotebook] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [isServerAvailable] = useState(true);
@@ -1285,6 +1287,8 @@ function App() {
   }, [refreshAdminResources]);
   const handleShowAdmin = useCallback(() => setShowAdmin(true), []);
   const handleCloseAdmin = useCallback(() => setShowAdmin(false), []);
+  const handleShowProfile = useCallback(() => setShowProfile(true), []);
+  const handleCloseProfile = useCallback(() => setShowProfile(false), []);
 
   return (
     <ErrorBoundary>
@@ -1296,6 +1300,8 @@ function App() {
         <RAGConfigurationPage onClose={handleCloseRAGConfig} user={user} />
       ) : showAdmin ? (
         <AdminScreen onBack={handleCloseAdmin} user={user} />
+      ) : showProfile ? (
+        <ProfileScreen onBack={handleCloseProfile} user={user} />
       ) : (
         <>
           <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -1305,6 +1311,7 @@ function App() {
               isSaving={isSaving}
               lastSaveTime={lastSaveTime}
               onShowAdmin={handleShowAdmin}
+              onShowProfile={handleShowProfile}
               onShowRAGConfig={handleShowRAGConfig}
               onOpenNotebook={() => setShowNotebook(true)}
               onOpenSupport={() => setShowSupport(true)}

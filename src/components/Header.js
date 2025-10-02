@@ -10,6 +10,7 @@ const Header = memo(({
   isSaving = false,
   lastSaveTime = null,
   onShowAdmin,
+  onShowProfile,
   onOpenNotebook,
   onShowRAGConfig,
   onOpenSupport,
@@ -113,6 +114,18 @@ const Header = memo(({
 
             {menuOpen && (
               <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
+                <button
+                  onClick={() => {
+                    onShowProfile();
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  aria-label="View your profile"
+                >
+                  <User className="h-4 w-4 mr-2" />
+                  Your Profile
+                </button>
+
                 {isAdmin && (
                   <button
                     onClick={() => {

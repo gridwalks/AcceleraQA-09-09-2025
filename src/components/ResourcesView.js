@@ -16,6 +16,7 @@ import {
   X,
   Download,
   AlertCircle,
+  Eye,
 } from 'lucide-react';
 import learningSuggestionsService from '../services/learningSuggestionsService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
@@ -1588,11 +1589,23 @@ export const DocumentViewer = ({
       );
     } else if (isPdfDocument) {
       viewerContent = (
-        <iframe title={safeTitle} src={url} className="h-full w-full border-0 bg-white" />
+        <iframe 
+          title={safeTitle} 
+          src={url} 
+          className="w-full h-full min-h-[420px] bg-white"
+          onLoad={() => console.log('Document iframe loaded successfully')}
+          onError={(e) => console.error('Document iframe load error:', e)}
+        />
       );
     } else if (!blobUrl) {
       viewerContent = (
-        <iframe title={safeTitle} src={url} className="h-full w-full border-0 bg-white" />
+        <iframe 
+          title={safeTitle} 
+          src={url} 
+          className="w-full h-full min-h-[420px] bg-white"
+          onLoad={() => console.log('Document iframe loaded successfully')}
+          onError={(e) => console.error('Document iframe load error:', e)}
+        />
       );
     } else {
       viewerContent = (
@@ -1609,46 +1622,67 @@ export const DocumentViewer = ({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/70 backdrop-blur-sm px-4 sm:px-6 py-8"
-      onClick={onClose}
-      role="presentation"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="document-viewer-title"
     >
       <div
-        className="relative flex h-full max-h:[85vh] max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${safeTitle} viewer`}
-      >
-        <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
-          <div className="pr-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Document Viewer</p>
-            <h2 className="text-lg font-semibold text-gray-900">{safeTitle}</h2>
-            {contentType ? <p className="mt-1 text-xs text-gray-500">{contentType}</p> : null}
-          </div>
-          <div className="flex items-center space-x-3">
-            {allowDownload && url && !isLoading && (
-              <a
-                href={url}
-                download={filename || true}
-                className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+        className="absolute inset-0 bg-gray-900/70"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative z-10 w-full max-w-5xl max-h-full bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden">
+        <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-gray-200">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <FileText className="h-5 w-5 text-blue-600" />
+              <span
+                id="document-viewer-title"
+                className="truncate"
+                title={safeTitle}
               >
-                <Download className="h-4 w-4" />
-                <span>Download</span>
-              </a>
+                {safeTitle}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {contentType || 'Document'}
+              {filename && filename !== safeTitle && ` • ${filename}`}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {allowDownload && url && !isLoading && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                >
+                  <Eye className="h-4 w-4" />
+                  <span>Open in new tab</span>
+                </button>
+                <a
+                  href={url}
+                  download={filename || true}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-green-600 border border-green-200 rounded hover:bg-green-50"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download</span>
+                </a>
+              </>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-              aria-label="Close document viewer"
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
+              <span>Close</span>
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden bg-gray-50">
+        <div className="flex-1 bg-gray-100">
           {isLoading ? (
             <div className="flex h-full flex-col items-center justify-center space-y-3 text-gray-500">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -1710,7 +1744,7 @@ export const DocumentViewer = ({
                     <a
                       href={url}
                       download={filename || true}
-                      className="inline-flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                      className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-green-600 border border-green-200 rounded hover:bg-green-50"
                     >
                       <Download className="h-4 w-4" />
                       <span>Download document</span>

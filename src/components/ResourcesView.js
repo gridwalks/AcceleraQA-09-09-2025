@@ -411,7 +411,7 @@ const createInitialViewerState = () => ({
   blobData: null,
 });
 
-const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [] }) => {
+const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, onAddResource, messages = [], onLoadChatHistory }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredResources, setFilteredResources] = useState(currentResources);
   const [learningSuggestions, setLearningSuggestions] = useState([]);
@@ -748,16 +748,12 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   };
 
   const handleHistoryClick = (historyResource) => {
-    // For chat histories, we'll show them in a modal or overlay
-    // For now, we'll just show an alert with the history ID
     const historyId = historyResource.metadata?.historyId;
-    if (historyId) {
-      const fullHistory = chatHistoryService.getHistoryById(historyId);
-      if (fullHistory) {
-        // TODO: Open history viewer modal
-        console.log('Opening history:', fullHistory);
-        alert(`Opening chat history: ${fullHistory.title}\nCaptured: ${new Date(fullHistory.capturedAt).toLocaleString()}\nConversations: ${fullHistory.conversationCount}`);
-      }
+    if (historyId && onLoadChatHistory) {
+      // Load the chat history into the chat area
+      onLoadChatHistory(historyId);
+    } else {
+      console.error('Cannot load chat history: missing historyId or onLoadChatHistory function');
     }
   };
 

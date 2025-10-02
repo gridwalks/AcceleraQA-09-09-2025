@@ -297,6 +297,60 @@ class ChatHistoryService {
   }
 
   /**
+   * Converts a chat history back to individual messages for loading into chat area
+   * @param {Object} historyEntry - History entry to convert
+   * @returns {Array} - Array of individual messages
+   */
+  historyToMessages(historyEntry) {
+    if (!historyEntry || !historyEntry.conversations) {
+      return [];
+    }
+
+    const messages = [];
+    
+    historyEntry.conversations.forEach((conversation, convIndex) => {
+      // Add user message if it exists
+      if (conversation.userContent) {
+        const userMessage = conversation.originalUserMessage || {
+          id: `loaded_user_${historyEntry.id}_${convIndex}_${Date.now()}`,
+          type: 'user',
+          role: 'user',
+          content: conversation.userContent,
+          timestamp: conversation.timestamp || historyEntry.capturedAt,
+          isCurrent: true,
+          isStored: false,
+          isFromHistory: true,
+          historyId: historyEntry.id
+        };
+        messages.push(userMessage);
+      }
+
+      // Add AI message if it exists
+      if (conversation.aiContent) {
+        const aiMessage = conversation.originalAiMessage || {
+          id: `loaded_ai_${historyEntry.id}_${convIndex}_${Date.now()}`,
+          type: 'ai',
+          role: 'assistant',
+          content: conversation.aiContent,
+          timestamp: conversation.timestamp || historyEntry.capturedAt,
+          resources: conversation.resources || [],
+          sources: conversation.sources || [],
+          isCurrent: true,
+          isStored: false,
+          isFromHistory: true,
+          historyId: historyEntry.id
+        };
+        messages.push(aiMessage);
+      }
+    });
+
+    // Sort messages by timestamp to maintain conversation order
+    messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    return messages;
+  }
+
+  /**
    * Formats bytes to human readable format
    * @param {number} bytes - Bytes to format
    * @returns {string} - Formatted string

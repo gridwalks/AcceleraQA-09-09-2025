@@ -200,6 +200,66 @@ describe('ChatHistoryService', () => {
     });
   });
 
+  describe('historyToMessages', () => {
+    it('should convert history back to individual messages', () => {
+      const mockHistory = {
+        id: 'hist1',
+        title: 'Test History',
+        capturedAt: '2024-01-01T10:00:00Z',
+        conversations: [
+          {
+            userContent: 'What is GMP?',
+            aiContent: 'Good Manufacturing Practice...',
+            timestamp: '2024-01-01T10:00:00Z',
+            resources: [{ title: 'GMP Guide', type: 'Guideline' }]
+          }
+        ]
+      };
+      
+      const messages = chatHistoryService.historyToMessages(mockHistory);
+      
+      expect(messages).toHaveLength(2); // User + AI message
+      expect(messages[0].type).toBe('user');
+      expect(messages[0].content).toBe('What is GMP?');
+      expect(messages[0].isFromHistory).toBe(true);
+      expect(messages[0].historyId).toBe('hist1');
+      
+      expect(messages[1].type).toBe('ai');
+      expect(messages[1].content).toBe('Good Manufacturing Practice...');
+      expect(messages[1].resources).toHaveLength(1);
+      expect(messages[1].isFromHistory).toBe(true);
+      expect(messages[1].historyId).toBe('hist1');
+    });
+
+    it('should handle empty conversations', () => {
+      const messages = chatHistoryService.historyToMessages(null);
+      expect(messages).toEqual([]);
+    });
+
+    it('should sort messages by timestamp', () => {
+      const mockHistory = {
+        id: 'hist1',
+        conversations: [
+          {
+            userContent: 'Second question',
+            aiContent: 'Second answer',
+            timestamp: '2024-01-01T10:01:00Z'
+          },
+          {
+            userContent: 'First question', 
+            aiContent: 'First answer',
+            timestamp: '2024-01-01T10:00:00Z'
+          }
+        ]
+      };
+      
+      const messages = chatHistoryService.historyToMessages(mockHistory);
+      
+      expect(messages[0].content).toBe('First question');
+      expect(messages[2].content).toBe('Second question');
+    });
+  });
+
   describe('getStorageInfo', () => {
     it('should return storage information', () => {
       const mockHistories = [

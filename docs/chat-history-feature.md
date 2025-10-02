@@ -109,6 +109,7 @@ The Chat History feature allows users to capture and save their chat conversatio
    - Use the search bar to find specific chats
 
 3. **Managing Chat Histories**:
+   - **Load into Chat**: Click on any chat history to load it back into the chat area
    - Delete unwanted chats using the trash icon
    - Add important chats to your notebook using the bookmark icon
    - Search through your chat collection
@@ -127,17 +128,21 @@ const histories = chatHistoryService.getAllHistories(userId);
 
 // Convert to resource format
 const resource = chatHistoryService.historyToResource(historyEntry);
+
+// Convert history back to messages for loading
+const messages = chatHistoryService.historyToMessages(historyEntry);
 ```
 
 2. **Component Integration**:
 ```javascript
-// Pass messages to ResourcesView
+// Pass messages and load function to ResourcesView
 <ResourcesView
   currentResources={resources}
   user={user}
   messages={messages} // Required for chat history functionality
   onSuggestionsUpdate={handleSuggestionsUpdate}
   onAddResource={handleAddResource}
+  onLoadChatHistory={loadChatHistory} // Function to load history into chat
 />
 ```
 

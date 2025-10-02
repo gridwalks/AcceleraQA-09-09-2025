@@ -75,6 +75,15 @@ const ChatHistoryDemo = () => {
     setSelectedHistory(history);
   };
 
+  const handleLoadHistory = (historyId) => {
+    const history = chatHistoryService.getHistoryById(historyId);
+    if (history) {
+      const messages = chatHistoryService.historyToMessages(history);
+      alert(`Loading chat history into chat area!\n\nHistory: ${history.title}\nMessages to load: ${messages.length}\n\nIn a real app, these messages would replace the current chat.`);
+      console.log('Would load messages:', messages);
+    }
+  };
+
   const storageInfo = chatHistoryService.getStorageInfo();
 
   return (
@@ -157,6 +166,13 @@ const ChatHistoryDemo = () => {
                   <div className="flex items-start justify-between mb-2">
                     <h4 className="font-medium text-gray-900 truncate flex-1">{history.title}</h4>
                     <div className="flex items-center space-x-1 ml-2">
+                      <button
+                        onClick={() => handleLoadHistory(history.id)}
+                        className="p-1 text-green-600 hover:bg-green-50 rounded"
+                        title="Load into chat area"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                      </button>
                       <button
                         onClick={() => handleViewHistory(history.id)}
                         className="p-1 text-blue-600 hover:bg-blue-50 rounded"

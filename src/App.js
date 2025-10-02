@@ -45,6 +45,7 @@ import {
   buildInternalResources,
   dedupeResources,
 } from './utils/internalResourceUtils';
+import chatHistoryService from './services/chatHistoryService';
 
 const COOLDOWN_SECONDS = 10;
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -971,6 +972,30 @@ function App() {
     }
   }, [user]);
 
+  const loadChatHistory = useCallback((historyId) => {
+    try {
+      const historyEntry = chatHistoryService.getHistoryById(historyId);
+      if (!historyEntry) {
+        console.error('Chat history not found:', historyId);
+        return;
+      }
+
+      // Convert history back to messages
+      const historyMessages = chatHistoryService.historyToMessages(historyEntry);
+      
+      // Clear current chat state and load history
+      setMessages(historyMessages);
+      setInputMessage('');
+      setUploadedFile(null);
+      setActiveDocument(null);
+      setLastResponseMode('document-search');
+      
+      console.log(`Loaded chat history: ${historyEntry.title} (${historyMessages.length} messages)`);
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+    }
+  }, []);
+
   const handleExportSelected = useCallback(() => {
     console.log('Exporting selected messages', Array.from(selectedMessages));
   }, [selectedMessages]);
@@ -1320,6 +1345,7 @@ function App() {
                     isLoadingSuggestions={isLoadingSuggestions}
                     onSuggestionsUpdate={handleSuggestionsUpdate}
                     onAddResource={handleAddResourceToNotebook}
+                    onLoadChatHistory={loadChatHistory}
                   />
                 </div>
               </div>
@@ -1354,6 +1380,7 @@ function App() {
                     isLoadingSuggestions={isLoadingSuggestions}
                     onSuggestionsUpdate={handleSuggestionsUpdate}
                     onAddResource={handleAddResourceToNotebook}
+                    onLoadChatHistory={loadChatHistory}
                   />
                 </div>
               </div>

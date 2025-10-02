@@ -39,14 +39,25 @@ const extractUserId = (event, context) => {
 const isUserAuthorizedForBlob = (blobKey, userId) => {
   if (!userId || !blobKey) return false;
   
+  console.log('Authorization check:', { blobKey, userId });
+  
+  // Normalize user ID (replace | with - for blob key comparison)
+  const normalizedUserId = userId.replace(/\|/g, '-');
+  
   // Check if the blob key contains the user's ID
-  // This assumes blob keys follow the pattern: rag-documents/{userId}/...
+  // This handles patterns like: prod/uploads/{userId}/... or rag-documents/{userId}/...
   const keySegments = blobKey.split('/');
-  if (keySegments.length >= 2) {
-    const blobUserId = keySegments[1];
-    return blobUserId === userId;
+  
+  // Look for the user ID in any segment of the path
+  for (let i = 0; i < keySegments.length; i++) {
+    const segment = keySegments[i];
+    if (segment === normalizedUserId || segment === userId) {
+      console.log('User authorized - found userId in segment:', segment);
+      return true;
+    }
   }
   
+  console.log('User not authorized - userId not found in blob key');
   return false;
 };
 
@@ -69,6 +80,7 @@ export const handler = async (event, context) => {
 
   try {
     const userId = extractUserId(event, context);
+    console.log('Extracted userId:', userId);
     if (!userId) {
       return {
         statusCode: 401,

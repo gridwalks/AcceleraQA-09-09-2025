@@ -1,8 +1,25 @@
 // src/components/ProfileScreen.js - User profile information display
 import React from 'react';
-import { ArrowLeft, User, Mail, Shield, Building, Calendar, CheckCircle } from 'lucide-react';
+import { ArrowLeft, User, Mail, Shield, Building, Calendar, CheckCircle, Key, ExternalLink } from 'lucide-react';
 
 const ProfileScreen = ({ user, onBack }) => {
+  const handlePasswordChange = () => {
+    // Construct Auth0 password change URL
+    const auth0Domain = process.env.REACT_APP_AUTH0_DOMAIN;
+    const clientId = process.env.REACT_APP_AUTH0_CLIENT_ID;
+    const redirectUri = encodeURIComponent(window.location.origin);
+    
+    if (!auth0Domain || !clientId) {
+      alert('Auth0 configuration is missing. Please contact support.');
+      return;
+    }
+
+    const passwordChangeUrl = `https://${auth0Domain}/u/change-password?client_id=${clientId}&redirect_uri=${redirectUri}`;
+    
+    // Open password change in a new window/tab
+    window.open(passwordChangeUrl, '_blank', 'width=500,height=600,scrollbars=yes,resizable=yes');
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -160,6 +177,32 @@ const ProfileScreen = ({ user, onBack }) => {
                       </dd>
                     </div>
                   </dl>
+                </div>
+              </div>
+            </div>
+
+            {/* Password Management */}
+            <div className="mt-8 pt-8 border-t border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <Key className="h-5 w-5 mr-2 text-gray-600" />
+                Password Management
+              </h3>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <Key className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-medium text-yellow-800">Change Your Password</h4>
+                    <p className="text-yellow-700 text-sm mt-1">
+                      Click the button below to change your password. This will open Auth0's secure password change page in a new window.
+                    </p>
+                    <button
+                      onClick={handlePasswordChange}
+                      className="mt-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Change Password
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

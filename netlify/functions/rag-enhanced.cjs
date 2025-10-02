@@ -371,7 +371,7 @@ async function handleSearch(userId, query, options = {}) {
       };
     }
 
-    const { limit = 10, threshold = 0.3 } = options;
+    const { limit = 10, threshold = 0.2 } = options;
     
     // Preprocess the query for better results
     const processedQuery = preprocessQuery(query);
@@ -384,7 +384,7 @@ async function handleSearch(userId, query, options = {}) {
     } catch (embeddingError) {
       console.warn('Could not generate query embedding:', embeddingError);
       // Fallback to text-based search with more permissive settings
-      return handleTextBasedSearch(userId, processedQuery, { ...options, threshold: 0.1 });
+      return handleTextBasedSearch(userId, processedQuery, { ...options, threshold: 0.05 });
     }
     
     const userChunks = storage.getUserChunks(userId);
@@ -625,7 +625,7 @@ function levenshteinDistance(str1, str2) {
  * Fallback text-based search when embeddings aren't available
  */
 function handleTextBasedSearch(userId, query, options = {}) {
-  const { limit = 10, threshold = 0.1 } = options;
+  const { limit = 10, threshold = 0.05 } = options;
   const userChunks = storage.getUserChunks(userId);
   const lowerQuery = query.toLowerCase();
   const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 1);
@@ -843,7 +843,10 @@ function expandQueryTerms(queryWords) {
     'clinical': ['medical', 'therapeutic', 'patient', 'treatment'],
     'laboratory': ['lab', 'testing', 'analysis', 'research'],
     'standard': ['specification', 'requirement', 'criteria', 'guideline'],
-    'operating': ['functional', 'procedural', 'operational', 'working']
+    'operating': ['functional', 'procedural', 'operational', 'working'],
+    'audit': ['review', 'inspection', 'examination', 'assessment', 'evaluation'],
+    'trail': ['record', 'log', 'history', 'track', 'trace', 'documentation'],
+    'audit trail': ['audit record', 'audit log', 'audit history', 'audit documentation', 'review trail', 'inspection trail']
   };
   
   // Add synonyms for each query word

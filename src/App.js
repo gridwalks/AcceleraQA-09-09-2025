@@ -127,12 +127,12 @@ const isMeaningfulDocumentSearchResponse = (answer, sources) => {
   }
 
   // Check if answer contains any meaningful content (more than just empty markers)
-  const hasContent = normalizedAnswer.length > 50; // At least 50 characters
+  const hasContent = normalizedAnswer.length > 20; // Lowered from 50 to 20 characters
   const isNotJustEmptyMarker = !RAG_EMPTY_RESPONSE_MARKERS.some((marker) =>
     normalizedAnswer.startsWith(marker)
   );
   
-  // Consider it meaningful if it has substantial content OR is not just an empty marker
+  // Consider it meaningful if it has content OR is not just an empty marker
   return hasContent || isNotJustEmptyMarker;
 };
 
@@ -776,7 +776,8 @@ function App() {
       const isSimpleUserResponse = isSimpleResponse(rawInput);
       const wasSystemQuestion = lastMessageWasSystemQuestion(updatedMessages);
       
-      if (!preparedFile && !manualOverrideDisabled && !(isSimpleUserResponse && wasSystemQuestion)) {
+      // Always try document search first unless it's a simple response to a system question
+      if (!preparedFile && !manualOverrideDisabled) {
         documentSearchAttempted = true;
         try {
           // If it's a simple response to a system question, try to find the original query
@@ -802,22 +803,33 @@ function App() {
             answerLength: ragResponse?.answer?.length || 0,
             sourcesCount: ragResponse?.sources?.length || 0,
             hasError: ragResponse?.error || false,
-            searchQuery: searchQuery
+            searchQuery: searchQuery,
+            answerPreview: ragResponse?.answer?.substring(0, 100) || 'no answer'
           });
 
           const ragAnswer = typeof ragResponse?.answer === 'string' ? ragResponse.answer.trim() : '';
           const ragSources = Array.isArray(ragResponse?.sources) ? ragResponse.sources : [];
 
-          if (isMeaningfulDocumentSearchResponse(ragAnswer, ragSources)) {
+          const isMeaningful = isMeaningfulDocumentSearchResponse(ragAnswer, ragSources);
+          console.log('Meaningful response check:', {
+            isMeaningful,
+            answerLength: ragAnswer.length,
+            sourcesCount: ragSources.length,
+            answerPreview: ragAnswer.substring(0, 100)
+          });
+
+          if (isMeaningful) {
             response = ragResponse;
             modeUsed = 'Document Search';
             documentSearchProvidedMeaningfulAnswer = true;
             console.log('Document search provided meaningful response');
           } else {
+            // Document search didn't find meaningful results, will fall back to AI
             documentSearchFallbackExplanation = getDocumentSearchFallbackExplanation(
               ragAnswer
             );
-            console.log('Document search response not meaningful, falling back:', documentSearchFallbackExplanation);
+            console.log('Document search response not meaningful, will fall back to AI:', documentSearchFallbackExplanation);
+            // Don't set response here - let it fall through to AI mode
           }
         } catch (ragError) {
           console.error('Document search failed, falling back to AI Knowledge:', {

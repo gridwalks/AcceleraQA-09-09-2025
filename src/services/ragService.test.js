@@ -118,6 +118,102 @@ describe('ragService neon backend integration', () => {
     );
   });
 
+  test('uploadDocument converts DOCX files to PDF for Neon backend', async () => {
+    const neonResponses = {
+      upload: (_userId, payload) => ({
+        document: {
+          id: 'doc-2',
+          filename: payload.document.filename,
+          metadata: payload.document.metadata,
+        },
+        message: 'stored',
+      }),
+    };
+
+    const { ragService, makeNeonRequestSpy } = await setupNeonRagService({ neonResponses });
+
+    // Create a mock DOCX file
+    const docxFile = {
+      name: 'document.docx',
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      size: 1024,
+      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(8)),
+    };
+
+    const result = await ragService.uploadDocument(
+      docxFile,
+      { title: 'Test Document' },
+      'user-1'
+    );
+
+    // Verify the uploaded document has PDF properties and conversion metadata
+    expect(makeNeonRequestSpy).toHaveBeenCalledWith(
+      'upload',
+      'user-1',
+      expect.objectContaining({
+        document: expect.objectContaining({
+          filename: 'document.pdf', // Should be converted to PDF
+          type: 'application/pdf',
+          metadata: expect.objectContaining({
+            converted: true,
+            conversion: 'docx-to-pdf',
+            originalFilename: 'document.docx',
+            originalMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            processingMode: 'neon-postgresql',
+          }),
+        }),
+      })
+    );
+  });
+
+  test('uploadDocument converts text files to PDF for Neon backend', async () => {
+    const neonResponses = {
+      upload: (_userId, payload) => ({
+        document: {
+          id: 'doc-3',
+          filename: payload.document.filename,
+          metadata: payload.document.metadata,
+        },
+        message: 'stored',
+      }),
+    };
+
+    const { ragService, makeNeonRequestSpy } = await setupNeonRagService({ neonResponses });
+
+    // Create a mock text file
+    const textFile = {
+      name: 'notes.txt',
+      type: 'text/plain',
+      size: 512,
+      text: jest.fn().mockResolvedValue('This is a test document with some content.'),
+    };
+
+    const result = await ragService.uploadDocument(
+      textFile,
+      { title: 'Test Notes' },
+      'user-1'
+    );
+
+    // Verify the uploaded document has PDF properties and conversion metadata
+    expect(makeNeonRequestSpy).toHaveBeenCalledWith(
+      'upload',
+      'user-1',
+      expect.objectContaining({
+        document: expect.objectContaining({
+          filename: 'notes.pdf', // Should be converted to PDF
+          type: 'application/pdf',
+          metadata: expect.objectContaining({
+            converted: true,
+            conversion: 'text-to-pdf',
+            originalFilename: 'notes.txt',
+            originalMimeType: 'text/plain',
+            processingMode: 'neon-postgresql',
+          }),
+        }),
+      })
+    );
+  });
+
   test('downloadDocument delegates to document metadata endpoint for Neon backend', async () => {
     const { ragService, makeNeonRequestSpy } = await setupNeonRagService();
 

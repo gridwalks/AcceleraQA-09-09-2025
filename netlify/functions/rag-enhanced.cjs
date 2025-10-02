@@ -371,7 +371,7 @@ async function handleSearch(userId, query, options = {}) {
       };
     }
 
-    const { limit = 10, threshold = 0.5 } = options;
+    const { limit = 10, threshold = 0.3 } = options;
     
     // Preprocess the query for better results
     const processedQuery = preprocessQuery(query);
@@ -384,7 +384,7 @@ async function handleSearch(userId, query, options = {}) {
     } catch (embeddingError) {
       console.warn('Could not generate query embedding:', embeddingError);
       // Fallback to text-based search with more permissive settings
-      return handleTextBasedSearch(userId, processedQuery, { ...options, threshold: 0.2 });
+      return handleTextBasedSearch(userId, processedQuery, { ...options, threshold: 0.1 });
     }
     
     const userChunks = storage.getUserChunks(userId);
@@ -500,7 +500,7 @@ async function performSemanticSearch(queryEmbedding, userId, threshold, limit) {
 async function performFuzzySearch(query, userId, threshold, limit) {
   const userChunks = storage.getUserChunks(userId);
   const lowerQuery = query.toLowerCase();
-  const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 2);
+  const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 1);
   
   const results = [];
   
@@ -517,7 +517,7 @@ async function performFuzzySearch(query, userId, threshold, limit) {
         const maxLength = Math.max(word.length, textWord.length);
         const similarity = 1 - (distance / maxLength);
         
-        if (similarity >= 0.7) { // 70% similarity threshold
+        if (similarity >= 0.5) { // 50% similarity threshold - more permissive
           score += similarity * 2;
           matches++;
         }
@@ -534,7 +534,7 @@ async function performFuzzySearch(query, userId, threshold, limit) {
       }
     });
     
-    const normalizedScore = Math.min(score / (queryWords.length * 3), 1);
+    const normalizedScore = Math.min(score / Math.max(queryWords.length, 1), 1);
     
     if (normalizedScore >= threshold) {
       const document = storage.documents.get(chunk.documentId);
@@ -625,10 +625,10 @@ function levenshteinDistance(str1, str2) {
  * Fallback text-based search when embeddings aren't available
  */
 function handleTextBasedSearch(userId, query, options = {}) {
-  const { limit = 10, threshold = 0.2 } = options;
+  const { limit = 10, threshold = 0.1 } = options;
   const userChunks = storage.getUserChunks(userId);
   const lowerQuery = query.toLowerCase();
-  const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 2);
+  const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 1);
   
   // Query expansion with synonyms and related terms
   const expandedTerms = expandQueryTerms(queryWords);
@@ -694,8 +694,8 @@ function handleTextBasedSearch(userId, query, options = {}) {
     const lengthBonus = Math.min(chunk.text.length / 1000, 1) * 0.5;
     score += lengthBonus;
     
-    // Normalize score (0-1 range)
-    const maxPossibleScore = 15 + (queryWords.length * 4) + (expandedTerms.length * 2);
+    // Simplified scoring - more permissive
+    const maxPossibleScore = Math.max(10, queryWords.length * 2);
     const normalizedScore = Math.min(score / maxPossibleScore, 1);
     
     if (normalizedScore >= threshold) {
@@ -722,18 +722,35 @@ function handleTextBasedSearch(userId, query, options = {}) {
     }
   }
   
-  // Enhanced sorting: prioritize exact matches, then similarity, then position
-  results.sort((a, b) => {
-    if (a.exactMatches !== b.exactMatches) {
-      return b.exactMatches - a.exactMatches;
-    }
-    if (Math.abs(a.similarity - b.similarity) > 0.1) {
-      return b.similarity - a.similarity;
-    }
-    return b.matches - a.matches;
-  });
+  // Simplified sorting - just by similarity score
+  results.sort((a, b) => b.similarity - a.similarity);
   
   console.log(`Enhanced text-based search found ${results.length} results for query: "${query}"`);
+  
+  // If no results found, try even more permissive search
+  if (results.length === 0) {
+    console.log('No results found, trying ultra-permissive search...');
+    const ultraPermissiveResults = performUltraPermissiveSearch(userChunks, query, limit);
+    if (ultraPermissiveResults.length > 0) {
+      console.log(`Ultra-permissive search found ${ultraPermissiveResults.length} results`);
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          results: ultraPermissiveResults,
+          totalFound: ultraPermissiveResults.length,
+          searchType: 'ultra-permissive',
+          storage: 'enhanced-memory',
+          query: {
+            text: query,
+            limit,
+            threshold: 0.01,
+            hasEmbedding: false
+          }
+        }),
+      };
+    }
+  }
   
   return {
     statusCode: 200,
@@ -760,11 +777,11 @@ function preprocessQuery(query) {
   
   let processed = query.trim();
   
-  // Remove common stop words that might interfere with search
-  const stopWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'];
+  // Only remove very common stop words that definitely interfere
+  const stopWords = ['the', 'a', 'an'];
   const words = processed.split(/\s+/);
   const filteredWords = words.filter(word => 
-    word.length > 2 && !stopWords.includes(word.toLowerCase())
+    word.length > 1 && !stopWords.includes(word.toLowerCase())
   );
   
   // Rejoin and clean up
@@ -850,6 +867,61 @@ function expandQueryTerms(queryWords) {
   });
   
   return Array.from(expandedTerms);
+}
+
+// Ultra-permissive search for when normal search fails
+function performUltraPermissiveSearch(userChunks, query, limit) {
+  const lowerQuery = query.toLowerCase();
+  const queryWords = lowerQuery.split(/\s+/).filter(word => word.length > 0);
+  const results = [];
+  
+  for (const chunk of userChunks) {
+    const lowerText = chunk.text.toLowerCase();
+    let score = 0;
+    let matches = 0;
+    
+    // Very basic matching - any word that appears gets points
+    queryWords.forEach(word => {
+      if (lowerText.includes(word)) {
+        const wordMatches = (lowerText.match(new RegExp(word, 'g')) || []).length;
+        score += wordMatches;
+        matches++;
+      }
+    });
+    
+    // Even partial matches get some points
+    queryWords.forEach(word => {
+      if (word.length > 2) {
+        const partialMatches = (lowerText.match(new RegExp(word.substring(0, Math.max(2, word.length - 1)), 'g')) || []).length;
+        if (partialMatches > 0) {
+          score += partialMatches * 0.3;
+        }
+      }
+    });
+    
+    // Any chunk with any match gets included
+    if (score > 0) {
+      const document = storage.documents.get(chunk.documentId);
+      const contextChunks = getContextualChunks(chunk, userChunks, 1);
+      const contextualText = contextChunks.map(ctx => ctx.text).join(' ... ');
+      
+      results.push({
+        documentId: chunk.documentId,
+        filename: document?.filename || 'Unknown',
+        chunkIndex: chunk.index,
+        text: chunk.text,
+        contextualText: contextualText,
+        contextChunks: contextChunks.length,
+        similarity: Math.min(score / Math.max(queryWords.length, 1), 1),
+        searchType: 'ultra-permissive',
+        matches: matches,
+        score: score,
+        metadata: document?.metadata || {}
+      });
+    }
+  }
+  
+  return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
 }
 
 // Helper function to get contextual chunks for better context

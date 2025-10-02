@@ -30,6 +30,21 @@ jest.mock('../services/authService', () => ({
   getTokenInfo: jest.fn().mockReturnValue({}),
 }));
 
+jest.mock('../services/blobAdminService', () => ({
+  __esModule: true,
+  default: {
+    listBlobs: jest.fn().mockResolvedValue({
+      files: [],
+      metadata: { store: 'test-store', prefix: '', timestamp: null, total: 0, truncated: false }
+    }),
+    downloadBlob: jest.fn().mockResolvedValue({
+      data: 'dGVzdCBkYXRh', // base64 for "test data"
+      filename: 'test.pdf',
+      contentType: 'application/pdf'
+    }),
+  }
+}));
+
 describe('checkStorageHealth', () => {
   it('returns unknown status when navigator storage is unavailable', async () => {
     const originalNavigator = global.navigator;

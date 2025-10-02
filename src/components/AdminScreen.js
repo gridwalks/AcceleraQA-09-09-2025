@@ -560,10 +560,10 @@ const AdminScreen = ({ user, onBack }) => {
     }
   }, [blobPreview]);
 
-  const handleBlobDownload = useCallback(
+  const handleBlobView = useCallback(
     async (file) => {
       if (!file?.key) {
-        setBlobError('Unable to download file: missing blob key.');
+        setBlobError('Unable to view file: missing blob key.');
         return;
       }
 
@@ -635,8 +635,6 @@ const AdminScreen = ({ user, onBack }) => {
         const contentType = result.contentType || file.contentType || 'application/octet-stream';
         const blob = new Blob([bytes], { type: contentType });
         const objectUrl = window.URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = objectUrl;
         const downloadName =
           result.filename ||
           file.filename ||
@@ -644,10 +642,6 @@ const AdminScreen = ({ user, onBack }) => {
           file.relativeKey ||
           blobKey.split('/').pop() ||
           'download';
-        anchor.download = downloadName;
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
         console.log('Setting blob preview:', {
           objectUrl,
           filename: downloadName,
@@ -671,8 +665,8 @@ const AdminScreen = ({ user, onBack }) => {
           };
         });
       } catch (error) {
-        console.error('Failed to download blob file:', error);
-        setBlobError(error.message || 'Failed to download file from Netlify blobs.');
+        console.error('Failed to load blob file for viewing:', error);
+        setBlobError(error.message || 'Failed to load file from Netlify blobs.');
       } finally {
         markBlobDownloading(blobKey, false);
       }
@@ -1417,16 +1411,16 @@ const AdminScreen = ({ user, onBack }) => {
                               <td className="px-4 py-3 align-top">
                                 <button
                                   type="button"
-                                  onClick={() => handleBlobDownload(file)}
+                                  onClick={() => handleBlobView(file)}
                                   className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50 disabled:opacity-60 disabled:cursor-not-allowed"
                                   disabled={downloadingBlobKeys.has(file.key)}
                                 >
                                   {downloadingBlobKeys.has(file.key) ? (
                                     <RefreshCw className="h-4 w-4 animate-spin" />
                                   ) : (
-                                    <Download className="h-4 w-4" />
+                                    <Eye className="h-4 w-4" />
                                   )}
-                                  <span>{downloadingBlobKeys.has(file.key) ? 'Preparing…' : 'Download'}</span>
+                                  <span>{downloadingBlobKeys.has(file.key) ? 'Loading…' : 'View'}</span>
                                 </button>
                               </td>
                             </tr>
@@ -1665,6 +1659,14 @@ const AdminScreen = ({ user, onBack }) => {
                   <Eye className="h-4 w-4" />
                   <span>Open in new tab</span>
                 </button>
+                <a
+                  href={blobPreview.objectUrl}
+                  download={blobPreview.filename}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-green-600 border border-green-200 rounded hover:bg-green-50"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download</span>
+                </a>
                 <button
                   type="button"
                   onClick={closeBlobPreview}

@@ -10,6 +10,8 @@ export const config = {
 const DEFAULT_CHUNK_SIZE = 800;
 const MAX_CHUNKS = 5000;
 const MAX_TEXT_LENGTH = DEFAULT_CHUNK_SIZE * MAX_CHUNKS;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+const MAX_TEXT_CONTENT_LENGTH = 5 * 1024 * 1024; // 5MB text content limit
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
@@ -1100,8 +1102,22 @@ async function handleUpload(sql, userId, payload = {}) {
     throw error;
   }
 
+  // Check file size limits
+  const fileSize = Number.isFinite(document.size) ? Number(document.size) : 0;
+  if (fileSize > MAX_FILE_SIZE) {
+    const error = new Error(`File size (${Math.round(fileSize / 1024 / 1024)}MB) exceeds maximum allowed size (${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB)`);
+    error.statusCode = 413;
+    throw error;
+  }
+
+  if (text.length > MAX_TEXT_CONTENT_LENGTH) {
+    const error = new Error(`Document text content (${Math.round(text.length / 1024 / 1024)}MB) exceeds maximum allowed size (${Math.round(MAX_TEXT_CONTENT_LENGTH / 1024 / 1024)}MB)`);
+    error.statusCode = 413;
+    throw error;
+  }
+
   if (text.length > MAX_TEXT_LENGTH) {
-    const error = new Error('Document text exceeds maximum length');
+    const error = new Error('Document text exceeds maximum length for chunking');
     error.statusCode = 413;
     throw error;
   }
@@ -1180,7 +1196,11 @@ async function handleUpload(sql, userId, payload = {}) {
   }
 
   let storageLocation = null;
-  if (contentBuffer && contentBuffer.length > 0) {
+  
+  // Only attempt blob storage for files under 5MB to avoid memory issues
+  const shouldUseBlobStorage = contentBuffer && contentBuffer.length > 0 && contentBuffer.length <= 5 * 1024 * 1024;
+  
+  if (shouldUseBlobStorage) {
     try {
       console.log(`Uploading document content to blob store (${contentBuffer.length} bytes)...`);
       storageLocation = await uploadDocumentToBlobStore({
@@ -1221,6 +1241,14 @@ async function handleUpload(sql, userId, payload = {}) {
         contentType: storageLocation.contentType || mimeType || 'application/octet-stream',
       };
     }
+  } else if (contentBuffer && contentBuffer.length > 5 * 1024 * 1024) {
+    console.log(`Skipping blob storage for large file (${contentBuffer.length} bytes) to avoid memory issues`);
+    metadata.blobStorageSkipped = {
+      reason: 'File too large for blob storage',
+      size: contentBuffer.length,
+      limit: 5 * 1024 * 1024,
+      timestamp: new Date().toISOString(),
+    };
   }
 
   // Ensure we always have a valid file size
@@ -1250,8 +1278,17 @@ async function handleUpload(sql, userId, payload = {}) {
 
   const metadataJson = JSON.stringify(metadata);
 
-  const chunkSize = Number.isFinite(document.chunkSize) ? document.chunkSize : DEFAULT_CHUNK_SIZE;
+  // Optimize chunk size for large files to reduce memory usage
+  let chunkSize = Number.isFinite(document.chunkSize) ? document.chunkSize : DEFAULT_CHUNK_SIZE;
+  
+  // For large files, use smaller chunks to reduce memory pressure
+  if (text.length > 1024 * 1024) { // 1MB+
+    chunkSize = Math.min(chunkSize, 400); // Smaller chunks for large files
+  }
+  
+  console.log(`Chunking text (${text.length} chars) with chunk size: ${chunkSize}`);
   const chunks = chunkText(text, chunkSize);
+  console.log(`Created ${chunks.length} chunks`);
   const allowedDocumentTypes = await getDocumentTypeOptions(sql);
   const normalizedDocumentType = normalizeDocumentTypeValue({
     mimeType,
@@ -1304,23 +1341,36 @@ async function handleUpload(sql, userId, payload = {}) {
     console.log(`Document inserted with ID: ${row.id}`);
 
     console.log(`Inserting ${chunks.length} document chunks...`);
-    for (const chunk of chunks) {
-      await sql`
-        INSERT INTO rag_document_chunks (
-          document_id,
-          chunk_index,
-          chunk_text,
-          word_count,
-          character_count
-        ) VALUES (
-          ${row.id},
-          ${chunk.index},
-          ${chunk.text},
-          ${chunk.wordCount},
-          ${chunk.characterCount}
-        )
-      `;
+    
+    // For large numbers of chunks, insert in batches to avoid memory issues
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const batch = chunks.slice(i, i + BATCH_SIZE);
+      
+      // Insert batch using individual inserts but in parallel for better performance
+      const insertPromises = batch.map(chunk => 
+        sql`
+          INSERT INTO rag_document_chunks (
+            document_id,
+            chunk_index,
+            chunk_text,
+            word_count,
+            character_count
+          ) VALUES (
+            ${row.id},
+            ${chunk.index},
+            ${chunk.text},
+            ${chunk.wordCount},
+            ${chunk.characterCount}
+          )
+        `
+      );
+      
+      await Promise.all(insertPromises);
+      
+      console.log(`Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)}`);
     }
+    
     console.log('All document chunks inserted successfully');
   } catch (error) {
     console.error('Database operation failed:', error);

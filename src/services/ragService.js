@@ -892,6 +892,12 @@ class RAGService {
   async uploadDocument(file, metadata = {}, userId) {
     if (!file) throw new Error('File is required');
 
+    // Check file size limit (10MB)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      throw new Error(`File size (${Math.round(file.size / 1024 / 1024)}MB) exceeds maximum allowed size (${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB)`);
+    }
+
     const sanitizedMetadata = this.sanitizeMetadata(metadata);
 
     if (this.isNeonBackend()) {

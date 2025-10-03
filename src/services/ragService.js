@@ -678,8 +678,11 @@ class RAGService {
           let errorDetails;
           let action = null;
           
+          let responseText = null;
           try {
-            const errorData = await response.json();
+            // Clone the response to avoid "body already read" error
+            const responseClone = response.clone();
+            const errorData = await responseClone.json();
             errorMessage = errorData.error || errorData.message || errorMessage;
             action = errorData.action || null;
             
@@ -691,7 +694,7 @@ class RAGService {
             
             // If we can't parse JSON, try to get the raw response text
             try {
-              const responseText = await response.text();
+              responseText = await response.text();
               console.error('Raw error response:', responseText);
               
               // If it looks like an HTML error page, provide a more helpful message
@@ -702,6 +705,7 @@ class RAGService {
               }
             } catch (textError) {
               console.error('Could not read error response text:', textError);
+              errorMessage = `Server returned invalid response (status ${response.status}). This may indicate a backend configuration issue.`;
             }
           }
 
@@ -966,12 +970,31 @@ class RAGService {
         },
       };
 
+      console.log('Document payload file size:', {
+        originalFileSize: file.size,
+        convertedFileSize: convertedFile.size,
+        documentPayloadSize: documentPayload.size,
+        converted: converted
+      });
+
       if (capturedContent && typeof capturedContent.base64 === 'string') {
         documentPayload.content = capturedContent.base64;
         documentPayload.encoding = 'base64';
         if (!Number.isFinite(documentPayload.size) && typeof capturedContent.byteLength === 'number') {
           documentPayload.size = capturedContent.byteLength;
         }
+      }
+
+      // Ensure we always have a valid file size
+      if (!Number.isFinite(documentPayload.size) || documentPayload.size <= 0) {
+        // Fallback to text content length if available
+        if (textContent && textContent.length > 0) {
+          documentPayload.size = textContent.length;
+        } else {
+          // Final fallback to a reasonable default
+          documentPayload.size = 1024;
+        }
+        console.log('Fixed missing file size, using fallback:', documentPayload.size);
       }
 
       if (normalizedTitle) {

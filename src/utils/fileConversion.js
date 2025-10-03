@@ -87,16 +87,34 @@ const isTextFile = (file) => {
 
 const ensureFileInstance = (blob, name, lastModified) => {
   if (typeof File === 'function') {
-    return new File([blob], name, {
+    const file = new File([blob], name, {
       type: 'application/pdf',
       lastModified,
     });
+    
+    // Ensure the size property is properly set
+    if (!Number.isFinite(file.size) && Number.isFinite(blob.size)) {
+      Object.defineProperty(file, 'size', {
+        value: blob.size,
+        writable: false,
+        enumerable: true,
+        configurable: false,
+      });
+    }
+    
+    return file;
   }
 
   const fallback = blob;
   fallback.name = name;
   fallback.lastModified = lastModified;
   fallback.type = 'application/pdf';
+  
+  // Ensure size is set for fallback case
+  if (!Number.isFinite(fallback.size) && Number.isFinite(blob.size)) {
+    fallback.size = blob.size;
+  }
+  
   return fallback;
 };
 

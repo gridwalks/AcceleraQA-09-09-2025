@@ -386,6 +386,12 @@ async function ensureRagSchema(sql) {
       ALTER TABLE rag_documents
         ADD COLUMN IF NOT EXISTS version TEXT
     `;
+
+    // Ensure file_size column can handle NULL values
+    await sql`
+      ALTER TABLE rag_documents
+        ALTER COLUMN file_size DROP NOT NULL
+    `;
   })().catch(error => {
     ensuredSchemaPromise = null;
     throw error;
@@ -1217,9 +1223,30 @@ async function handleUpload(sql, userId, payload = {}) {
     }
   }
 
-  const resolvedFileSize = Number.isFinite(document.size)
-    ? Number(document.size)
-    : storageLocation?.size ?? (contentBuffer ? contentBuffer.length : null);
+  // Ensure we always have a valid file size
+  let resolvedFileSize = 0;
+  
+  console.log('File size resolution:', {
+    documentSize: document.size,
+    storageSize: storageLocation?.size,
+    bufferLength: contentBuffer?.length,
+    textLength: text?.length
+  });
+  
+  if (Number.isFinite(document.size) && document.size >= 0) {
+    resolvedFileSize = Number(document.size);
+  } else if (storageLocation?.size && Number.isFinite(storageLocation.size) && storageLocation.size >= 0) {
+    resolvedFileSize = Number(storageLocation.size);
+  } else if (contentBuffer && Number.isFinite(contentBuffer.length) && contentBuffer.length >= 0) {
+    resolvedFileSize = contentBuffer.length;
+  }
+  
+  // Fallback to text length if we still don't have a valid size
+  if (resolvedFileSize === 0 && text && text.length > 0) {
+    resolvedFileSize = text.length;
+  }
+  
+  console.log('Resolved file size:', resolvedFileSize);
 
   const metadataJson = JSON.stringify(metadata);
 

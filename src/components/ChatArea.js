@@ -9,9 +9,39 @@ import { parseMarkdown } from '../utils/messageUtils';
 const MarkdownText = ({ text }) => {
   const segments = parseMarkdown(text);
   
+  // Group consecutive list items
+  const groupedSegments = [];
+  let currentList = null;
+  
+  segments.forEach((segment) => {
+    if (segment.type === 'numbered-list-item') {
+      if (!currentList || currentList.type !== 'numbered-list') {
+        if (currentList) groupedSegments.push(currentList);
+        currentList = { type: 'numbered-list', items: [] };
+      }
+      currentList.items.push(segment);
+    } else if (segment.type === 'bulleted-list-item') {
+      if (!currentList || currentList.type !== 'bulleted-list') {
+        if (currentList) groupedSegments.push(currentList);
+        currentList = { type: 'bulleted-list', items: [] };
+      }
+      currentList.items.push(segment);
+    } else {
+      if (currentList) {
+        groupedSegments.push(currentList);
+        currentList = null;
+      }
+      groupedSegments.push(segment);
+    }
+  });
+  
+  if (currentList) {
+    groupedSegments.push(currentList);
+  }
+  
   return (
     <>
-      {segments.map((segment, index) => {
+      {groupedSegments.map((segment, index) => {
         switch (segment.type) {
           case 'bold':
             return <strong key={index}>{segment.content}</strong>;
@@ -28,6 +58,26 @@ const MarkdownText = ({ text }) => {
             );
           case 'break':
             return <br key={index} />;
+          case 'numbered-list':
+            return (
+              <ol key={index} className="list-decimal list-inside my-2 space-y-1">
+                {segment.items.map((item, itemIndex) => (
+                  <li key={itemIndex} className="ml-4">
+                    <MarkdownText text={item.content} />
+                  </li>
+                ))}
+              </ol>
+            );
+          case 'bulleted-list':
+            return (
+              <ul key={index} className="list-disc list-inside my-2 space-y-1">
+                {segment.items.map((item, itemIndex) => (
+                  <li key={itemIndex} className="ml-4">
+                    <MarkdownText text={item.content} />
+                  </li>
+                ))}
+              </ul>
+            );
           case 'text':
           default:
             return segment.content;

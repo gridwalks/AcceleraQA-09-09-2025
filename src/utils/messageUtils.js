@@ -1385,6 +1385,27 @@ export function parseMarkdown(text) {
       return;
     }
 
+    // Check if line is a numbered list item (e.g., "1. Item", "2) Item", "3- Item")
+    const numberedListMatch = line.match(/^\s*(\d+)[\.\)\-]\s+(.+)/);
+    if (numberedListMatch) {
+      result.push({ 
+        type: 'numbered-list-item', 
+        content: numberedListMatch[2],
+        number: numberedListMatch[1]
+      });
+      return;
+    }
+
+    // Check if line is a bulleted list item (e.g., "- Item", "* Item", "• Item")
+    const bulletedListMatch = line.match(/^\s*[-*•]\s+(.+)/);
+    if (bulletedListMatch) {
+      result.push({ 
+        type: 'bulleted-list-item', 
+        content: bulletedListMatch[1]
+      });
+      return;
+    }
+
     // Find all markdown matches in the line
     const matches = [];
     

@@ -1376,12 +1376,17 @@ export function parseMarkdown(text) {
   const lines = text.split('\n');
 
   lines.forEach((line, lineIndex) => {
-    if (lineIndex > 0) {
-      result.push({ type: 'break' });
+    // Add line break only if it's not the first line and not an empty line
+    if (lineIndex > 0 && lines[lineIndex - 1].trim() !== '') {
+      // Only add break if current line is not empty and previous line was not empty
+      if (line.trim() !== '') {
+        result.push({ type: 'break' });
+      }
     }
 
+    // Handle empty lines as paragraph breaks
     if (!line.trim()) {
-      result.push({ type: 'text', content: '' });
+      result.push({ type: 'paragraph-break' });
       return;
     }
 

@@ -6,11 +6,11 @@ import { Cloud, Smartphone, Trash2, ExternalLink } from 'lucide-react';
 const MarkdownText = ({ text }) => {
   const segments = parseMarkdown(text);
   
-  // Group consecutive list items
+  // Group consecutive list items and handle paragraph breaks
   const groupedSegments = [];
   let currentList = null;
   
-  segments.forEach((segment) => {
+  segments.forEach((segment, index) => {
     if (segment.type === 'numbered-list-item') {
       if (!currentList || currentList.type !== 'numbered-list') {
         if (currentList) groupedSegments.push(currentList);
@@ -55,9 +55,11 @@ const MarkdownText = ({ text }) => {
             );
           case 'break':
             return <br key={index} />;
+          case 'paragraph-break':
+            return <div key={index} className="h-2" />;
           case 'numbered-list':
             return (
-              <ol key={index} className="list-decimal list-inside my-2 space-y-1">
+              <ol key={index} className="list-decimal list-inside my-1 space-y-0">
                 {segment.items.map((item, itemIndex) => (
                   <li key={itemIndex} className="ml-4">
                     <MarkdownText text={item.content} />
@@ -67,7 +69,7 @@ const MarkdownText = ({ text }) => {
             );
           case 'bulleted-list':
             return (
-              <ul key={index} className="list-disc list-inside my-2 space-y-1">
+              <ul key={index} className="list-disc list-inside my-1 space-y-0">
                 {segment.items.map((item, itemIndex) => (
                   <li key={itemIndex} className="ml-4">
                     <MarkdownText text={item.content} />

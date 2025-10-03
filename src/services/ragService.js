@@ -1807,6 +1807,17 @@ class RAGService {
       }));
 
     const results = searchResult?.results || [];
+    
+    console.log('Neon search results:', {
+      resultsCount: results.length,
+      results: results.map(r => ({
+        filename: r.filename,
+        chunkIndex: r.chunkIndex,
+        hasText: !!r.text,
+        textLength: r.text?.length || 0,
+        hasMetadata: !!r.metadata
+      }))
+    });
 
     if (results.length === 0) {
       return {

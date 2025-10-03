@@ -1319,7 +1319,8 @@ async function handleSearch(sql, userId, payload = {}) {
     limit
   });
 
-  const rows = await sql`
+  // Try strict full-text search first
+  let rows = await sql`
     SELECT c.id,
            c.document_id,
            c.chunk_index,
@@ -1347,11 +1348,71 @@ async function handleSearch(sql, userId, payload = {}) {
      LIMIT ${limit}
   `;
 
+  // If no results, try more permissive ILIKE search
+  if (rows.length === 0) {
+    console.log('No results from full-text search, trying ILIKE search...');
+    const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 1);
+    const likeConditions = queryWords.map(word => `c.chunk_text ILIKE ${'%' + word + '%'}`).join(' AND ');
+    
+    rows = await sql`
+      SELECT c.id,
+             c.document_id,
+             c.chunk_index,
+             c.chunk_text,
+             d.filename,
+             d.metadata,
+             d.title,
+             d.summary,
+             d.version,
+             1.0 AS rank,
+             c.chunk_text AS snippet
+        FROM rag_document_chunks c
+        JOIN rag_documents d ON d.id = c.document_id
+       WHERE d.user_id = ${userId}
+         AND (${sql.unsafe(likeConditions)})
+       ORDER BY c.created_at DESC
+       LIMIT ${limit}
+    `;
+  }
+
+  // If still no results, try even more permissive search with OR conditions
+  if (rows.length === 0) {
+    console.log('No results from ILIKE search, trying OR search...');
+    const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 1);
+    const orConditions = queryWords.map(word => `c.chunk_text ILIKE ${'%' + word + '%'}`).join(' OR ');
+    
+    rows = await sql`
+      SELECT c.id,
+             c.document_id,
+             c.chunk_index,
+             c.chunk_text,
+             d.filename,
+             d.metadata,
+             d.title,
+             d.summary,
+             d.version,
+             0.5 AS rank,
+             c.chunk_text AS snippet
+        FROM rag_document_chunks c
+        JOIN rag_documents d ON d.id = c.document_id
+       WHERE d.user_id = ${userId}
+         AND (${sql.unsafe(orConditions)})
+       ORDER BY c.created_at DESC
+       LIMIT ${limit}
+    `;
+  }
+
   const results = rows.map(buildSearchResult);
   
   console.log('Neon RAG Search completed:', {
     resultsFound: results.length,
-    query: query.substring(0, 50) + '...'
+    query: query.substring(0, 50) + '...',
+    searchStrategy: rows.length > 0 ? (rows[0].rank === 1.0 ? 'ILIKE' : rows[0].rank === 0.5 ? 'OR' : 'full-text') : 'none',
+    sampleResults: results.slice(0, 2).map(r => ({
+      filename: r.filename,
+      chunkIndex: r.chunkIndex,
+      textPreview: r.text?.substring(0, 100) + '...'
+    }))
   });
 
   return {

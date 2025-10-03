@@ -105,10 +105,14 @@ const RAG_EMPTY_RESPONSE_MARKERS = [
   'no results found',
   'no matching documents',
   'no relevant information found',
+  'the provided document excerpts do not contain a direct definition',
+  'the provided document excerpts do not contain',
+  'do not contain enough information',
+  'not addressed in this document',
 ];
 
 const DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE =
-  'Document Search did not find relevant documents. Switched to AI Knowledge.';
+  'Document Search did not find relevant information in the uploaded documents. Switching to AI Knowledge to provide an answer based on general pharmaceutical quality and compliance expertise.';
 
 const isMeaningfulDocumentSearchResponse = (answer, sources) => {
   // If we have sources, consider it meaningful

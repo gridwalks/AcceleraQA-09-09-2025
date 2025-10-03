@@ -1352,54 +1352,37 @@ async function handleSearch(sql, userId, payload = {}) {
   if (rows.length === 0) {
     console.log('No results from full-text search, trying ILIKE search...');
     const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 1);
-    const likeConditions = queryWords.map(word => `c.chunk_text ILIKE ${'%' + word + '%'}`).join(' AND ');
     
-    rows = await sql`
-      SELECT c.id,
-             c.document_id,
-             c.chunk_index,
-             c.chunk_text,
-             d.filename,
-             d.metadata,
-             d.title,
-             d.summary,
-             d.version,
-             1.0 AS rank,
-             c.chunk_text AS snippet
-        FROM rag_document_chunks c
-        JOIN rag_documents d ON d.id = c.document_id
-       WHERE d.user_id = ${userId}
-         AND (${sql.unsafe(likeConditions)})
-       ORDER BY c.created_at DESC
-       LIMIT ${limit}
-    `;
-  }
-
-  // If still no results, try even more permissive search with OR conditions
-  if (rows.length === 0) {
-    console.log('No results from ILIKE search, trying OR search...');
-    const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 1);
-    const orConditions = queryWords.map(word => `c.chunk_text ILIKE ${'%' + word + '%'}`).join(' OR ');
-    
-    rows = await sql`
-      SELECT c.id,
-             c.document_id,
-             c.chunk_index,
-             c.chunk_text,
-             d.filename,
-             d.metadata,
-             d.title,
-             d.summary,
-             d.version,
-             0.5 AS rank,
-             c.chunk_text AS snippet
-        FROM rag_document_chunks c
-        JOIN rag_documents d ON d.id = c.document_id
-       WHERE d.user_id = ${userId}
-         AND (${sql.unsafe(orConditions)})
-       ORDER BY c.created_at DESC
-       LIMIT ${limit}
-    `;
+    // Try simple ILIKE search for each word
+    if (queryWords.length > 0) {
+      for (const word of queryWords) {
+        const wordRows = await sql`
+          SELECT c.id,
+                 c.document_id,
+                 c.chunk_index,
+                 c.chunk_text,
+                 d.filename,
+                 d.metadata,
+                 d.title,
+                 d.summary,
+                 d.version,
+                 1.0 AS rank,
+                 c.chunk_text AS snippet
+            FROM rag_document_chunks c
+            JOIN rag_documents d ON d.id = c.document_id
+           WHERE d.user_id = ${userId}
+             AND c.chunk_text ILIKE ${'%' + word + '%'}
+           ORDER BY c.created_at DESC
+           LIMIT ${limit}
+        `;
+        
+        if (wordRows.length > 0) {
+          rows = wordRows;
+          console.log(`Found ${wordRows.length} results for word: ${word}`);
+          break;
+        }
+      }
+    }
   }
 
   const results = rows.map(buildSearchResult);

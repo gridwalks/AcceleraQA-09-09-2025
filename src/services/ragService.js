@@ -676,14 +676,33 @@ class RAGService {
         if (!response.ok) {
           let errorMessage = `Request failed with status ${response.status}`;
           let errorDetails;
+          let action = null;
+          
           try {
             const errorData = await response.json();
             errorMessage = errorData.error || errorData.message || errorMessage;
+            action = errorData.action || null;
+            
             if (errorData && typeof errorData === 'object' && errorData.details) {
               errorDetails = errorData.details;
             }
           } catch (parseError) {
             console.warn('Failed to parse Neon error response:', parseError);
+            
+            // If we can't parse JSON, try to get the raw response text
+            try {
+              const responseText = await response.text();
+              console.error('Raw error response:', responseText);
+              
+              // If it looks like an HTML error page, provide a more helpful message
+              if (responseText.includes('<html') || responseText.includes('<!DOCTYPE')) {
+                errorMessage = 'The server returned an HTML error page instead of JSON. This usually indicates a configuration issue with the backend service.';
+              } else {
+                errorMessage = `Server error: ${responseText.substring(0, 200)}${responseText.length > 200 ? '...' : ''}`;
+              }
+            } catch (textError) {
+              console.error('Could not read error response text:', textError);
+            }
           }
 
           const requestError = new Error(errorMessage);
@@ -691,6 +710,19 @@ class RAGService {
           if (errorDetails) {
             requestError.details = errorDetails;
           }
+          if (action) {
+            requestError.action = action;
+          }
+          
+          // Add helpful suggestions based on status code
+          if (response.status === 500) {
+            requestError.suggestion = 'This appears to be a server configuration issue. Please check that all required environment variables are set (NEON_DATABASE_URL, Netlify Blob storage configuration).';
+          } else if (response.status === 401) {
+            requestError.suggestion = 'Authentication failed. Please try signing out and signing back in.';
+          } else if (response.status === 413) {
+            requestError.suggestion = 'The document is too large. Please try uploading a smaller file.';
+          }
+          
           throw requestError;
         }
 

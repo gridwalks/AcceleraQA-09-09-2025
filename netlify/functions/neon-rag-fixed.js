@@ -1176,6 +1176,7 @@ async function handleUpload(sql, userId, payload = {}) {
   let storageLocation = null;
   if (contentBuffer && contentBuffer.length > 0) {
     try {
+      console.log(`Uploading document content to blob store (${contentBuffer.length} bytes)...`);
       storageLocation = await uploadDocumentToBlobStore({
         body: contentBuffer,
         contentType: mimeType || 'application/octet-stream',
@@ -1187,20 +1188,33 @@ async function handleUpload(sql, userId, payload = {}) {
           'x-document-filename': filename,
         },
       });
+      console.log('Document content uploaded to blob store successfully');
     } catch (error) {
       logBlobUploadFailure(error);
-      throw buildBlobUploadError(error);
+      console.error('Blob upload failed, continuing without blob storage:', error.message);
+      
+      // Instead of throwing an error, we'll continue without blob storage
+      // This allows the document to still be stored in the database with text content
+      storageLocation = null;
+      
+      // Add a note to metadata about blob storage failure
+      metadata.blobStorageError = {
+        message: error.message,
+        timestamp: new Date().toISOString(),
+      };
     }
 
-    metadata.storage = {
-      provider: storageLocation.provider,
-      store: storageLocation.store,
-      key: storageLocation.key,
-      path: storageLocation.path,
-      url: storageLocation.url,
-      size: storageLocation.size ?? contentBuffer.length,
-      contentType: storageLocation.contentType || mimeType || 'application/octet-stream',
-    };
+    if (storageLocation) {
+      metadata.storage = {
+        provider: storageLocation.provider,
+        store: storageLocation.store,
+        key: storageLocation.key,
+        path: storageLocation.path,
+        url: storageLocation.url,
+        size: storageLocation.size ?? contentBuffer.length,
+        contentType: storageLocation.contentType || mimeType || 'application/octet-stream',
+      };
+    }
   }
 
   const resolvedFileSize = Number.isFinite(document.size)
@@ -1220,6 +1234,8 @@ async function handleUpload(sql, userId, payload = {}) {
 
   let insertedDocument;
   try {
+    console.log(`Inserting document into database: ${filename} (${chunks.length} chunks)`);
+    
     const [row] = await sql`
       INSERT INTO rag_documents (
         user_id,
@@ -1258,7 +1274,9 @@ async function handleUpload(sql, userId, payload = {}) {
     `;
 
     insertedDocument = row;
+    console.log(`Document inserted with ID: ${row.id}`);
 
+    console.log(`Inserting ${chunks.length} document chunks...`);
     for (const chunk of chunks) {
       await sql`
         INSERT INTO rag_document_chunks (
@@ -1276,13 +1294,33 @@ async function handleUpload(sql, userId, payload = {}) {
         )
       `;
     }
+    console.log('All document chunks inserted successfully');
   } catch (error) {
+    console.error('Database operation failed:', error);
+    
+    // Clean up any partially inserted document
     if (insertedDocument?.id) {
-      await sql`
-        DELETE FROM rag_documents WHERE id = ${insertedDocument.id}
-      `;
+      try {
+        await sql`
+          DELETE FROM rag_documents WHERE id = ${insertedDocument.id}
+        `;
+        console.log(`Cleaned up partially inserted document with ID: ${insertedDocument.id}`);
+      } catch (cleanupError) {
+        console.error('Failed to clean up partially inserted document:', cleanupError);
+      }
     }
-    throw error;
+    
+    // Provide more specific error information
+    const dbError = new Error(`Database operation failed: ${error.message}`);
+    dbError.statusCode = 500;
+    dbError.details = {
+      provider: 'neon-postgresql',
+      operation: 'insert_document',
+      documentId: insertedDocument?.id || null,
+      chunkCount: chunks.length,
+      originalError: error.message,
+    };
+    throw dbError;
   }
 
   const responseDocument = normalizeDocumentRow({
@@ -1436,97 +1474,101 @@ async function handleStats(sql, userId) {
 }
 
 export const handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: JSON.stringify({ message: 'ok' }) };
-  }
-
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
-  }
-
-  let requestBody = {};
-  try {
-    requestBody = JSON.parse(event.body || '{}');
-  } catch (error) {
-    return {
-      statusCode: 400,
-      headers,
-      body: JSON.stringify({ error: 'Invalid JSON payload' }),
-    };
-  }
-
-  let userId;
-  try {
-    userId = requireUserId(event);
-  } catch (error) {
-    return {
-      statusCode: error.statusCode || 401,
-      headers,
-      body: JSON.stringify({ error: error.message }),
-    };
-  }
-
-  const action = requestBody.action;
-  if (!action) {
-    return {
-      statusCode: 400,
-      headers,
-      body: JSON.stringify({ error: 'Action is required' }),
-    };
-  }
-
-  let sql;
-  try {
-    sql = await getSqlClient();
-  } catch (error) {
-    const statusCode = error.statusCode || 500;
-    console.error('Failed to initialize Neon client', error);
-    return {
-      statusCode,
-      headers,
-      body: JSON.stringify({ error: error.message || 'Failed to initialize Neon client' }),
-    };
-  }
+  // Ensure we always return JSON responses with proper headers
+  const jsonResponse = (statusCode, body) => ({
+    statusCode,
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json',
+    },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
 
   try {
-    switch (action) {
-      case 'test':
-        return { ...(await handleTest(sql, userId)), headers };
-      case 'list':
-        return { ...(await handleList(sql, userId)), headers };
-      case 'upload':
-        return { ...(await handleUpload(sql, userId, requestBody)), headers };
-      case 'delete':
-        return { ...(await handleDelete(sql, userId, requestBody)), headers };
-      case 'update_metadata':
-        return { ...(await handleUpdateMetadata(sql, userId, requestBody)), headers };
-      case 'search':
-        return { ...(await handleSearch(sql, userId, requestBody)), headers };
-      case 'stats':
-        return { ...(await handleStats(sql, userId)), headers };
-      default:
-        return {
-          statusCode: 400,
-          headers,
-          body: JSON.stringify({ error: `Unknown action: ${action}` }),
-        };
+    if (event.httpMethod === 'OPTIONS') {
+      return jsonResponse(200, { message: 'ok' });
     }
-  } catch (error) {
-    const statusCode = error.statusCode || 500;
-    console.error(`Neon RAG action "${action}" failed`, error);
-    const details = error.details || buildNeonErrorDetails(error);
-    return {
-      statusCode,
-      headers,
-      body: JSON.stringify({
+
+    if (event.httpMethod !== 'POST') {
+      return jsonResponse(405, { error: 'Method not allowed' });
+    }
+
+    let requestBody = {};
+    try {
+      requestBody = JSON.parse(event.body || '{}');
+    } catch (error) {
+      console.error('Failed to parse request body:', error);
+      return jsonResponse(400, { error: 'Invalid JSON payload' });
+    }
+
+    let userId;
+    try {
+      userId = requireUserId(event);
+    } catch (error) {
+      console.error('Failed to get user ID:', error);
+      return jsonResponse(error.statusCode || 401, { error: error.message });
+    }
+
+    const action = requestBody.action;
+    if (!action) {
+      return jsonResponse(400, { error: 'Action is required' });
+    }
+
+    console.log(`Processing ${action} action for user: ${userId?.substring(0, 8)}...`);
+
+    let sql;
+    try {
+      sql = await getSqlClient();
+    } catch (error) {
+      const statusCode = error.statusCode || 500;
+      console.error('Failed to initialize Neon client:', error);
+      const errorDetails = buildNeonErrorDetails(error);
+      return jsonResponse(statusCode, {
+        error: error.message || 'Failed to initialize Neon client',
+        details: errorDetails,
+      });
+    }
+
+    try {
+      switch (action) {
+        case 'test':
+          return { ...(await handleTest(sql, userId)), headers: { ...headers, 'Content-Type': 'application/json' } };
+        case 'list':
+          return { ...(await handleList(sql, userId)), headers: { ...headers, 'Content-Type': 'application/json' } };
+        case 'upload':
+          console.log('Starting document upload process...');
+          const uploadResult = await handleUpload(sql, userId, requestBody);
+          console.log('Document upload completed successfully');
+          return { ...uploadResult, headers: { ...headers, 'Content-Type': 'application/json' } };
+        case 'delete':
+          return { ...(await handleDelete(sql, userId, requestBody)), headers: { ...headers, 'Content-Type': 'application/json' } };
+        case 'update_metadata':
+          return { ...(await handleUpdateMetadata(sql, userId, requestBody)), headers: { ...headers, 'Content-Type': 'application/json' } };
+        case 'search':
+          return { ...(await handleSearch(sql, userId, requestBody)), headers: { ...headers, 'Content-Type': 'application/json' } };
+        case 'stats':
+          return { ...(await handleStats(sql, userId)), headers: { ...headers, 'Content-Type': 'application/json' } };
+        default:
+          return jsonResponse(400, { error: `Unknown action: ${action}` });
+      }
+    } catch (error) {
+      const statusCode = error.statusCode || 500;
+      console.error(`Neon RAG action "${action}" failed:`, error);
+      const details = error.details || buildNeonErrorDetails(error);
+      return jsonResponse(statusCode, {
         error: error.message || 'Unexpected server error',
+        action,
         ...(details ? { details } : {}),
-      }),
-    };
+      });
+    }
+  } catch (unexpectedError) {
+    // Catch any unexpected errors that might not be handled properly
+    console.error('Unexpected error in neon-rag-fixed handler:', unexpectedError);
+    return jsonResponse(500, {
+      error: 'Internal server error',
+      message: unexpectedError.message || 'An unexpected error occurred',
+      timestamp: new Date().toISOString(),
+    });
   }
 };
 

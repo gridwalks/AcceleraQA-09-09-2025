@@ -1411,6 +1411,37 @@ export function parseMarkdown(text) {
       return;
     }
 
+    // Check for inline numbered lists (e.g., "text 1. Item" - should break to new line)
+    const inlineNumberedMatch = line.match(/(.+?)\s+(\d+)[\.\)\-]\s+(.+)/);
+    if (inlineNumberedMatch) {
+      // Add the preceding text
+      if (inlineNumberedMatch[1].trim()) {
+        result.push({ type: 'text', content: inlineNumberedMatch[1].trim() });
+      }
+      // Add the numbered list item
+      result.push({ 
+        type: 'numbered-list-item', 
+        content: inlineNumberedMatch[3],
+        number: inlineNumberedMatch[2]
+      });
+      return;
+    }
+
+    // Check for inline bulleted lists (e.g., "text - Item" - should break to new line)
+    const inlineBulletedMatch = line.match(/(.+?)\s+[-*•]\s+(.+)/);
+    if (inlineBulletedMatch) {
+      // Add the preceding text
+      if (inlineBulletedMatch[1].trim()) {
+        result.push({ type: 'text', content: inlineBulletedMatch[1].trim() });
+      }
+      // Add the bulleted list item
+      result.push({ 
+        type: 'bulleted-list-item', 
+        content: inlineBulletedMatch[2]
+      });
+      return;
+    }
+
     // Find all markdown matches in the line
     const matches = [];
     

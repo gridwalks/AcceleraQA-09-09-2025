@@ -865,11 +865,41 @@ const RAGConfigurationPage = ({ user, onClose }) => {
 
     } catch (error) {
       console.error('Error uploading document:', error);
+      
+      // Create a more user-friendly error message
+      let userMessage = error.message;
+      let detailedError = error.message;
+      
+      // Add suggestion if available
+      if (error.suggestion) {
+        userMessage += `\n\nSuggestion: ${error.suggestion}`;
+      }
+      
+      // Add status code information
+      if (error.statusCode) {
+        userMessage += `\n\nStatus Code: ${error.statusCode}`;
+      }
+      
+      // Add action information if available
+      if (error.action) {
+        userMessage += `\n\nAction: ${error.action}`;
+      }
+      
+      // Add details if available
+      if (error.details && typeof error.details === 'object') {
+        if (error.details.suggestion) {
+          userMessage += `\n\nTechnical Details: ${error.details.suggestion}`;
+        }
+        if (error.details.provider) {
+          userMessage += `\n\nProvider: ${error.details.provider}`;
+        }
+      }
+      
       setUploadStatus({
         type: 'error',
-        message: `Upload failed: ${error.message}`
+        message: `Upload failed: ${detailedError}`
       });
-      setError(`Upload failed: ${error.message}`);
+      setError(`Upload failed: ${userMessage}`);
 
       const storageDetails = extractStorageErrorDetails(error);
       if (storageDetails) {

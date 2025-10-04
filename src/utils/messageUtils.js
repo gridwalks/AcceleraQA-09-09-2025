@@ -1390,6 +1390,45 @@ export function parseMarkdown(text) {
       return;
     }
 
+    // Check for headings (## Heading)
+    const headingMatch = line.match(/^\s*(#{1,6})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      result.push({
+        type: 'heading',
+        content: headingMatch[2],
+        level: level
+      });
+      return;
+    }
+
+    // Check for code blocks (```code```)
+    const codeBlockMatch = line.match(/^\s*```(\w+)?\s*$/);
+    if (codeBlockMatch) {
+      result.push({
+        type: 'code-block-start',
+        language: codeBlockMatch[1] || ''
+      });
+      return;
+    }
+
+    // Check for table rows (| col1 | col2 | col3 |)
+    const tableRowMatch = line.match(/^\s*\|(.+)\|\s*$/);
+    if (tableRowMatch) {
+      const cells = tableRowMatch[1].split('|').map(cell => cell.trim());
+      const isHeader = cells.some(cell => /^[-:\s]+$/.test(cell));
+      
+      if (isHeader) {
+        result.push({ type: 'table-separator' });
+      } else {
+        result.push({
+          type: 'table-row',
+          cells: cells
+        });
+      }
+      return;
+    }
+
     // Check if line is a numbered list item (e.g., "1. Item", "2) Item", "3- Item")
     const numberedListMatch = line.match(/^\s*(\d+)[\.\)\-]\s+(.+)/);
     if (numberedListMatch) {

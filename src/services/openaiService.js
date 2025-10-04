@@ -4,29 +4,6 @@ import { getCurrentModel } from '../config/modelConfig';
 import { recordTokenUsage } from '../utils/tokenUsage';
 import { convertDocxToPdfIfNeeded } from '../utils/fileConversion';
 
-// Keywords that indicate pharmaceutical/regulatory questions
-const PHARMACEUTICAL_KEYWORDS = [
-  '21 cfr', 'fda', 'ema', 'gmp', 'sop', 'capa', 'validation', 'compliance', 'regulatory',
-  'pharmaceutical', 'clinical trial', 'quality assurance', 'inspection', 'audit trail',
-  'electronic signature', 'part 11', 'annex 11', 'ich', 'gcp', 'glp', 'gsp',
-  'sponsor', 'cro', 'vendor', 'site', 'protocol', 'crf', 'sae', 'adverse event',
-  'bioavailability', 'bioequivalence', 'manufacturing', 'batch record', 'deviation',
-  'change control', 'risk assessment', 'documentation', 'traceability', 'alcoa',
-  'data integrity', 'system validation', 'computerized system', 'electronic record'
-];
-
-/**
- * Determines if a question is pharmaceutical/regulatory related
- * @param {string} message - The user's message
- * @returns {boolean} - True if pharmaceutical-related
- */
-function isPharmaceuticalQuestion(message) {
-  if (!message || typeof message !== 'string') return false;
-  
-  const lowerMessage = message.toLowerCase();
-  return PHARMACEUTICAL_KEYWORDS.some(keyword => lowerMessage.includes(keyword));
-}
-
 class OpenAIService {
   constructor() {
     this.apiKey = process.env.REACT_APP_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
@@ -542,15 +519,10 @@ class OpenAIService {
       ? `${message}\n\nDocument Content:\n${documentFile}`
       : message;
 
-    // Choose appropriate system prompt based on question type
-    const systemPrompt = isPharmaceuticalQuestion(message) 
-      ? OPENAI_CONFIG.SYSTEM_PROMPT 
-      : OPENAI_CONFIG.GENERAL_SYSTEM_PROMPT;
-
     const baseInput = [
       {
         role: 'system',
-        content: this.createContentForRole('system', systemPrompt),
+        content: this.createContentForRole('system', OPENAI_CONFIG.SYSTEM_PROMPT),
       },
       ...normalizedHistory.map(item => ({
         role: item.role,

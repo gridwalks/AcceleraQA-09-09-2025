@@ -55,8 +55,6 @@ AcceleraQA, Deep Dive: Assess whether electronic signatures in a vendor-hosted C
 Quick Check Example:
 AcceleraQA, Quick Check: Is audit trail review mandatory under EMA Annex 11?
 `,
-  // General system prompt for non-pharmaceutical questions
-  GENERAL_SYSTEM_PROMPT: `You are a helpful AI assistant. Answer questions accurately and helpfully based on your knowledge. Provide clear, informative responses while being honest about limitations when you don't know something.`,
 };
 // Auth0 Configuration with enhanced validation
 export const AUTH0_CONFIG = {

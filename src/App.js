@@ -115,11 +115,6 @@ const DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE =
   'Document Search did not find relevant information in the uploaded documents. Switching to AI Knowledge to provide an answer based on general pharmaceutical quality and compliance expertise.';
 
 const isMeaningfulDocumentSearchResponse = (answer, sources) => {
-  // If we have sources, consider it meaningful
-  if (Array.isArray(sources) && sources.length > 0) {
-    return true;
-  }
-
   if (typeof answer !== 'string') {
     return false;
   }
@@ -130,8 +125,24 @@ const isMeaningfulDocumentSearchResponse = (answer, sources) => {
     return false;
   }
 
+  // First check if the answer contains markers indicating insufficient information
+  // This takes priority over having sources, as the AI may have found sources but still
+  // indicate that they don't contain the specific information requested
+  const containsInsufficientInfoMarker = RAG_EMPTY_RESPONSE_MARKERS.some((marker) =>
+    normalizedAnswer.startsWith(marker) || normalizedAnswer.includes(marker)
+  );
+
+  if (containsInsufficientInfoMarker) {
+    return false; // Don't consider it meaningful, trigger fallback to AI mode
+  }
+
+  // If we have sources and no insufficient info markers, consider it meaningful
+  if (Array.isArray(sources) && sources.length > 0) {
+    return true;
+  }
+
   // Check if answer contains any meaningful content (more than just empty markers)
-  const hasContent = normalizedAnswer.length > 20; // Lowered from 50 to 20 characters
+  const hasContent = normalizedAnswer.length > 20;
   const isNotJustEmptyMarker = !RAG_EMPTY_RESPONSE_MARKERS.some((marker) =>
     normalizedAnswer.startsWith(marker)
   );

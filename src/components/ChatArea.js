@@ -174,7 +174,7 @@ const MarkdownText = ({ text }) => {
             return (
               <ol key={index} className="list-decimal list-inside my-3 space-y-1">
                 {segment.items.map((item, itemIndex) => (
-                  <li key={itemIndex} className="ml-4">
+                  <li key={itemIndex} className="ml-4" value={item.number}>
                     <MarkdownText text={item.content} />
                   </li>
                 ))}

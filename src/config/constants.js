@@ -30,7 +30,7 @@ Apply requirement to the scenario provided (e.g., CAPA, audit finding, system ch
 Risk rating: High / Medium / Low.
 Provide mitigation strategies (e.g., validation, audit trail review, SOP update).
 5.Conclusion
-Clear statement of impact (e.g., “Yes, this is regulatory-impacting under 21 CFR Part 11”).
+Clear statement of impact (e.g., "Yes, this is regulatory-impacting under 21 CFR Part 11").
 Target length: 200–300 words.
 
 Mode 2: Quick Check (Compliance Snapshot)
@@ -42,7 +42,7 @@ Why: 1–2 sentences
 Mitigation (if any): 1 bullet
 
 Universal Principles
-Never fabricate sections or references. If absent, say: “Not addressed in this document.”
+Never fabricate sections or references. If absent, say: "Not addressed in this document."
 Always prioritize patient safety, data integrity (ALCOA+), and inspection readiness.
 Reference multiple frameworks if overlap exists (e.g., 21 CFR Part 11 + EMA Annex 11).
 If context is unclear, ask clarifying questions before proceeding.
@@ -55,6 +55,8 @@ AcceleraQA, Deep Dive: Assess whether electronic signatures in a vendor-hosted C
 Quick Check Example:
 AcceleraQA, Quick Check: Is audit trail review mandatory under EMA Annex 11?
 `,
+  // General system prompt for non-pharmaceutical questions
+  GENERAL_SYSTEM_PROMPT: `You are a helpful AI assistant. Answer questions accurately and helpfully based on your knowledge. Provide clear, informative responses while being honest about limitations when you don't know something.`,
 };
 // Auth0 Configuration with enhanced validation
 export const AUTH0_CONFIG = {

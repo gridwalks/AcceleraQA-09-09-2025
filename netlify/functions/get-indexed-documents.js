@@ -255,6 +255,13 @@ async function getDocumentStats(sql, userId) {
 }
 
 export const handler = async (event, context) => {
+  console.log('get-indexed-documents handler called:', {
+    method: event.httpMethod,
+    queryParams: event.queryStringParameters,
+    headers: event.headers,
+    hasBody: !!event.body
+  });
+
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -275,19 +282,86 @@ export const handler = async (event, context) => {
   try {
     // Extract user ID
     const userId = extractUserId(event, context);
+    console.log('Extracted user ID:', userId);
+    
     if (!userId) {
       return {
         statusCode: 401,
         headers,
         body: JSON.stringify({ 
           error: 'User authentication required',
-          message: 'No user ID could be extracted from the request'
+          message: 'No user ID could be extracted from the request',
+          debug: {
+            headers: event.headers,
+            context: context.clientContext
+          }
         }),
       };
     }
 
     // Initialize database connection
+    console.log('Initializing database connection...');
     const sql = getDatabaseConnection();
+    console.log('Database connection initialized successfully');
+
+    // Ensure document_index table exists
+    try {
+      console.log('Checking if document_index table exists...');
+      const tableExists = await sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'document_index'
+        ) as exists
+      `;
+      
+      if (!tableExists[0].exists) {
+        console.log('document_index table does not exist, creating it...');
+        await sql`
+          CREATE TABLE IF NOT EXISTS document_index (
+            id SERIAL PRIMARY KEY,
+            document_id VARCHAR(255) UNIQUE NOT NULL,
+            document_number VARCHAR(255) NOT NULL,
+            document_name TEXT NOT NULL,
+            major_version INTEGER NOT NULL,
+            minor_version INTEGER NOT NULL,
+            document_type VARCHAR(255),
+            status VARCHAR(100),
+            summary TEXT,
+            manual_summary TEXT,
+            indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            user_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            original_filename TEXT,
+            file_type TEXT,
+            file_size BIGINT,
+            text_content TEXT,
+            metadata JSONB DEFAULT '{}'::jsonb,
+            title TEXT,
+            version TEXT,
+            uploaded_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `;
+        
+        // Create indexes
+        await sql`CREATE INDEX IF NOT EXISTS idx_document_index_user_id ON document_index(user_id)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_document_index_document_id ON document_index(document_id)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_document_index_document_number ON document_index(document_number)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_document_index_document_type ON document_index(document_type)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_document_index_status ON document_index(status)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_document_index_created_at ON document_index(created_at)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_document_index_text_search ON document_index USING gin(to_tsvector('english', document_name || ' ' || COALESCE(summary, '') || ' ' || COALESCE(manual_summary, '')))`;
+        
+        console.log('document_index table and indexes created successfully');
+      } else {
+        console.log('document_index table exists');
+      }
+    } catch (schemaError) {
+      console.error('Error checking/creating document_index table:', schemaError);
+      // Continue anyway, the error might be in the actual query
+    }
 
     // Parse query parameters or request body
     let options = {};
@@ -322,10 +396,13 @@ export const handler = async (event, context) => {
 
     // Get the requested data
     const action = event.queryStringParameters?.action || 'list';
+    console.log('Processing action:', action, 'with options:', options);
     
     switch (action) {
       case 'list':
+        console.log('Getting indexed documents...');
         const result = await getIndexedDocuments(sql, userId, options);
+        console.log('Retrieved documents:', result.documents.length, 'total:', result.total);
         return {
           statusCode: 200,
           headers,
@@ -333,7 +410,9 @@ export const handler = async (event, context) => {
         };
 
       case 'types':
+        console.log('Getting document types...');
         const documentTypes = await getDocumentTypes(sql, userId);
+        console.log('Retrieved document types:', documentTypes.length);
         return {
           statusCode: 200,
           headers,
@@ -341,7 +420,9 @@ export const handler = async (event, context) => {
         };
 
       case 'stats':
+        console.log('Getting document stats...');
         const stats = await getDocumentStats(sql, userId);
+        console.log('Retrieved stats:', stats);
         return {
           statusCode: 200,
           headers,
@@ -349,6 +430,7 @@ export const handler = async (event, context) => {
         };
 
       default:
+        console.log('Invalid action:', action);
         return {
           statusCode: 400,
           headers,

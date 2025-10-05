@@ -1,6 +1,7 @@
 // src/components/Header.js - UPDATED VERSION with cloud status and clear all button removed
 import React, { memo, useMemo } from 'react';
-import { LogOut, User, Shield, LifeBuoy, FileText, Menu, HelpCircle } from 'lucide-react';
+import { LogOut, User, Shield, LifeBuoy, FileText, Menu, HelpCircle, MessageSquare } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { handleLogout } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 import { getTokenUsageStats } from '../utils/tokenUsage';
@@ -139,6 +140,16 @@ const Header = memo(({
                     Admin
                   </button>
                 )}
+
+                <Link
+                  to="/document-chat"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  aria-label="Open document chat"
+                >
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Document Chat
+                </Link>
 
                 <button
                   onClick={() => {

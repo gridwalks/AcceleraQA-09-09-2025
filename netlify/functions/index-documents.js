@@ -39,29 +39,63 @@ const extractUserId = (event, context) => {
   return null;
 };
 
+// Extract document number from filename
+const extractDocumentNumber = (filename) => {
+  // Look for patterns like DOC-001, SOP-123, PROTOCOL-456, etc.
+  const match = filename.match(/([A-Z]{2,}-\d{3,})/i);
+  return match ? match[1].toUpperCase() : null;
+};
+
+// Extract major version from version string
+const extractMajorVersion = (version) => {
+  if (!version) return 1;
+  const match = version.match(/^(\d+)/);
+  return match ? parseInt(match[1]) : 1;
+};
+
+// Extract minor version from version string
+const extractMinorVersion = (version) => {
+  if (!version) return 0;
+  const match = version.match(/^\d+\.(\d+)/);
+  return match ? parseInt(match[1]) : 0;
+};
+
 // Generate AI summary for document
-async function generateDocumentSummary(text, filename) {
+async function generateDocumentSummary(text, filename, documentType = null) {
   try {
+    const isPharmaDoc = documentType === 'sop' || documentType === 'protocol' || 
+                       documentType === 'regulatory' || documentType === 'compliance' ||
+                       filename.toLowerCase().includes('sop') || 
+                       filename.toLowerCase().includes('protocol') ||
+                       filename.toLowerCase().includes('regulatory') ||
+                       filename.toLowerCase().includes('compliance');
+
+    const systemPrompt = isPharmaDoc 
+      ? 'You are a specialized assistant for pharmaceutical quality, compliance, and clinical trial documents. Create concise, inspection-ready summaries that highlight regulatory requirements, procedures, and key compliance elements.'
+      : 'You are a helpful assistant that creates concise, informative summaries of documents for search and discovery purposes.';
+
     const prompt = `Please provide a concise summary of the following document. Focus on the main topics, key points, and important information that would be useful for someone searching for relevant content.
 
 Document: ${filename}
+${documentType ? `Type: ${documentType}` : ''}
 Content: ${text.substring(0, 4000)}${text.length > 4000 ? '...' : ''}
 
 Please provide a summary that is:
-- 2-3 sentences long
+- 2-4 sentences long
 - Focuses on the main topics and key information
 - Written in a professional tone
 - Suitable for document search and discovery
+${isPharmaDoc ? '- Highlights regulatory requirements, procedures, or compliance elements when present' : ''}
 
 Summary:`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: 'You are a helpful assistant that creates concise, informative summaries of documents for search and discovery purposes.' },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt }
       ],
-      max_tokens: 200,
+      max_tokens: 250,
       temperature: 0.3
     });
 
@@ -88,8 +122,16 @@ async function processDocument(sql, userId, document) {
     throw new Error('Document filename and text are required');
   }
 
-  // Generate AI summary
-  const aiSummary = await generateDocumentSummary(text, filename);
+  // Generate AI summary with document type context
+  const aiSummary = await generateDocumentSummary(text, filename, documentType);
+
+  // Extract document number and version info from filename if not provided
+  const docNumber = metadata.documentNumber || extractDocumentNumber(filename);
+  const majorVersion = metadata.majorVersion || extractMajorVersion(version);
+  const minorVersion = metadata.minorVersion || extractMinorVersion(version);
+
+  // Generate unique document ID
+  const documentId = metadata.documentId || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
 
   // Prepare document metadata
   const documentMetadata = {
@@ -97,33 +139,119 @@ async function processDocument(sql, userId, document) {
     documentType: documentType || 'unknown',
     status: status || 'active',
     indexedAt: new Date().toISOString(),
-    hasAISummary: !!aiSummary
+    hasAISummary: !!aiSummary,
+    documentNumber: docNumber,
+    majorVersion,
+    minorVersion,
+    originalFilename: filename
   };
 
-  // Insert document into database
+  // Insert document into both document_index and rag_documents tables
   const [insertedDoc] = await sql`
+    INSERT INTO document_index (
+      document_id,
+      document_number,
+      document_name,
+      major_version,
+      minor_version,
+      document_type,
+      status,
+      summary,
+      user_id,
+      filename,
+      original_filename,
+      file_type,
+      file_size,
+      text_content,
+      metadata,
+      title,
+      version,
+      uploaded_by
+    ) VALUES (
+      ${documentId},
+      ${docNumber || 'UNKNOWN'},
+      ${title || filename},
+      ${majorVersion},
+      ${minorVersion},
+      ${documentType || 'unknown'},
+      ${status || 'active'},
+      ${aiSummary},
+      ${userId},
+      ${filename},
+      ${filename},
+      ${documentType || 'text'},
+      ${metadata.fileSize || null},
+      ${text},
+      ${JSON.stringify(documentMetadata)},
+      ${title || filename},
+      ${version || '1.0'},
+      ${metadata.uploadedBy || userId}
+    )
+    ON CONFLICT (document_id) DO UPDATE SET
+      document_name = EXCLUDED.document_name,
+      major_version = EXCLUDED.major_version,
+      minor_version = EXCLUDED.minor_version,
+      document_type = EXCLUDED.document_type,
+      status = EXCLUDED.status,
+      summary = EXCLUDED.summary,
+      text_content = EXCLUDED.text_content,
+      metadata = EXCLUDED.metadata,
+      title = EXCLUDED.title,
+      version = EXCLUDED.version,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING id, document_id, document_name, summary, version, document_number, major_version, minor_version, document_type, status, created_at
+  `;
+
+  // Also insert into rag_documents for backward compatibility
+  const [ragDoc] = await sql`
     INSERT INTO rag_documents (
       user_id,
       filename,
       original_filename,
       file_type,
+      file_size,
       text_content,
       metadata,
       title,
       summary,
-      version
+      version,
+      document_number,
+      major_version,
+      minor_version,
+      document_type,
+      status,
+      uploaded_by
     ) VALUES (
       ${userId},
       ${filename},
       ${filename},
       ${documentType || 'text'},
+      ${metadata.fileSize || null},
       ${text},
       ${JSON.stringify(documentMetadata)},
       ${title || filename},
       ${aiSummary},
-      ${version || '1.0'}
+      ${version || '1.0'},
+      ${docNumber},
+      ${majorVersion},
+      ${minorVersion},
+      ${documentType || 'unknown'},
+      ${status || 'active'},
+      ${metadata.uploadedBy || userId}
     )
-    RETURNING id, filename, title, summary, version, created_at
+    ON CONFLICT (filename, user_id) DO UPDATE SET
+      text_content = EXCLUDED.text_content,
+      metadata = EXCLUDED.metadata,
+      title = EXCLUDED.title,
+      summary = EXCLUDED.summary,
+      version = EXCLUDED.version,
+      document_number = EXCLUDED.document_number,
+      major_version = EXCLUDED.major_version,
+      minor_version = EXCLUDED.minor_version,
+      document_type = EXCLUDED.document_type,
+      status = EXCLUDED.status,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING id, filename, title, summary, version, document_number, major_version, minor_version, document_type, status, created_at
   `;
 
   // Chunk the text for search
@@ -141,7 +269,7 @@ async function processDocument(sql, userId, document) {
     });
   }
 
-  // Insert chunks
+  // Insert chunks using the rag_documents ID for backward compatibility
   if (chunks.length > 0) {
     for (const chunk of chunks) {
       await sql`
@@ -152,7 +280,7 @@ async function processDocument(sql, userId, document) {
           word_count,
           character_count
         ) VALUES (
-          ${insertedDoc.id},
+          ${ragDoc.id},
           ${chunk.index},
           ${chunk.text},
           ${chunk.wordCount},
@@ -164,18 +292,39 @@ async function processDocument(sql, userId, document) {
 
   return {
     id: insertedDoc.id,
-    filename: insertedDoc.filename,
-    title: insertedDoc.title,
+    documentId: insertedDoc.document_id,
+    filename: insertedDoc.document_name,
+    title: insertedDoc.document_name,
     summary: insertedDoc.summary,
     version: insertedDoc.version,
+    documentNumber: insertedDoc.document_number,
+    majorVersion: insertedDoc.major_version,
+    minorVersion: insertedDoc.minor_version,
+    documentType: insertedDoc.document_type,
+    status: insertedDoc.status,
     createdAt: insertedDoc.created_at,
-    chunkCount: chunks.length
+    chunkCount: chunks.length,
+    hasAISummary: !!insertedDoc.summary
   };
 }
 
 // Update manual summary for a document
 async function updateManualSummary(sql, userId, documentId, manualSummary) {
+  // Update both document_index and rag_documents tables
   const [updatedDoc] = await sql`
+    UPDATE document_index
+    SET manual_summary = ${manualSummary},
+        updated_at = CURRENT_TIMESTAMP
+    WHERE document_id = ${documentId} AND user_id = ${userId}
+    RETURNING id, document_id, document_name, summary, manual_summary, updated_at
+  `;
+
+  if (!updatedDoc) {
+    throw new Error('Document not found or access denied');
+  }
+
+  // Also update rag_documents for backward compatibility
+  await sql`
     UPDATE rag_documents
     SET metadata = jsonb_set(
       COALESCE(metadata, '{}'::jsonb),
@@ -183,20 +332,17 @@ async function updateManualSummary(sql, userId, documentId, manualSummary) {
       ${JSON.stringify(manualSummary)}
     ),
     updated_at = CURRENT_TIMESTAMP
-    WHERE id = ${documentId} AND user_id = ${userId}
-    RETURNING id, filename, title, summary, metadata, updated_at
+    WHERE filename = (SELECT filename FROM document_index WHERE document_id = ${documentId} AND user_id = ${userId})
+      AND user_id = ${userId}
   `;
-
-  if (!updatedDoc) {
-    throw new Error('Document not found or access denied');
-  }
 
   return {
     id: updatedDoc.id,
-    filename: updatedDoc.filename,
-    title: updatedDoc.title,
+    documentId: updatedDoc.document_id,
+    filename: updatedDoc.document_name,
+    title: updatedDoc.document_name,
     summary: updatedDoc.summary,
-    manualSummary: updatedDoc.metadata?.manualSummary,
+    manualSummary: updatedDoc.manual_summary,
     updatedAt: updatedDoc.updated_at
   };
 }

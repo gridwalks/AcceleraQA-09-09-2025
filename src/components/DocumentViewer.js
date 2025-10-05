@@ -1,483 +1,305 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  X, 
-  Download, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCw, 
-  FileText, 
-  AlertCircle,
-  Loader2,
-  ChevronLeft,
-  ChevronRight,
-  Maximize2,
-  Minimize2
-} from 'lucide-react';
+import { X, Download, FileText, Eye, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 
-// PDF Viewer component
-const PDFViewer = ({ document, onClose }) => {
-  const [pdfData, setPdfData] = useState(null);
-  const [loading, setLoading] = useState(true);
+const DocumentViewer = ({ 
+  document, 
+  isOpen, 
+  onClose, 
+  onDownload 
+}) => {
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(1.0);
-  const [rotation, setRotation] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const canvasRef = useRef(null);
-  const pdfRef = useRef(null);
+  const [documentContent, setDocumentContent] = useState(null);
+  const [viewMode, setViewMode] = useState('text'); // 'text', 'pdf', 'summary'
+  const iframeRef = useRef(null);
 
   useEffect(() => {
-    loadPDF();
-  }, [document]);
+    if (isOpen && document) {
+      loadDocumentContent();
+    }
+  }, [isOpen, document]);
 
-  const loadPDF = async () => {
-    setLoading(true);
+  const loadDocumentContent = async () => {
+    if (!document) return;
+
+    setIsLoading(true);
     setError(null);
-    
+
     try {
-      // Try to load PDF.js dynamically
-      const pdfjsLib = await import('pdfjs-dist');
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-
-      let pdfUrl;
-      if (document.blobUrl) {
-        pdfUrl = document.blobUrl;
-      } else if (document.url) {
-        pdfUrl = document.url;
-      } else {
-        // Fetch document content
-        const response = await fetch('/.netlify/functions/rag-documents', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-            'x-user-id': localStorage.getItem('user_id')
-          },
-          body: JSON.stringify({
-            action: 'download',
-            documentId: document.id
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to load document');
-        }
-
-        const blob = await response.blob();
-        pdfUrl = URL.createObjectURL(blob);
-      }
-
-      const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
-      pdfRef.current = pdf;
-      setTotalPages(pdf.numPages);
-      setPdfData(pdf);
-      setCurrentPage(1);
+      // For now, we'll use the text content directly
+      // In a real implementation, you might fetch the actual file
+      setDocumentContent({
+        text: document.textContent || document.summary || 'No content available',
+        filename: document.filename || document.documentName,
+        fileType: document.fileType || 'text',
+        size: document.fileSize
+      });
     } catch (err) {
-      console.error('Error loading PDF:', err);
-      setError(err.message);
+      console.error('Error loading document:', err);
+      setError('Failed to load document content');
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const renderPage = async (pageNum) => {
-    if (!pdfRef.current || !canvasRef.current) return;
-
-    try {
-      const page = await pdfRef.current.getPage(pageNum);
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-
-      const viewport = page.getViewport({ scale, rotation });
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport
-      };
-
-      await page.render(renderContext).promise;
-    } catch (err) {
-      console.error('Error rendering page:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (pdfData && currentPage) {
-      renderPage(currentPage);
-    }
-  }, [pdfData, currentPage, scale, rotation]);
-
-  const handleZoomIn = () => {
-    setScale(prev => Math.min(prev + 0.25, 3.0));
-  };
-
-  const handleZoomOut = () => {
-    setScale(prev => Math.max(prev - 0.25, 0.5));
-  };
-
-  const handleRotate = () => {
-    setRotation(prev => (prev + 90) % 360);
-  };
-
-  const handlePreviousPage = () => {
-    setCurrentPage(prev => Math.max(prev - 1, 1));
-  };
-
-  const handleNextPage = () => {
-    setCurrentPage(prev => Math.min(prev + 1, totalPages));
-  };
-
-  const handlePageInput = (e) => {
-    const page = parseInt(e.target.value);
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
+      setIsLoading(false);
     }
   };
 
   const handleDownload = async () => {
+    if (!document) return;
+
     try {
-      const response = await fetch('/.netlify/functions/rag-documents', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-          'x-user-id': localStorage.getItem('user_id')
-        },
-        body: JSON.stringify({
-          action: 'download',
-          documentId: document.id
-        })
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = document.filename || 'document.pdf';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }
-    } catch (err) {
-      console.error('Error downloading document:', err);
-    }
-  };
-
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex items-center space-x-2 text-gray-600">
-          <Loader2 className="h-6 w-6 animate-spin" />
-          <span>Loading PDF...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading PDF</h3>
-          <p className="text-gray-600">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={`${isFullscreen ? 'fixed inset-0 z-50' : ''} bg-white`}>
-      {/* Toolbar */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-        <div className="flex items-center space-x-4">
-          <h3 className="text-lg font-medium text-gray-900 truncate">
-            {document.title || document.filename}
-          </h3>
-          <div className="text-sm text-gray-500">
-            Page {currentPage} of {totalPages}
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          {/* Navigation */}
-          <button
-            onClick={handlePreviousPage}
-            disabled={currentPage <= 1}
-            className="p-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          
-          <input
-            type="number"
-            min="1"
-            max={totalPages}
-            value={currentPage}
-            onChange={handlePageInput}
-            className="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center"
-          />
-          
-          <button
-            onClick={handleNextPage}
-            disabled={currentPage >= totalPages}
-            className="p-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          
-          <div className="w-px h-6 bg-gray-300 mx-2" />
-          
-          {/* Zoom Controls */}
-          <button
-            onClick={handleZoomOut}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          
-          <span className="text-sm text-gray-600 min-w-12 text-center">
-            {Math.round(scale * 100)}%
-          </span>
-          
-          <button
-            onClick={handleZoomIn}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          
-          <div className="w-px h-6 bg-gray-300 mx-2" />
-          
-          {/* Rotate */}
-          <button
-            onClick={handleRotate}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <RotateCw className="h-4 w-4" />
-          </button>
-          
-          <div className="w-px h-6 bg-gray-300 mx-2" />
-          
-          {/* Fullscreen */}
-          <button
-            onClick={toggleFullscreen}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
-          
-          {/* Download */}
-          <button
-            onClick={handleDownload}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <Download className="h-4 w-4" />
-          </button>
-          
-          {/* Close */}
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      setIsLoading(true);
       
-      {/* PDF Canvas */}
-      <div className="flex-1 overflow-auto bg-gray-100 p-4">
-        <div className="flex justify-center">
-          <canvas
-            ref={canvasRef}
-            className="shadow-lg border border-gray-300"
-          />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Text Viewer component
-const TextViewer = ({ document, onClose }) => {
-  const [content, setContent] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    loadContent();
-  }, [document]);
-
-  const loadContent = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const response = await fetch('/.netlify/functions/rag-documents', {
-        method: 'POST',
+      const response = await fetch(`/.netlify/functions/download-file?documentId=${document.documentId}&format=pdf`, {
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
           'x-user-id': localStorage.getItem('user_id')
-        },
-        body: JSON.stringify({
-          action: 'download',
-          documentId: document.id
-        })
+        }
       });
 
       if (!response.ok) {
-        throw new Error('Failed to load document content');
+        throw new Error('Download failed');
       }
 
-      const text = await response.text();
-      setContent(text);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${document.filename || document.documentName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      if (onDownload) {
+        onDownload(document);
+      }
     } catch (err) {
-      console.error('Error loading text content:', err);
-      setError(err.message);
+      console.error('Download error:', err);
+      setError('Failed to download document');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const handleDownload = async () => {
-    try {
-      const response = await fetch('/.netlify/functions/rag-documents', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-          'x-user-id': localStorage.getItem('user_id')
-        },
-        body: JSON.stringify({
-          action: 'download',
-          documentId: document.id
-        })
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = document.filename || 'document.txt';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }
-    } catch (err) {
-      console.error('Error downloading document:', err);
-    }
+  const formatFileSize = (bytes) => {
+    if (!bytes) return 'Unknown size';
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex items-center space-x-2 text-gray-600">
-          <Loader2 className="h-6 w-6 animate-spin" />
-          <span>Loading document...</span>
-        </div>
-      </div>
-    );
-  }
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Unknown date';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Document</h3>
-          <p className="text-gray-600">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-        <h3 className="text-lg font-medium text-gray-900 truncate">
-          {document.title || document.filename}
-        </h3>
-        
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={handleDownload}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <Download className="h-4 w-4" />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-      
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
-        <pre className="whitespace-pre-wrap text-sm text-gray-900 font-mono leading-relaxed">
-          {content}
-        </pre>
-      </div>
-    </div>
-  );
-};
-
-// Main Document Viewer component
-const DocumentViewer = ({ document, onClose, isOpen = false }) => {
   if (!isOpen || !document) {
     return null;
   }
 
-  const getFileType = (filename) => {
-    if (!filename) return 'unknown';
-    const extension = filename.split('.').pop().toLowerCase();
-    return extension;
-  };
-
-  const fileType = getFileType(document.filename);
-  const isPDF = fileType === 'pdf';
-  const isTextFile = ['txt', 'md', 'csv', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'java', 'cpp', 'c', 'h'].includes(fileType);
-
   return (
-    <div className="fixed inset-0 z-50 bg-white">
-      {isPDF ? (
-        <PDFViewer document={document} onClose={onClose} />
-      ) : isTextFile ? (
-        <TextViewer document={document} onClose={onClose} />
-      ) : (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center">
-            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Unsupported File Type</h3>
-            <p className="text-gray-600 mb-4">
-              This file type ({fileType}) is not supported for viewing.
-            </p>
-            <div className="flex items-center justify-center space-x-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-screen items-center justify-center p-4">
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+          onClick={onClose}
+        />
+        
+        {/* Modal */}
+        <div className="relative w-full max-w-6xl bg-white rounded-lg shadow-xl">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div className="flex items-center space-x-3">
+              <FileText className="h-6 w-6 text-blue-600" />
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {document.documentName || document.title || document.filename}
+                </h2>
+                <div className="flex items-center space-x-4 text-sm text-gray-500 mt-1">
+                  {document.documentNumber && (
+                    <span>Document: {document.documentNumber}</span>
+                  )}
+                  {document.majorVersion && document.minorVersion && (
+                    <span>Version: {document.majorVersion}.{document.minorVersion}</span>
+                  )}
+                  {document.documentType && (
+                    <span className="capitalize">{document.documentType}</span>
+                  )}
+                  {document.status && (
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      document.status === 'active' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {document.status}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              {/* View Mode Toggle */}
+              <div className="flex rounded-lg border border-gray-300">
+                <button
+                  onClick={() => setViewMode('text')}
+                  className={`px-3 py-1 text-sm rounded-l-lg ${
+                    viewMode === 'text'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Text
+                </button>
+                <button
+                  onClick={() => setViewMode('summary')}
+                  className={`px-3 py-1 text-sm border-l border-r border-gray-300 ${
+                    viewMode === 'summary'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Summary
+                </button>
+                <button
+                  onClick={() => setViewMode('pdf')}
+                  className={`px-3 py-1 text-sm rounded-r-lg ${
+                    viewMode === 'pdf'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  PDF
+                </button>
+              </div>
+              
+              {/* Download Button */}
+              <button
+                onClick={handleDownload}
+                disabled={isLoading}
+                className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                <span className="ml-2">Download</span>
+              </button>
+              
+              {/* Close Button */}
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                className="inline-flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
               >
-                Close
+                <X className="h-5 w-5" />
               </button>
             </div>
           </div>
+
+          {/* Content */}
+          <div className="p-6">
+            {error && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center">
+                  <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
+                  <span className="text-red-800">{error}</span>
+                </div>
+              </div>
+            )}
+
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <span className="ml-2 text-gray-600">Loading document...</span>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Document Metadata */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">File Size</label>
+                    <p className="text-sm text-gray-900">{formatFileSize(document.fileSize)}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Created</label>
+                    <p className="text-sm text-gray-900">{formatDate(document.createdAt)}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Updated</label>
+                    <p className="text-sm text-gray-900">{formatDate(document.updatedAt)}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">File Type</label>
+                    <p className="text-sm text-gray-900 capitalize">{document.fileType || 'Unknown'}</p>
+                  </div>
+                </div>
+
+                {/* Document Content */}
+                <div className="border border-gray-200 rounded-lg">
+                  {viewMode === 'text' && (
+                    <div className="p-6">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">Document Content</h3>
+                      <div className="prose max-w-none">
+                        <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg overflow-auto max-h-96">
+                          {documentContent?.text || 'No content available'}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {viewMode === 'summary' && (
+                    <div className="p-6">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">Document Summary</h3>
+                      <div className="space-y-4">
+                        {document.manualSummary && (
+                          <div>
+                            <h4 className="text-sm font-medium text-blue-600 mb-2">Manual Summary</h4>
+                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                              <p className="text-sm text-gray-700">{document.manualSummary}</p>
+                            </div>
+                          </div>
+                        )}
+                        {document.summary && (
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-600 mb-2">AI Summary</h4>
+                            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                              <p className="text-sm text-gray-700">{document.summary}</p>
+                            </div>
+                          </div>
+                        )}
+                        {!document.manualSummary && !document.summary && (
+                          <div className="text-center py-8 text-gray-500">
+                            <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                            <p>No summary available for this document</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {viewMode === 'pdf' && (
+                    <div className="p-6">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">PDF View</h3>
+                      <div className="text-center py-8 text-gray-500">
+                        <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                        <p>PDF view not available in this demo</p>
+                        <p className="text-sm">Click Download to get the PDF version</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

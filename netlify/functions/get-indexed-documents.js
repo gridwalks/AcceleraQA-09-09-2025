@@ -48,24 +48,35 @@ async function getIndexedDocuments(sql, userId, options = {}) {
 
   let query = `
     SELECT d.id,
+           d.document_id,
+           d.document_number,
+           d.document_name,
+           d.major_version,
+           d.minor_version,
+           d.document_type,
+           d.status,
+           d.summary,
+           d.manual_summary,
            d.filename,
            d.original_filename,
            d.file_type,
            d.file_size,
            d.metadata,
            d.title,
-           d.summary,
            d.version,
            d.created_at,
            d.updated_at,
-           COUNT(c.id)::int AS chunk_count,
            CASE 
-             WHEN d.metadata->>'manualSummary' IS NOT NULL 
-             THEN d.metadata->>'manualSummary'
+             WHEN d.manual_summary IS NOT NULL 
+             THEN d.manual_summary
              ELSE d.summary
-           END AS display_summary
-    FROM rag_documents d
-    LEFT JOIN rag_document_chunks c ON c.document_id = d.id
+           END AS display_summary,
+           CASE 
+             WHEN d.manual_summary IS NOT NULL 
+             THEN true
+             ELSE false
+           END AS has_manual_summary
+    FROM document_index d
     WHERE d.user_id = $1
   `;
 
@@ -75,10 +86,11 @@ async function getIndexedDocuments(sql, userId, options = {}) {
   // Add search filter
   if (search.trim()) {
     query += ` AND (
-      d.title ILIKE $${paramIndex} OR 
+      d.document_name ILIKE $${paramIndex} OR 
       d.filename ILIKE $${paramIndex} OR 
+      d.document_number ILIKE $${paramIndex} OR
       d.summary ILIKE $${paramIndex} OR
-      d.metadata->>'manualSummary' ILIKE $${paramIndex}
+      d.manual_summary ILIKE $${paramIndex}
     )`;
     params.push(`%${search.trim()}%`);
     paramIndex++;
@@ -86,14 +98,14 @@ async function getIndexedDocuments(sql, userId, options = {}) {
 
   // Add document type filter
   if (documentType.trim()) {
-    query += ` AND d.file_type = $${paramIndex}`;
+    query += ` AND d.document_type = $${paramIndex}`;
     params.push(documentType.trim());
     paramIndex++;
   }
 
   // Add status filter
   if (status.trim()) {
-    query += ` AND d.metadata->>'status' = $${paramIndex}`;
+    query += ` AND d.status = $${paramIndex}`;
     params.push(status.trim());
     paramIndex++;
   }
@@ -101,17 +113,14 @@ async function getIndexedDocuments(sql, userId, options = {}) {
   // Add manual summary filter
   if (hasManualSummary !== null) {
     if (hasManualSummary) {
-      query += ` AND d.metadata->>'manualSummary' IS NOT NULL`;
+      query += ` AND d.manual_summary IS NOT NULL`;
     } else {
-      query += ` AND d.metadata->>'manualSummary' IS NULL`;
+      query += ` AND d.manual_summary IS NULL`;
     }
   }
 
-  // Group by document
-  query += ` GROUP BY d.id`;
-
   // Add sorting
-  const validSortFields = ['created_at', 'updated_at', 'title', 'filename'];
+  const validSortFields = ['created_at', 'updated_at', 'document_name', 'filename', 'document_number', 'major_version'];
   const sortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
   const sortDirection = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   query += ` ORDER BY d.${sortField} ${sortDirection}`;
@@ -125,7 +134,7 @@ async function getIndexedDocuments(sql, userId, options = {}) {
   // Get total count for pagination
   let countQuery = `
     SELECT COUNT(*) as total
-    FROM rag_documents d
+    FROM document_index d
     WHERE d.user_id = $1
   `;
   const countParams = [userId];
@@ -133,32 +142,33 @@ async function getIndexedDocuments(sql, userId, options = {}) {
 
   if (search.trim()) {
     countQuery += ` AND (
-      d.title ILIKE $${countParamIndex} OR 
+      d.document_name ILIKE $${countParamIndex} OR 
       d.filename ILIKE $${countParamIndex} OR 
+      d.document_number ILIKE $${countParamIndex} OR
       d.summary ILIKE $${countParamIndex} OR
-      d.metadata->>'manualSummary' ILIKE $${countParamIndex}
+      d.manual_summary ILIKE $${countParamIndex}
     )`;
     countParams.push(`%${search.trim()}%`);
     countParamIndex++;
   }
 
   if (documentType.trim()) {
-    countQuery += ` AND d.file_type = $${countParamIndex}`;
+    countQuery += ` AND d.document_type = $${countParamIndex}`;
     countParams.push(documentType.trim());
     countParamIndex++;
   }
 
   if (status.trim()) {
-    countQuery += ` AND d.metadata->>'status' = $${countParamIndex}`;
+    countQuery += ` AND d.status = $${countParamIndex}`;
     countParams.push(status.trim());
     countParamIndex++;
   }
 
   if (hasManualSummary !== null) {
     if (hasManualSummary) {
-      countQuery += ` AND d.metadata->>'manualSummary' IS NOT NULL`;
+      countQuery += ` AND d.manual_summary IS NOT NULL`;
     } else {
-      countQuery += ` AND d.metadata->>'manualSummary' IS NULL`;
+      countQuery += ` AND d.manual_summary IS NULL`;
     }
   }
 
@@ -168,20 +178,26 @@ async function getIndexedDocuments(sql, userId, options = {}) {
   return {
     documents: rows.map(row => ({
       id: row.id,
+      documentId: row.document_id,
+      documentNumber: row.document_number,
+      documentName: row.document_name,
+      majorVersion: row.major_version,
+      minorVersion: row.minor_version,
+      documentType: row.document_type,
+      status: row.status,
       filename: row.filename,
       originalFilename: row.original_filename,
       fileType: row.file_type,
       fileSize: row.file_size,
-      title: row.title,
+      title: row.title || row.document_name,
       summary: row.summary,
       displaySummary: row.display_summary,
-      manualSummary: row.metadata?.manualSummary || row.metadata?.manual_summary,
+      manualSummary: row.manual_summary,
       version: row.version,
       metadata: row.metadata,
-      chunkCount: row.chunk_count,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      hasManualSummary: !!(row.metadata?.manualSummary || row.metadata?.manual_summary)
+      hasManualSummary: row.has_manual_summary
     })),
     total,
     limit,
@@ -193,15 +209,15 @@ async function getIndexedDocuments(sql, userId, options = {}) {
 // Get document types for filter dropdown
 async function getDocumentTypes(sql, userId) {
   const rows = await sql`
-    SELECT DISTINCT file_type, COUNT(*) as count
-    FROM rag_documents
-    WHERE user_id = ${userId} AND file_type IS NOT NULL
-    GROUP BY file_type
-    ORDER BY count DESC, file_type ASC
+    SELECT DISTINCT document_type, COUNT(*) as count
+    FROM document_index
+    WHERE user_id = ${userId} AND document_type IS NOT NULL
+    GROUP BY document_type
+    ORDER BY count DESC, document_type ASC
   `;
 
   return rows.map(row => ({
-    type: row.file_type,
+    type: row.document_type,
     count: parseInt(row.count)
   }));
 }
@@ -211,12 +227,12 @@ async function getDocumentStats(sql, userId) {
   const [stats] = await sql`
     SELECT 
       COUNT(*) as total_documents,
-      COUNT(*) FILTER (WHERE metadata->>'manualSummary' IS NOT NULL) as documents_with_manual_summary,
-      COUNT(*) FILTER (WHERE metadata->>'manualSummary' IS NULL AND summary IS NOT NULL) as documents_with_ai_summary,
-      COUNT(*) FILTER (WHERE metadata->>'manualSummary' IS NULL AND summary IS NULL) as documents_without_summary,
+      COUNT(*) FILTER (WHERE manual_summary IS NOT NULL) as documents_with_manual_summary,
+      COUNT(*) FILTER (WHERE manual_summary IS NULL AND summary IS NOT NULL) as documents_with_ai_summary,
+      COUNT(*) FILTER (WHERE manual_summary IS NULL AND summary IS NULL) as documents_without_summary,
       SUM(file_size) as total_size,
       AVG(file_size) as avg_size
-    FROM rag_documents
+    FROM document_index
     WHERE user_id = ${userId}
   `;
 

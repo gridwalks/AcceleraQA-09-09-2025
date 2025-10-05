@@ -37,9 +37,9 @@ const extractUserId = (event, context) => {
 async function updateManualSummary(sql, userId, documentId, manualSummary) {
   // First, verify the document exists and belongs to the user
   const [existingDoc] = await sql`
-    SELECT id, filename, title, metadata
-    FROM rag_documents
-    WHERE id = ${documentId} AND user_id = ${userId}
+    SELECT id, document_id, document_name, filename, title, summary, manual_summary
+    FROM document_index
+    WHERE document_id = ${documentId} AND user_id = ${userId}
   `;
 
   if (!existingDoc) {
@@ -48,6 +48,15 @@ async function updateManualSummary(sql, userId, documentId, manualSummary) {
 
   // Update the document with the new manual summary
   const [updatedDoc] = await sql`
+    UPDATE document_index
+    SET manual_summary = ${manualSummary},
+        updated_at = CURRENT_TIMESTAMP
+    WHERE document_id = ${documentId} AND user_id = ${userId}
+    RETURNING id, document_id, document_name, filename, title, summary, manual_summary, updated_at
+  `;
+
+  // Also update rag_documents for backward compatibility
+  await sql`
     UPDATE rag_documents
     SET metadata = jsonb_set(
       COALESCE(metadata, '{}'::jsonb),
@@ -55,16 +64,16 @@ async function updateManualSummary(sql, userId, documentId, manualSummary) {
       ${JSON.stringify(manualSummary)}
     ),
     updated_at = CURRENT_TIMESTAMP
-    WHERE id = ${documentId} AND user_id = ${userId}
-    RETURNING id, filename, title, summary, metadata, updated_at
+    WHERE filename = ${existingDoc.filename} AND user_id = ${userId}
   `;
 
   return {
     id: updatedDoc.id,
+    documentId: updatedDoc.document_id,
     filename: updatedDoc.filename,
-    title: updatedDoc.title,
+    title: updatedDoc.title || updatedDoc.document_name,
     summary: updatedDoc.summary,
-    manualSummary: updatedDoc.metadata?.manualSummary,
+    manualSummary: updatedDoc.manual_summary,
     updatedAt: updatedDoc.updated_at
   };
 }
@@ -72,9 +81,9 @@ async function updateManualSummary(sql, userId, documentId, manualSummary) {
 // Get manual summary for a document
 async function getManualSummary(sql, userId, documentId) {
   const [doc] = await sql`
-    SELECT id, filename, title, summary, metadata
-    FROM rag_documents
-    WHERE id = ${documentId} AND user_id = ${userId}
+    SELECT id, document_id, document_name, filename, title, summary, manual_summary
+    FROM document_index
+    WHERE document_id = ${documentId} AND user_id = ${userId}
   `;
 
   if (!doc) {
@@ -83,10 +92,11 @@ async function getManualSummary(sql, userId, documentId) {
 
   return {
     id: doc.id,
+    documentId: doc.document_id,
     filename: doc.filename,
-    title: doc.title,
+    title: doc.title || doc.document_name,
     summary: doc.summary,
-    manualSummary: doc.metadata?.manualSummary || doc.metadata?.manual_summary
+    manualSummary: doc.manual_summary
   };
 }
 
@@ -94,28 +104,37 @@ async function getManualSummary(sql, userId, documentId) {
 async function deleteManualSummary(sql, userId, documentId) {
   // First, verify the document exists and belongs to the user
   const [existingDoc] = await sql`
-    SELECT id, filename, title, metadata
-    FROM rag_documents
-    WHERE id = ${documentId} AND user_id = ${userId}
+    SELECT id, document_id, document_name, filename, title, summary, manual_summary
+    FROM document_index
+    WHERE document_id = ${documentId} AND user_id = ${userId}
   `;
 
   if (!existingDoc) {
     throw new Error('Document not found or access denied');
   }
 
-  // Remove the manual summary from metadata
+  // Remove the manual summary
   const [updatedDoc] = await sql`
+    UPDATE document_index
+    SET manual_summary = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE document_id = ${documentId} AND user_id = ${userId}
+    RETURNING id, document_id, document_name, filename, title, summary, manual_summary, updated_at
+  `;
+
+  // Also update rag_documents for backward compatibility
+  await sql`
     UPDATE rag_documents
     SET metadata = metadata - 'manualSummary' - 'manual_summary',
         updated_at = CURRENT_TIMESTAMP
-    WHERE id = ${documentId} AND user_id = ${userId}
-    RETURNING id, filename, title, summary, metadata, updated_at
+    WHERE filename = ${existingDoc.filename} AND user_id = ${userId}
   `;
 
   return {
     id: updatedDoc.id,
+    documentId: updatedDoc.document_id,
     filename: updatedDoc.filename,
-    title: updatedDoc.title,
+    title: updatedDoc.title || updatedDoc.document_name,
     summary: updatedDoc.summary,
     manualSummary: null,
     updatedAt: updatedDoc.updated_at

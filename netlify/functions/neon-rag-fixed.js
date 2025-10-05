@@ -324,6 +324,36 @@ async function ensureRagSchema(sql) {
   }
 
   ensuredSchemaPromise = (async () => {
+    // Enhanced document index table matching Veeva requirements
+    await sql`
+      CREATE TABLE IF NOT EXISTS document_index (
+        id SERIAL PRIMARY KEY,
+        document_id VARCHAR(255) UNIQUE NOT NULL,
+        document_number VARCHAR(255) NOT NULL,
+        document_name TEXT NOT NULL,
+        major_version INTEGER NOT NULL,
+        minor_version INTEGER NOT NULL,
+        document_type VARCHAR(255),
+        status VARCHAR(100),
+        summary TEXT,
+        manual_summary TEXT,
+        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        user_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        original_filename TEXT,
+        file_type TEXT,
+        file_size BIGINT,
+        text_content TEXT,
+        metadata JSONB DEFAULT '{}'::jsonb,
+        title TEXT,
+        version TEXT,
+        uploaded_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    // Keep existing rag_documents table for backward compatibility
     await sql`
       CREATE TABLE IF NOT EXISTS rag_documents (
         id BIGSERIAL PRIMARY KEY,
@@ -336,7 +366,14 @@ async function ensureRagSchema(sql) {
         metadata JSONB DEFAULT '{}'::jsonb,
         title TEXT,
         summary TEXT,
+        manual_summary TEXT,
         version TEXT,
+        document_number TEXT,
+        major_version INTEGER DEFAULT 1,
+        minor_version INTEGER DEFAULT 0,
+        document_type TEXT,
+        status TEXT DEFAULT 'active',
+        uploaded_by TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
@@ -354,9 +391,81 @@ async function ensureRagSchema(sql) {
       )
     `;
 
+    // Create conversation history table for chat context
+    await sql`
+      CREATE TABLE IF NOT EXISTS rag_conversations (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        message_role TEXT NOT NULL CHECK (message_role IN ('user', 'assistant', 'system')),
+        message_content TEXT NOT NULL,
+        document_ids TEXT[],
+        sources JSONB DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    // Create indexes for document_index table
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_document_index_user_id
+        ON document_index(user_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_document_index_document_id
+        ON document_index(document_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_document_index_document_number
+        ON document_index(document_number)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_document_index_document_type
+        ON document_index(document_type)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_document_index_status
+        ON document_index(status)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_document_index_created_at
+        ON document_index(created_at)
+    `;
+
+    // Create full-text search index for document content
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_document_index_text_search
+        ON document_index USING gin(to_tsvector('english', document_name || ' ' || COALESCE(summary, '') || ' ' || COALESCE(manual_summary, '')))
+    `;
+
+    // Create indexes for existing rag_documents table
     await sql`
       CREATE INDEX IF NOT EXISTS idx_rag_documents_user_id
         ON rag_documents(user_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_documents_status
+        ON rag_documents(status)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_documents_document_type
+        ON rag_documents(document_type)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_documents_title_fts
+        ON rag_documents USING GIN (to_tsvector('english', title))
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_documents_summary_fts
+        ON rag_documents USING GIN (to_tsvector('english', COALESCE(manual_summary, summary, '')))
     `;
 
     await sql`
@@ -375,6 +484,22 @@ async function ensureRagSchema(sql) {
     `;
 
     await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_conversations_user_id
+        ON rag_conversations(user_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_conversations_conversation_id
+        ON rag_conversations(conversation_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_rag_conversations_created_at
+        ON rag_conversations(created_at)
+    `;
+
+    // Add new columns if they don't exist
+    await sql`
       ALTER TABLE rag_documents
         ADD COLUMN IF NOT EXISTS title TEXT
     `;
@@ -386,7 +511,42 @@ async function ensureRagSchema(sql) {
 
     await sql`
       ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS manual_summary TEXT
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
         ADD COLUMN IF NOT EXISTS version TEXT
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS document_number TEXT
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS major_version INTEGER DEFAULT 1
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS minor_version INTEGER DEFAULT 0
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS document_type TEXT
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'
+    `;
+
+    await sql`
+      ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS uploaded_by TEXT
     `;
 
     // Ensure file_size column can handle NULL values

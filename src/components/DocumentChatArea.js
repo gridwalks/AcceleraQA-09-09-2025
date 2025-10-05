@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown, Trash2, FileText, Edit3, Save, XCircle } from 'lucide-react';
+import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown, Trash2, FileText, Edit3, Save, XCircle, Eye, Download } from 'lucide-react';
 import { exportToWord } from '../utils/exportUtils';
 import { parseMarkdown } from '../utils/messageUtils';
+import DocumentViewer from './DocumentViewer';
 
 // Enhanced markdown text component with document references
 const MarkdownText = ({ text, onDocumentClick }) => {
@@ -203,9 +204,13 @@ const DocumentReference = ({ document, onClick }) => {
     <button
       onClick={() => onClick?.(document)}
       className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+      title={`${document.documentName || document.title || document.filename}${document.documentNumber ? ` (${document.documentNumber})` : ''}${document.majorVersion && document.minorVersion ? ` v${document.majorVersion}.${document.minorVersion}` : ''}`}
     >
       <FileText className="h-3 w-3" />
-      <span>{document.title || document.filename}</span>
+      <span>{document.documentName || document.title || document.filename}</span>
+      {document.documentNumber && (
+        <span className="text-blue-500">({document.documentNumber})</span>
+      )}
     </button>
   );
 };
@@ -213,11 +218,41 @@ const DocumentReference = ({ document, onClick }) => {
 // Document selection panel
 const DocumentSelectionPanel = ({ documents, selectedDocuments, onSelectionChange, onClose }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [sortBy, setSortBy] = useState('title');
   
-  const filteredDocuments = documents.filter(doc => 
-    doc.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    doc.filename?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredDocuments = documents.filter(doc => {
+    const matchesSearch = !searchTerm || 
+      doc.documentName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.filename?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.documentNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.summary?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.manualSummary?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesFilter = filterType === 'all' || 
+      (filterType === 'withManualSummary' && doc.manualSummary) ||
+      (filterType === 'withAISummary' && doc.summary && !doc.manualSummary) ||
+      (filterType === 'noSummary' && !doc.summary && !doc.manualSummary) ||
+      (filterType === doc.documentType);
+    
+    return matchesSearch && matchesFilter;
+  });
+
+  const sortedDocuments = [...filteredDocuments].sort((a, b) => {
+    switch (sortBy) {
+      case 'title':
+        return (a.documentName || a.title || a.filename || '').localeCompare(b.documentName || b.title || b.filename || '');
+      case 'documentNumber':
+        return (a.documentNumber || '').localeCompare(b.documentNumber || '');
+      case 'createdAt':
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      case 'documentType':
+        return (a.documentType || '').localeCompare(b.documentType || '');
+      default:
+        return 0;
+    }
+  });
 
   const handleDocumentToggle = (documentId) => {
     const isSelected = selectedDocuments.includes(documentId);
@@ -228,8 +263,16 @@ const DocumentSelectionPanel = ({ documents, selectedDocuments, onSelectionChang
     }
   };
 
+  const handleSelectAll = () => {
+    if (selectedDocuments.length === sortedDocuments.length) {
+      onSelectionChange([]);
+    } else {
+      onSelectionChange(sortedDocuments.map(doc => doc.id));
+    }
+  };
+
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-h-64 overflow-y-auto">
+    <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-h-96 overflow-y-auto w-96">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-gray-900">Select Documents to Chat With</h3>
         <button
@@ -240,7 +283,8 @@ const DocumentSelectionPanel = ({ documents, selectedDocuments, onSelectionChang
         </button>
       </div>
       
-      <div className="mb-3">
+      {/* Search and Filters */}
+      <div className="mb-3 space-y-2">
         <input
           type="text"
           placeholder="Search documents..."
@@ -248,30 +292,105 @@ const DocumentSelectionPanel = ({ documents, selectedDocuments, onSelectionChang
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
+        
+        <div className="flex space-x-2">
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="all">All Documents</option>
+            <option value="withManualSummary">With Manual Summary</option>
+            <option value="withAISummary">With AI Summary Only</option>
+            <option value="noSummary">No Summary</option>
+            <option value="sop">SOPs</option>
+            <option value="protocol">Protocols</option>
+            <option value="regulatory">Regulatory</option>
+            <option value="compliance">Compliance</option>
+          </select>
+          
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="title">Sort by Title</option>
+            <option value="documentNumber">Sort by Doc Number</option>
+            <option value="createdAt">Sort by Date</option>
+            <option value="documentType">Sort by Type</option>
+          </select>
+        </div>
       </div>
       
-      <div className="space-y-2">
-        {filteredDocuments.map((doc) => (
-          <label key={doc.id} className="flex items-center space-x-3 cursor-pointer">
+      {/* Select All */}
+      <div className="mb-2">
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={selectedDocuments.length === sortedDocuments.length && sortedDocuments.length > 0}
+            onChange={handleSelectAll}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-xs font-medium text-gray-700">
+            Select All ({sortedDocuments.length} documents)
+          </span>
+        </label>
+      </div>
+      
+      {/* Document List */}
+      <div className="space-y-2 max-h-48 overflow-y-auto">
+        {sortedDocuments.map((doc) => (
+          <label key={doc.id} className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
             <input
               type="checkbox"
               checked={selectedDocuments.includes(doc.id)}
               onChange={() => handleDocumentToggle(doc.id)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-gray-900 truncate">
-                {doc.title || doc.filename}
+                {doc.documentName || doc.title || doc.filename}
               </div>
-              {doc.displaySummary && (
-                <div className="text-xs text-gray-500 line-clamp-2">
-                  {doc.displaySummary}
+              {doc.documentNumber && (
+                <div className="text-xs text-blue-600 font-medium">
+                  {doc.documentNumber} v{doc.majorVersion || 1}.{doc.minorVersion || 0}
+                </div>
+              )}
+              {doc.documentType && (
+                <div className="text-xs text-gray-500 capitalize">
+                  {doc.documentType}
+                </div>
+              )}
+              {doc.status && (
+                <div className={`text-xs px-1 py-0.5 rounded ${
+                  doc.status === 'active' 
+                    ? 'bg-green-100 text-green-700' 
+                    : 'bg-gray-100 text-gray-700'
+                }`}>
+                  {doc.status}
+                </div>
+              )}
+              {(doc.manualSummary || doc.summary) && (
+                <div className="text-xs text-gray-500 line-clamp-2 mt-1">
+                  {doc.manualSummary ? (
+                    <span className="text-blue-600">Manual: </span>
+                  ) : (
+                    <span className="text-gray-400">AI: </span>
+                  )}
+                  {(doc.manualSummary || doc.summary)?.substring(0, 100)}
+                  {((doc.manualSummary || doc.summary)?.length || 0) > 100 && '...'}
                 </div>
               )}
             </div>
           </label>
         ))}
       </div>
+      
+      {sortedDocuments.length === 0 && (
+        <div className="text-center py-4 text-gray-500 text-sm">
+          No documents found matching your criteria
+        </div>
+      )}
       
       {selectedDocuments.length > 0 && (
         <div className="mt-3 pt-3 border-t border-gray-200">
@@ -308,6 +427,8 @@ const DocumentChatArea = ({
   const [editingSummary, setEditingSummary] = useState(null);
   const [editingSummaryText, setEditingSummaryText] = useState('');
   const [savingSummary, setSavingSummary] = useState(false);
+  const [viewerDocument, setViewerDocument] = useState(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
 
   const inputLength = typeof inputMessage === 'string' ? inputMessage.length : 0;
   const trimmedInputMessage = typeof inputMessage === 'string' ? inputMessage.trim() : '';
@@ -377,6 +498,21 @@ const DocumentChatArea = ({
   const handleCancelEdit = () => {
     setEditingSummary(null);
     setEditingSummaryText('');
+  };
+
+  const handleOpenDocumentViewer = (document) => {
+    setViewerDocument(document);
+    setIsViewerOpen(true);
+  };
+
+  const handleCloseDocumentViewer = () => {
+    setIsViewerOpen(false);
+    setViewerDocument(null);
+  };
+
+  const handleDocumentDownload = (document) => {
+    console.log('Document downloaded:', document);
+    // Additional download handling can be added here
   };
 
   return (
@@ -547,11 +683,11 @@ const DocumentChatArea = ({
                                   {source.text || 'No excerpt available.'}
                                 </div>
                                 <button
-                                  onClick={() => onOpenDocumentViewer?.(source)}
+                                  onClick={() => handleOpenDocumentViewer(source)}
                                   className="mt-1 flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800"
                                 >
-                                  <ExternalLink className="h-3 w-3" />
-                                  <span>Open document</span>
+                                  <Eye className="h-3 w-3" />
+                                  <span>View document</span>
                                 </button>
                               </div>
                             ))}
@@ -578,7 +714,7 @@ const DocumentChatArea = ({
                                 <DocumentReference
                                   key={idx}
                                   document={doc}
-                                  onClick={onDocumentClick}
+                                  onClick={handleOpenDocumentViewer}
                                 />
                               );
                             })}
@@ -730,6 +866,14 @@ const DocumentChatArea = ({
           </button>
         </div>
       </div>
+
+      {/* Document Viewer Modal */}
+      <DocumentViewer
+        document={viewerDocument}
+        isOpen={isViewerOpen}
+        onClose={handleCloseDocumentViewer}
+        onDownload={handleDocumentDownload}
+      />
     </div>
   );
 };

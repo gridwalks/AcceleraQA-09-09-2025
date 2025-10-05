@@ -74,11 +74,31 @@ const extractUserId = (event, context) => {
 };
 
 // System prompt for AI chat
-const SYSTEM_PROMPT = `You are an AI assistant that helps users understand and work with documents from a document management system. You have access to both AI-generated summaries and user-added manual summaries from an indexed document collection.
+const SYSTEM_PROMPT = `You are AcceleraQA, an AI assistant specialized in pharmaceutical quality, compliance, and clinical trial integrity. You help users understand and work with documents from a document management system, with access to both AI-generated summaries and user-added manual summaries.
+
+CORE CAPABILITIES:
+- Analyze regulatory texts, laws, and SOPs with accuracy and inspection readiness
+- Provide actionable insights based on document content
+- Reference specific documents by name, number, and version when relevant
+- Maintain professional tone appropriate for pharmaceutical/clinical environments
+
+DOCUMENT CONTEXT RULES:
+1. ALWAYS prioritize manual summaries over AI summaries when both exist
+2. When manual summaries provide corrections or additional context to AI summaries, note the differences
+3. Reference documents by their full identifiers (name, number, version)
+4. If information isn't in the provided documents, state this clearly
+5. Focus on what the documents actually say, not assumptions
+
+RESPONSE GUIDELINES:
+- Be precise and citation-focused
+- Include document references in your responses
+- If discussing compliance topics, focus on regulatory requirements as stated in documents
+- Provide practical, actionable insights
+- Maintain inspection-ready documentation standards
 
 When answering questions:
 1. Use the provided document context to give accurate, helpful answers
-2. Reference specific documents by name and number when relevant
+2. Reference specific documents by name, number, and version when relevant
 3. If the answer isn't in the provided documents, say so clearly
 4. Provide actionable insights based on the document content
 5. Maintain a professional, helpful tone appropriate for the industry
@@ -96,17 +116,25 @@ async function searchRelevantDocuments(sql, userId, query, documentIds = null) {
   let searchParams;
   
   if (documentIds && documentIds.length > 0) {
-    // Search within specific documents
+    // Search within specific documents using document_index table
     searchQuery = `
       SELECT c.id,
              c.document_id,
              c.chunk_index,
              c.chunk_text,
-             d.filename,
-             d.metadata,
-             d.title,
-             d.summary,
-             d.version,
+             di.document_id as doc_id,
+             di.document_name,
+             di.document_number,
+             di.major_version,
+             di.minor_version,
+             di.document_type,
+             di.status,
+             di.summary,
+             di.manual_summary,
+             di.filename,
+             di.metadata,
+             di.title,
+             di.version,
              ts_rank_cd(
                to_tsvector('english', c.chunk_text),
                plainto_tsquery('english', $1)
@@ -119,8 +147,9 @@ async function searchRelevantDocuments(sql, userId, query, documentIds = null) {
              ) AS snippet
         FROM rag_document_chunks c
         JOIN rag_documents d ON d.id = c.document_id
-       WHERE d.user_id = $2
-         AND d.id = ANY($3)
+        JOIN document_index di ON di.filename = d.filename AND di.user_id = d.user_id
+       WHERE di.user_id = $2
+         AND di.document_id = ANY($3)
          AND to_tsvector('english', c.chunk_text) @@ plainto_tsquery('english', $1)
        ORDER BY rank DESC NULLS LAST, c.created_at DESC
        LIMIT $4
@@ -133,11 +162,19 @@ async function searchRelevantDocuments(sql, userId, query, documentIds = null) {
              c.document_id,
              c.chunk_index,
              c.chunk_text,
-             d.filename,
-             d.metadata,
-             d.title,
-             d.summary,
-             d.version,
+             di.document_id as doc_id,
+             di.document_name,
+             di.document_number,
+             di.major_version,
+             di.minor_version,
+             di.document_type,
+             di.status,
+             di.summary,
+             di.manual_summary,
+             di.filename,
+             di.metadata,
+             di.title,
+             di.version,
              ts_rank_cd(
                to_tsvector('english', c.chunk_text),
                plainto_tsquery('english', $1)
@@ -150,7 +187,8 @@ async function searchRelevantDocuments(sql, userId, query, documentIds = null) {
              ) AS snippet
         FROM rag_document_chunks c
         JOIN rag_documents d ON d.id = c.document_id
-       WHERE d.user_id = $2
+        JOIN document_index di ON di.filename = d.filename AND di.user_id = d.user_id
+       WHERE di.user_id = $2
          AND to_tsvector('english', c.chunk_text) @@ plainto_tsquery('english', $1)
        ORDER BY rank DESC NULLS LAST, c.created_at DESC
        LIMIT $3
@@ -175,17 +213,26 @@ async function searchRelevantDocuments(sql, userId, query, documentIds = null) {
                    c.document_id,
                    c.chunk_index,
                    c.chunk_text,
-                   d.filename,
-                   d.metadata,
-                   d.title,
-                   d.summary,
-                   d.version,
+                   di.document_id as doc_id,
+                   di.document_name,
+                   di.document_number,
+                   di.major_version,
+                   di.minor_version,
+                   di.document_type,
+                   di.status,
+                   di.summary,
+                   di.manual_summary,
+                   di.filename,
+                   di.metadata,
+                   di.title,
+                   di.version,
                    1.0 AS rank,
                    c.chunk_text AS snippet
               FROM rag_document_chunks c
               JOIN rag_documents d ON d.id = c.document_id
-             WHERE d.user_id = $1
-               AND d.id = ANY($2)
+              JOIN document_index di ON di.filename = d.filename AND di.user_id = d.user_id
+             WHERE di.user_id = $1
+               AND di.document_id = ANY($2)
                AND c.chunk_text ILIKE $3
              ORDER BY c.created_at DESC
              LIMIT $4
@@ -197,16 +244,25 @@ async function searchRelevantDocuments(sql, userId, query, documentIds = null) {
                    c.document_id,
                    c.chunk_index,
                    c.chunk_text,
-                   d.filename,
-                   d.metadata,
-                   d.title,
-                   d.summary,
-                   d.version,
+                   di.document_id as doc_id,
+                   di.document_name,
+                   di.document_number,
+                   di.major_version,
+                   di.minor_version,
+                   di.document_type,
+                   di.status,
+                   di.summary,
+                   di.manual_summary,
+                   di.filename,
+                   di.metadata,
+                   di.title,
+                   di.version,
                    1.0 AS rank,
                    c.chunk_text AS snippet
               FROM rag_document_chunks c
               JOIN rag_documents d ON d.id = c.document_id
-             WHERE d.user_id = $1
+              JOIN document_index di ON di.filename = d.filename AND di.user_id = d.user_id
+             WHERE di.user_id = $1
                AND c.chunk_text ILIKE $2
              ORDER BY c.created_at DESC
              LIMIT $3
@@ -232,20 +288,28 @@ async function getDocumentSummaries(sql, userId, documentIds) {
   }
   
   const rows = await sql`
-    SELECT id, filename, title, summary, metadata, version
-    FROM rag_documents
+    SELECT id, document_id, document_name, document_number, major_version, minor_version,
+           document_type, status, summary, manual_summary, filename, title, version, metadata
+    FROM document_index
     WHERE user_id = ${userId}
-      AND id = ANY(${documentIds})
+      AND document_id = ANY(${documentIds})
   `;
   
   return rows.map(row => {
     const metadata = typeof row.metadata === 'object' ? row.metadata : {};
     return {
       id: row.id,
+      documentId: row.document_id,
       filename: row.filename,
-      title: row.title || row.filename,
+      title: row.title || row.document_name,
+      documentName: row.document_name,
+      documentNumber: row.document_number,
+      majorVersion: row.major_version,
+      minorVersion: row.minor_version,
+      documentType: row.document_type,
+      status: row.status,
       summary: row.summary,
-      manualSummary: metadata.manualSummary || metadata.manual_summary,
+      manualSummary: row.manual_summary,
       version: row.version,
       metadata
     };
@@ -256,16 +320,28 @@ async function getDocumentSummaries(sql, userId, documentIds) {
 function buildDocumentContext(searchResults, documentSummaries) {
   const context = {
     searchResults: searchResults.map(result => ({
-      documentId: result.document_id,
+      documentId: result.doc_id || result.document_id,
       chunkIndex: result.chunk_index,
       text: result.snippet || result.chunk_text,
       filename: result.filename,
-      title: result.title || result.filename,
+      title: result.document_name || result.title || result.filename,
+      documentNumber: result.document_number,
+      majorVersion: result.major_version,
+      minorVersion: result.minor_version,
+      documentType: result.document_type,
+      status: result.status,
       rank: result.rank
     })),
     documentSummaries: documentSummaries.map(doc => ({
       id: doc.id,
+      documentId: doc.documentId,
       title: doc.title,
+      documentName: doc.documentName,
+      documentNumber: doc.documentNumber,
+      majorVersion: doc.majorVersion,
+      minorVersion: doc.minorVersion,
+      documentType: doc.documentType,
+      status: doc.status,
       filename: doc.filename,
       summary: doc.summary,
       manualSummary: doc.manualSummary,
@@ -278,18 +354,37 @@ function buildDocumentContext(searchResults, documentSummaries) {
 
 // Generate AI response with document context
 async function generateAIResponse(message, documentContext, conversationHistory = []) {
+  // Build comprehensive document context with both search results and summaries
   const contextText = documentContext.searchResults
-    .map(result => `Document: ${result.title} (${result.filename})\nContent: ${result.text}`)
+    .map(result => {
+      let docInfo = `Document: ${result.title} (ID: ${result.documentId})`;
+      if (result.documentNumber) docInfo += ` - Document Number: ${result.documentNumber}`;
+      if (result.majorVersion && result.minorVersion) docInfo += ` - Version: ${result.majorVersion}.${result.minorVersion}`;
+      if (result.documentType) docInfo += ` - Type: ${result.documentType}`;
+      if (result.status) docInfo += ` - Status: ${result.status}`;
+      docInfo += `\nContent: ${result.text}`;
+      return docInfo;
+    })
     .join('\n\n');
   
   const summariesText = documentContext.documentSummaries
     .map(doc => {
-      let summaryText = `Document: ${doc.title} (${doc.filename})`;
+      let summaryText = `Document: ${doc.title} (ID: ${doc.documentId})`;
+      if (doc.documentNumber) summaryText += ` - Document Number: ${doc.documentNumber}`;
+      if (doc.majorVersion && doc.minorVersion) summaryText += ` - Version: ${doc.majorVersion}.${doc.minorVersion}`;
+      if (doc.documentType) summaryText += ` - Type: ${doc.documentType}`;
+      if (doc.status) summaryText += ` - Status: ${doc.status}`;
+      
+      // Prioritize manual summary over AI summary
       if (doc.manualSummary) {
         summaryText += `\nManual Summary: ${doc.manualSummary}`;
-      }
-      if (doc.summary) {
+        if (doc.summary && doc.summary !== doc.manualSummary) {
+          summaryText += `\nAI Summary (for reference): ${doc.summary}`;
+        }
+      } else if (doc.summary) {
         summaryText += `\nAI Summary: ${doc.summary}`;
+      } else {
+        summaryText += `\nNo summary available`;
       }
       return summaryText;
     })
@@ -333,6 +428,11 @@ async function generateAIResponse(message, documentContext, conversationHistory 
       documentId: result.documentId,
       filename: result.filename,
       title: result.title,
+      documentNumber: result.documentNumber,
+      majorVersion: result.majorVersion,
+      minorVersion: result.minorVersion,
+      documentType: result.documentType,
+      status: result.status,
       text: result.text,
       chunkIndex: result.chunkIndex,
       rank: result.rank

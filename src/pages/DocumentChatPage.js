@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DocumentChatArea from '../components/DocumentChatArea';
 import DocumentManager from '../components/DocumentManager';
 import DocumentViewer from '../components/DocumentViewer';
-import authService, { initializeAuth, getUserId } from '../services/authService';
+import Header from '../components/Header';
+import authService, { initializeAuth, getUserId, handleLogout } from '../services/authService';
+import { hasAdminRole } from '../utils/auth';
 import { 
   MessageSquare, 
   Database, 
@@ -29,6 +31,12 @@ const DocumentChatPage = () => {
   const [viewerDocument, setViewerDocument] = useState(null);
   const [showViewer, setShowViewer] = useState(false);
   const [conversationId, setConversationId] = useState(null);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showRAGConfig, setShowRAGConfig] = useState(false);
+  const [showNotebook, setShowNotebook] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
+  const [lastSaveTime, setLastSaveTime] = useState(null);
   
   const messagesEndRef = useRef(null);
   const cooldownRef = useRef(null);
@@ -285,6 +293,24 @@ const DocumentChatPage = () => {
     }
   }, [selectedDocuments]);
 
+  // Header handler functions
+  const handleShowAdmin = useCallback(() => {
+    setShowAdmin(true);
+  }, []);
+
+  const handleShowProfile = useCallback(() => {
+    setShowProfile(true);
+  }, []);
+
+  const handleShowRAGConfig = useCallback(() => {
+    setShowRAGConfig(true);
+  }, []);
+
+  const handleLogoutComplete = useCallback(() => {
+    // Handle logout completion if needed
+    console.log('Logout completed');
+  }, []);
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -308,24 +334,19 @@ const DocumentChatPage = () => {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="flex-shrink-0 bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <BookOpen className="h-8 w-8 text-blue-600" />
-              <h1 className="text-xl font-semibold text-gray-900">Document Chat Assistant</h1>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <div className="text-sm text-gray-600">
-                Welcome, {user?.name || user?.email}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Consistent Header with hamburger menu */}
+      <Header
+        user={user}
+        isSaving={isSaving}
+        lastSaveTime={lastSaveTime}
+        onShowAdmin={handleShowAdmin}
+        onShowProfile={handleShowProfile}
+        onShowRAGConfig={handleShowRAGConfig}
+        onOpenNotebook={() => setShowNotebook(true)}
+        onOpenSupport={() => setShowSupport(true)}
+        onLogout={handleLogoutComplete}
+      />
 
       {/* Navigation Tabs */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200">
@@ -363,7 +384,7 @@ const DocumentChatPage = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden h-[calc(100vh-64px)]">
         <div className="h-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {activeTab === 'chat' ? (
             <DocumentChatArea
@@ -403,6 +424,87 @@ const DocumentChatPage = () => {
         onClose={handleCloseViewer}
         isOpen={showViewer}
       />
+
+      {/* Header Modal Components */}
+      {showAdmin && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4">Admin Panel</h2>
+            <p className="text-gray-600 mb-4">Admin functionality would be implemented here.</p>
+            <button
+              onClick={() => setShowAdmin(false)}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showProfile && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4">User Profile</h2>
+            <div className="space-y-2 mb-4">
+              <p><strong>Name:</strong> {user?.name || 'N/A'}</p>
+              <p><strong>Email:</strong> {user?.email || 'N/A'}</p>
+              <p><strong>Roles:</strong> {user?.roles?.join(', ') || 'N/A'}</p>
+              <p><strong>Organization:</strong> {user?.organization || 'N/A'}</p>
+            </div>
+            <button
+              onClick={() => setShowProfile(false)}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showRAGConfig && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4">My Resources</h2>
+            <p className="text-gray-600 mb-4">Resource management functionality would be implemented here.</p>
+            <button
+              onClick={() => setShowRAGConfig(false)}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showNotebook && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4">Notebook</h2>
+            <p className="text-gray-600 mb-4">Notebook functionality would be implemented here.</p>
+            <button
+              onClick={() => setShowNotebook(false)}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showSupport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4">Support Request</h2>
+            <p className="text-gray-600 mb-4">Support request functionality would be implemented here.</p>
+            <button
+              onClick={() => setShowSupport(false)}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

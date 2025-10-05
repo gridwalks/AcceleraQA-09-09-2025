@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
 import DocumentChatArea from '../components/DocumentChatArea';
 import DocumentManager from '../components/DocumentManager';
 import DocumentViewer from '../components/DocumentViewer';
+import authService, { initializeAuth, getUserId } from '../services/authService';
 import { 
   MessageSquare, 
   Database, 
@@ -14,7 +14,9 @@ import {
 } from 'lucide-react';
 
 const DocumentChatPage = () => {
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth0();
+  const [user, setUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -30,6 +32,30 @@ const DocumentChatPage = () => {
   
   const messagesEndRef = useRef(null);
   const cooldownRef = useRef(null);
+
+  // Initialize auth on mount
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        const user = await initializeAuth(
+          (user) => {
+            setUser(user);
+            setIsAuthenticated(!!user);
+          },
+          (loading) => setAuthLoading(loading)
+        );
+        if (user) {
+          setUser(user);
+          setIsAuthenticated(true);
+        }
+      } catch (error) {
+        console.error('Auth initialization failed:', error);
+        setAuthLoading(false);
+      }
+    };
+    
+    initAuth();
+  }, []);
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -50,12 +76,18 @@ const DocumentChatPage = () => {
   // Load documents function
   const loadDocuments = useCallback(async () => {
     try {
+      const userId = await getUserId();
+      if (!userId) {
+        console.error('No user ID available');
+        return;
+      }
+
       const response = await fetch('/.netlify/functions/get-indexed-documents', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-          'x-user-id': localStorage.getItem('user_id')
+          'x-user-id': userId
         },
         body: JSON.stringify({
           action: 'list'
@@ -107,6 +139,11 @@ const DocumentChatPage = () => {
 
       // If file is uploaded, index it first
       if (uploadedFile) {
+        const userId = await getUserId();
+        if (!userId) {
+          throw new Error('No user ID available');
+        }
+
         const formData = new FormData();
         formData.append('file', uploadedFile);
         formData.append('action', 'upload');
@@ -115,7 +152,7 @@ const DocumentChatPage = () => {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-            'x-user-id': localStorage.getItem('user_id')
+            'x-user-id': userId
           },
           body: formData
         });
@@ -131,12 +168,17 @@ const DocumentChatPage = () => {
       }
 
       // Send chat message
+      const userId = await getUserId();
+      if (!userId) {
+        throw new Error('No user ID available');
+      }
+
       const chatResponse = await fetch('/.netlify/functions/chat-with-documents', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-          'x-user-id': localStorage.getItem('user_id')
+          'x-user-id': userId
         },
         body: JSON.stringify(requestBody)
       });
@@ -345,6 +387,7 @@ const DocumentChatPage = () => {
             />
           ) : (
             <DocumentManager
+              userId={user?.sub}
               onDocumentView={handleDocumentClick}
               onDocumentSelect={handleDocumentSelect}
               selectedDocuments={selectedDocuments}

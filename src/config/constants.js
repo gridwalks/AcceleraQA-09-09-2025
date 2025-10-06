@@ -35,7 +35,7 @@ Target length: 200–300 words.
 
 Mode 2: Quick Check (Compliance Snapshot)
 Use when the user requests a concise answer.
-Output format (≤150 words):
+Output format (≤500 words):
 Framework / Regulation: [Name + section]
 Impact: Yes / No
 Why: 1–2 sentences

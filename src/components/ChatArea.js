@@ -1,7 +1,7 @@
 // src/components/ChatArea.js - DEPLOYMENT READY (fixes DatabaseOff issue)
 
 import React, { useCallback } from 'react';
-import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown, Trash2 } from 'lucide-react';
+import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown, Trash2, Bot, User } from 'lucide-react';
 import { exportToWord } from '../utils/exportUtils';
 import { parseMarkdown } from '../utils/messageUtils';
 
@@ -911,7 +911,7 @@ const ChatArea = ({
   const manualOverrideActive = lastResponseMode === 'ai-knowledge-manual';
 
   return (
-    <div className="h-full flex flex-col min-h-0 overflow-hidden bg-white rounded-lg shadow-sm border border-gray-200">
+    <div className="h-full flex flex-col min-h-0 overflow-hidden bg-[#F7F7F8] rounded-lg shadow-sm border border-gray-200">
       {/* Chat Header */}
       <div className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
         <div className="flex items-center justify-between">
@@ -956,200 +956,203 @@ const ChatArea = ({
 
                 return (
                   <div key={index} className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`max-w-[85%] lg:max-w-[75%] p-3 sm:p-4 rounded-lg ${
-                        isUserMessage
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-900 border border-gray-200'
-                      }`}
-                    >
-                      {/* Message Content */}
-                      {hasMessageText && (
-                        <div className="whitespace-pre-wrap text-sm sm:text-base leading-relaxed">
-                          <MarkdownText text={messageText} />
-                        </div>
-                      )}
-
-                      {/* Attachments Display */}
-                      {attachments.length > 0 && (
-                        <div className={`space-y-2 ${hasMessageText ? 'mt-3' : ''}`}>
-                          {attachments.map((attachment, attachmentIndex) => {
-                            const hasDifferentNames =
-                              attachment.originalFileName &&
-                              attachment.finalFileName &&
-                              attachment.originalFileName !== attachment.finalFileName;
-
-                            let detailText = null;
-
-                            if (attachment.converted) {
-                              detailText = hasDifferentNames
-                                ? `Converted from ${attachment.originalFileName}`
-                                : 'Converted to PDF';
-                            } else if (hasDifferentNames) {
-                              detailText = `Uploaded as ${attachment.originalFileName}`;
-                            }
-
-                            return (
-                              <div
-                                key={attachmentIndex}
-                                className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${
-                                  isUserMessage
-                                    ? 'border-blue-300/60 bg-blue-500/20 text-blue-50'
-                                    : 'border-gray-300 bg-white text-gray-700'
-                                }`}
-                              >
-                                <Paperclip
-                                  className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
-                                    isUserMessage ? 'text-blue-100' : 'text-gray-500'
-                                  }`}
-                                />
-                                <div className="min-w-0">
-                                  <div
-                                    className={`truncate font-medium ${
-                                      isUserMessage ? 'text-white' : 'text-gray-900'
-                                    }`}
-                                    title={attachment.finalFileName || attachment.originalFileName || 'Attachment'}
-                                  >
-                                    {attachment.finalFileName || attachment.originalFileName || 'Attachment'}
-                                  </div>
-                                  {detailText && (
-                                    <div className={isUserMessage ? 'text-blue-100' : 'text-gray-600'}>
-                                      {detailText}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* RAG Sources Display */}
-                      {message.sources && message.sources.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-gray-300">
-                          <div className="text-xs font-medium text-gray-600 mb-2 flex items-center space-x-1">
-                            <Database className="h-3 w-3" />
-                            <span>Sources from uploaded documents:</span>
+                    <div className={`flex items-start gap-3 ${isUserMessage ? 'flex-row-reverse' : ''}`}>
+                      <div
+                        className={`mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-white shadow-sm ${
+                          isUserMessage ? 'bg-emerald-500' : 'bg-gray-900'
+                        }`}
+                      >
+                        {isUserMessage ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                      </div>
+                      <div
+                        className={`max-w-[85%] lg:max-w-[70%] rounded-2xl border px-4 py-3 shadow-sm text-sm sm:text-base leading-relaxed ${
+                          isUserMessage
+                            ? 'bg-[#DCF5C7] border-[#B7E797] text-gray-900'
+                            : 'bg-white border-gray-200 text-gray-900'
+                        }`}
+                      >
+                        {hasMessageText && (
+                          <div className="whitespace-pre-wrap">
+                            <MarkdownText text={messageText} />
                           </div>
-                          <div className="space-y-1">
-                            {message.sources.slice(0, 3).map((source, idx) => {
-                              const sourceUrl = getSourceUrl(source);
-                              const SourceWrapper = sourceUrl ? 'a' : 'div';
-                              const isAbsoluteLink = sourceUrl ? /^https?:\/\//i.test(sourceUrl) : false;
-                              const wrapperProps = sourceUrl
-                                ? {
-                                    href: sourceUrl,
-                                    ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
-                                  }
-                                : {};
+                        )}
 
-                              const titleCandidates = getSourceTitleCandidates(source);
-                              const resolvedSourceTitle = selectPreferredSourceTitle(
-                                titleCandidates,
-                                `Document ${idx + 1}`
-                              );
+                        {attachments.length > 0 && (
+                          <div className={`space-y-2 ${hasMessageText ? 'mt-3' : ''}`}>
+                            {attachments.map((attachment, attachmentIndex) => {
+                              const hasDifferentNames =
+                                attachment.originalFileName &&
+                                attachment.finalFileName &&
+                                attachment.originalFileName !== attachment.finalFileName;
 
-                              const snippetExclusions = [
-                                resolvedSourceTitle,
-                                ...titleCandidates,
-                              ];
+                              let detailText = null;
 
-                              const fullSnippet = getSourceSnippet(source, {
-                                excludeValues: snippetExclusions,
-                              });
-                              const fallbackSnippet = getFallbackSnippet(source);
-                              const resolvedSnippet = fullSnippet || fallbackSnippet || null;
-                              const displaySnippet =
-                                resolvedSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 &&
-                                resolvedSnippet.length > SOURCE_SNIPPET_MAX_LENGTH
-                                  ? `${resolvedSnippet
-                                      .slice(0, SOURCE_SNIPPET_MAX_LENGTH)
-                                      .trimEnd()}…`
-                                  : resolvedSnippet;
+                              if (attachment.converted) {
+                                detailText = hasDifferentNames
+                                  ? `Converted from ${attachment.originalFileName}`
+                                  : 'Converted to PDF';
+                              } else if (hasDifferentNames) {
+                                detailText = `Uploaded as ${attachment.originalFileName}`;
+                              }
 
-                              const citationNumber = typeof source?.citationNumber === 'number'
-                                ? source.citationNumber
-                                : typeof source?.metadata?.citationNumber === 'number'
-                                  ? source.metadata.citationNumber
-                                  : null;
-
-                              const displayTitle = citationNumber
-                                ? `[${citationNumber}] ${resolvedSourceTitle}`
-                                : resolvedSourceTitle;
-
-                              const baseClasses = 'text-xs bg-white bg-opacity-50 p-2 rounded border transition-colors';
-                              const interactiveClasses = sourceUrl
-                                ? 'block group hover:border-blue-400 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:ring-offset-1'
-                                : '';
+                              const displayFileName =
+                                attachment.displayName ||
+                                attachment.finalFileName ||
+                                attachment.originalFileName ||
+                                attachment.fileName ||
+                                'Attachment';
 
                               return (
-                                <SourceWrapper
-                                  key={idx}
-                                  className={`${baseClasses} ${interactiveClasses}`.trim()}
-                                  {...wrapperProps}
+                                <div
+                                  key={attachmentIndex}
+                                  className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${
+                                    isUserMessage
+                                      ? 'border-[#B7E797] bg-[#E9FBD7] text-gray-800'
+                                      : 'border-gray-200 bg-gray-50 text-gray-700'
+                                  }`}
                                 >
-                                  <div
-                                    className={`font-medium truncate ${sourceUrl ? 'text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700' : ''}`.trim()}
-                                    title={displayTitle}
-                                  >
-                                    {displayTitle}
-                                  </div>
-                                  <div
-                                    className="text-gray-600 line-clamp-2"
-                                    title={resolvedSnippet || undefined}
-                                  >
-                                    {displaySnippet || 'No excerpt available.'}
-                                  </div>
-                                  {sourceUrl && (
-                                    <div className="mt-1 flex items-center gap-1 text-[11px] text-blue-600">
-                                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                                      <span>Open source</span>
+                                  <Paperclip
+                                    className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
+                                      isUserMessage ? 'text-emerald-600' : 'text-gray-500'
+                                    }`}
+                                  />
+                                  <div className="flex-1 space-y-1">
+                                    <div className="font-medium truncate">{displayFileName}</div>
+                                    <div className="text-[11px] opacity-80">
+                                      {detailText || attachment.contentType || 'Attachment'}
                                     </div>
-                                  )}
-                                </SourceWrapper>
+                                    {attachment.status && (
+                                      <div className="text-[11px] uppercase tracking-wide text-gray-500">
+                                        {attachment.status}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
                               );
                             })}
-                            {message.sources.length > 3 && (
-                              <div className="text-xs text-gray-500 italic">
-                                ...and {message.sources.length - 3} more sources
-                              </div>
-                            )}
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {message.isStudyNotes && (
-                        <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
-                              <BookOpen className="h-4 w-4" />
-                              <span>Notes ready</span>
+                        {message.sources && message.sources.length > 0 && (
+                          <div className="mt-3 space-y-2 border-t border-gray-200 pt-3">
+                            <div className="flex items-center space-x-1 text-xs font-medium text-gray-600">
+                              <Database className="h-3 w-3" />
+                              <span>Sources from uploaded documents:</span>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleExportStudyNotes(message)}
-                              disabled={!canExportStudyNotes}
-                              className={`inline-flex items-center gap-2 rounded-md px-3 py-1 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-1 ${
-                                canExportStudyNotes
-                                  ? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
-                                  : 'bg-blue-100 text-blue-300 cursor-not-allowed focus:ring-blue-200'
-                              }`}
-                              aria-label="Export notes to Word"
-                              title={
-                                canExportStudyNotes
-                                  ? 'Download a Word copy of these notes.'
-                                  : 'Notes are not ready to export yet.'
-                              }
-                            >
-                              <FileDown className="h-4 w-4" />
-                              <span>Export to Word</span>
-                            </button>
+                            <div className="space-y-2">
+                              {message.sources.slice(0, 3).map((source, idx) => {
+                                const sourceUrl = getSourceUrl(source);
+                                const SourceWrapper = sourceUrl ? 'a' : 'div';
+                                const isAbsoluteLink = sourceUrl ? /^https?:\/\//i.test(sourceUrl) : false;
+                                const wrapperProps = sourceUrl
+                                  ? {
+                                      href: sourceUrl,
+                                      ...(isAbsoluteLink ? { target: '_blank', rel: 'noopener noreferrer' } : {}),
+                                    }
+                                  : {};
+
+                                const titleCandidates = getSourceTitleCandidates(source);
+                                const resolvedSourceTitle = selectPreferredSourceTitle(
+                                  titleCandidates,
+                                  `Document ${idx + 1}`
+                                );
+
+                                const snippetExclusions = [
+                                  resolvedSourceTitle,
+                                  ...titleCandidates,
+                                ];
+
+                                const fullSnippet = getSourceSnippet(source, {
+                                  excludeValues: snippetExclusions,
+                                });
+                                const fallbackSnippet = getFallbackSnippet(source);
+                                const resolvedSnippet = fullSnippet || fallbackSnippet || null;
+                                const displaySnippet =
+                                  resolvedSnippet && SOURCE_SNIPPET_MAX_LENGTH > 0 && resolvedSnippet.length > SOURCE_SNIPPET_MAX_LENGTH
+                                    ? `${resolvedSnippet.slice(0, SOURCE_SNIPPET_MAX_LENGTH).trimEnd()}…`
+                                    : resolvedSnippet;
+
+                                const citationNumber = typeof source?.citationNumber === 'number'
+                                  ? source.citationNumber
+                                  : typeof source?.metadata?.citationNumber === 'number'
+                                    ? source.metadata.citationNumber
+                                    : null;
+
+                                const displayTitle = citationNumber
+                                  ? `[${citationNumber}] ${resolvedSourceTitle}`
+                                  : resolvedSourceTitle;
+
+                                const baseClasses = 'text-xs rounded-xl border border-gray-200 bg-white/80 p-3 shadow-sm transition-colors';
+                                const interactiveClasses = sourceUrl
+                                  ? 'block group hover:border-blue-400 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:ring-offset-1'
+                                  : '';
+
+                                return (
+                                  <SourceWrapper
+                                    key={idx}
+                                    className={`${baseClasses} ${interactiveClasses}`.trim()}
+                                    {...wrapperProps}
+                                  >
+                                    <div
+                                      className={`font-medium truncate ${sourceUrl ? 'text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700' : ''}`.trim()}
+                                      title={displayTitle}
+                                    >
+                                      {displayTitle}
+                                    </div>
+                                    <div className="line-clamp-2 text-gray-600" title={resolvedSnippet || undefined}>
+                                      {displaySnippet || 'No excerpt available.'}
+                                    </div>
+                                    {sourceUrl && (
+                                      <div className="mt-1 flex items-center gap-1 text-[11px] text-blue-600">
+                                        <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                                        <span>Open source</span>
+                                      </div>
+                                    )}
+                                  </SourceWrapper>
+                                );
+                              })}
+                              {message.sources.length > 3 && (
+                                <div className="text-xs italic text-gray-500">
+                                  ...and {message.sources.length - 3} more sources
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <p className="mt-2 text-xs text-blue-600">
-                            Save these notes in your Notebook or export a Word copy for offline review.
-                          </p>
-                        </div>
-                      )}
+                        )}
+
+                        {message.isStudyNotes && (
+                          <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
+                                <BookOpen className="h-4 w-4" />
+                                <span>Notes ready</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleExportStudyNotes(message)}
+                                disabled={!canExportStudyNotes}
+                                className={`inline-flex items-center gap-2 rounded-md px-3 py-1 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                                  canExportStudyNotes
+                                    ? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
+                                    : 'bg-blue-100 text-blue-300 cursor-not-allowed focus:ring-blue-200'
+                                }`}
+                                aria-label="Export notes to Word"
+                                title={
+                                  canExportStudyNotes
+                                    ? 'Download a Word copy of these notes.'
+                                    : 'Notes are not ready to export yet.'
+                                }
+                              >
+                                <FileDown className="h-4 w-4" />
+                                <span>Export to Word</span>
+                              </button>
+                            </div>
+                            <p className="mt-2 text-xs text-blue-600">
+                              Save these notes in your Notebook or export a Word copy for offline review.
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

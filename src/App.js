@@ -1,6 +1,5 @@
 // src/App.js - Updated to integrate learning suggestions
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
 // Components
 import Header from './components/Header';
@@ -15,7 +14,6 @@ import ProfileScreen from './components/ProfileScreen';
 import NotebookOverlay from './components/NotebookOverlay';
 import SupportRequestOverlay from './components/SupportRequestOverlay';
 import StorageNotification, { useStorageNotifications } from './components/StorageNotification';
-import DocumentChatPage from './pages/DocumentChatPage';
 
 // Utility
 import { v4 as uuidv4 } from 'uuid';
@@ -1417,159 +1415,137 @@ Would you like to try rephrasing your question with any of these suggestions?`,
 
   return (
     <ErrorBoundary>
-      <Router>
-        {loading ? (
-          <LoadingScreen />
-        ) : !isAuthenticated ? (
-          <AuthScreen />
-        ) : (
-          <Routes>
-            <Route path="/document-chat" element={<DocumentChatPage />} />
-            <Route path="/" element={
-              <>
-                <div className="min-h-screen bg-gray-50 flex flex-col">
-                  {/* Header remains the same */}
-                  <Header
-                    user={user}
+      {loading ? (
+        <LoadingScreen />
+      ) : !isAuthenticated ? (
+        <AuthScreen />
+      ) : showRAGConfig ? (
+        <RAGConfigurationPage onClose={handleCloseRAGConfig} user={user} />
+      ) : showAdmin ? (
+        <AdminScreen onBack={handleCloseAdmin} user={user} />
+      ) : showProfile ? (
+        <ProfileScreen onBack={handleCloseProfile} user={user} />
+      ) : (
+        <>
+          <div className="min-h-screen bg-gray-50 flex flex-col">
+            {/* Header remains the same */}
+            <Header
+              user={user}
+              isSaving={isSaving}
+              lastSaveTime={lastSaveTime}
+              onShowAdmin={handleShowAdmin}
+              onShowProfile={handleShowProfile}
+              onShowRAGConfig={handleShowRAGConfig}
+              onOpenNotebook={() => setShowNotebook(true)}
+              onOpenSupport={() => setShowSupport(true)}
+              onLogout={handleLogoutComplete}
+            />
+
+            {/* Main Layout */}
+            {/* <div className="flex-1 flex flex-col min-h-0"> */}
+            <div className="h-[calc(100vh-64px)]">
+              {/* Mobile Layout (stacked vertically) */}
+              <div className="lg:hidden flex-1 h-full flex flex-col min-h-0">
+
+                {/* Chat takes most space on mobile */}
+                <div className="flex-1 min-h-0 p-4 pb-0">
+                  <ChatArea
+                    messages={messages}
+                    inputMessage={inputMessage}
+                    setInputMessage={setInputMessage}
+                    isLoading={isLoading}
+                    handleSendMessage={handleSendMessage}
+                    handleKeyPress={handleKeyPress}
+                    messagesEndRef={messagesEndRef}
+                    lastResponseMode={lastResponseMode}
                     isSaving={isSaving}
-                    lastSaveTime={lastSaveTime}
-                    onShowAdmin={handleShowAdmin}
-                    onShowProfile={handleShowProfile}
-                    onShowRAGConfig={handleShowRAGConfig}
-                    onOpenNotebook={() => setShowNotebook(true)}
-                    onOpenSupport={() => setShowSupport(true)}
-                    onLogout={handleLogoutComplete}
+                    uploadedFile={uploadedFile}
+                    setUploadedFile={setUploadedFile}
+                    cooldown={cooldown}
+                    onClearChat={clearChat}
                   />
-
-                  {/* Main Layout */}
-                  <div className="h-[calc(100vh-64px)]">
-                    {/* Mobile Layout (stacked vertically) */}
-                    <div className="lg:hidden flex-1 h-full flex flex-col min-h-0">
-
-                      {/* Chat takes most space on mobile */}
-                      <div className="flex-1 min-h-0 p-4 pb-0">
-                        <ChatArea
-                          messages={messages}
-                          inputMessage={inputMessage}
-                          setInputMessage={setInputMessage}
-                          isLoading={isLoading}
-                          handleSendMessage={handleSendMessage}
-                          handleKeyPress={handleKeyPress}
-                          messagesEndRef={messagesEndRef}
-                          lastResponseMode={lastResponseMode}
-                          isSaving={isSaving}
-                          uploadedFile={uploadedFile}
-                          setUploadedFile={setUploadedFile}
-                          cooldown={cooldown}
-                          onClearChat={clearChat}
-                        />
-                      </div>
-
-                      {/* Sidebar is collapsible on mobile */}
-                      <div className="flex-shrink-0 border-t bg-white max-h-60 overflow-hidden">
-                        <Sidebar
-                          messages={messages}
-                          user={user}
-                          learningSuggestions={learningSuggestions}
-                          isLoadingSuggestions={isLoadingSuggestions}
-                          onSuggestionsUpdate={handleSuggestionsUpdate}
-                          onAddResource={handleAddResourceToNotebook}
-                          onLoadChatHistory={loadChatHistory}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Desktop Layout (side by side) */}
-                    <div className="hidden lg:flex flex-1 h-full min-h-0">
-                      {/* Chat Area - Takes majority of space */}
-                      <div className="flex-1 min-w-0 h-full p-6 pb-0">
-                        <ChatArea
-                          messages={messages}
-                          inputMessage={inputMessage}
-                          setInputMessage={setInputMessage}
-                          isLoading={isLoading}
-                          handleSendMessage={handleSendMessage}
-                          handleKeyPress={handleKeyPress}
-                          messagesEndRef={messagesEndRef}
-                          lastResponseMode={lastResponseMode}
-                          isSaving={isSaving}
-                          uploadedFile={uploadedFile}
-                          setUploadedFile={setUploadedFile}
-                          cooldown={cooldown}
-                          onClearChat={clearChat}
-                        />
-                      </div>
-
-                      {/* Sidebar - Fixed optimal width with enhanced learning features */}
-                      <div className="w-80 xl:w-96 flex-shrink-0 h-full border-l bg-white p-6 pb-0">
-                        <Sidebar
-                          messages={messages}
-                          user={user}
-                          learningSuggestions={learningSuggestions}
-                          isLoadingSuggestions={isLoadingSuggestions}
-                          onSuggestionsUpdate={handleSuggestionsUpdate}
-                          onAddResource={handleAddResourceToNotebook}
-                          onLoadChatHistory={loadChatHistory}
-                        />
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
-                {/* Notebook Overlay */}
-                {showNotebook && (
-                  <NotebookOverlay
+                {/* Sidebar is collapsible on mobile */}
+                <div className="flex-shrink-0 border-t bg-white max-h-60 overflow-hidden">
+                  <Sidebar
                     messages={messages}
-                    thirtyDayMessages={thirtyDayMessages}
-                    selectedMessages={selectedMessages}
-                    setSelectedMessages={setSelectedMessages}
-                    generateStudyNotes={generateStudyNotes}
-                    isGeneratingNotes={isGeneratingNotes}
-                    storedMessageCount={messages.length}
-                    isServerAvailable={isServerAvailable}
-                    onDeleteConversation={handleDeleteConversation}
-                    onDeleteResource={handleDeleteResource}
-                    onClose={() => setShowNotebook(false)}
-                  />
-                )}
-
-                {showSupport && (
-                  <SupportRequestOverlay
                     user={user}
-                    onClose={() => setShowSupport(false)}
+                    learningSuggestions={learningSuggestions}
+                    isLoadingSuggestions={isLoadingSuggestions}
+                    onSuggestionsUpdate={handleSuggestionsUpdate}
+                    onAddResource={handleAddResourceToNotebook}
+                    onLoadChatHistory={loadChatHistory}
                   />
-                )}
+                </div>
+              </div>
 
-                {/* Storage notifications to highlight local persistence status */}
-                <StorageNotification user={user} messagesCount={messages.length} />
-                <StorageWelcomeModalComponent />
-              </>
-            } />
-            <Route path="/rag-config" element={
-              showRAGConfig ? (
-                <RAGConfigurationPage onClose={handleCloseRAGConfig} user={user} />
-              ) : (
-                <Navigate to="/" replace />
-              )
-            } />
-            <Route path="/admin" element={
-              showAdmin ? (
-                <AdminScreen onBack={handleCloseAdmin} user={user} />
-              ) : (
-                <Navigate to="/" replace />
-              )
-            } />
-            <Route path="/profile" element={
-              showProfile ? (
-                <ProfileScreen onBack={handleCloseProfile} user={user} />
-              ) : (
-                <Navigate to="/" replace />
-              )
-            } />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        )}
-      </Router>
+              {/* Desktop Layout (side by side) */}
+              <div className="hidden lg:flex flex-1 h-full min-h-0">
+                {/* Chat Area - Takes majority of space */}
+                <div className="flex-1 min-w-0 h-full p-6 pb-0">
+                  <ChatArea
+                    messages={messages}
+                    inputMessage={inputMessage}
+                    setInputMessage={setInputMessage}
+                    isLoading={isLoading}
+                    handleSendMessage={handleSendMessage}
+                    handleKeyPress={handleKeyPress}
+                    messagesEndRef={messagesEndRef}
+                    lastResponseMode={lastResponseMode}
+                    isSaving={isSaving}
+                    uploadedFile={uploadedFile}
+                    setUploadedFile={setUploadedFile}
+                    cooldown={cooldown}
+                    onClearChat={clearChat}
+                  />
+                </div>
+
+                {/* Sidebar - Fixed optimal width with enhanced learning features */}
+                <div className="w-80 xl:w-96 flex-shrink-0 h-full border-l bg-white p-6 pb-0">
+                  <Sidebar
+                    messages={messages}
+                    user={user}
+                    learningSuggestions={learningSuggestions}
+                    isLoadingSuggestions={isLoadingSuggestions}
+                    onSuggestionsUpdate={handleSuggestionsUpdate}
+                    onAddResource={handleAddResourceToNotebook}
+                    onLoadChatHistory={loadChatHistory}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Notebook Overlay */}
+          {showNotebook && (
+            <NotebookOverlay
+              messages={messages}
+              thirtyDayMessages={thirtyDayMessages}
+              selectedMessages={selectedMessages}
+              setSelectedMessages={setSelectedMessages}
+              generateStudyNotes={generateStudyNotes}
+              isGeneratingNotes={isGeneratingNotes}
+              storedMessageCount={messages.length}
+              isServerAvailable={isServerAvailable}
+              onDeleteConversation={handleDeleteConversation}
+              onDeleteResource={handleDeleteResource}
+              onClose={() => setShowNotebook(false)}
+            />
+          )}
+
+          {showSupport && (
+            <SupportRequestOverlay
+              user={user}
+              onClose={() => setShowSupport(false)}
+            />
+          )}
+
+          {/* Storage notifications to highlight local persistence status */}
+          <StorageNotification user={user} messagesCount={messages.length} />
+          <StorageWelcomeModalComponent />
+        </>
+      )}
     </ErrorBoundary>
   );
 }

@@ -169,9 +169,9 @@ const MarkdownText = ({ text }) => {
             return <div key={index} className="h-1" />;
           case 'numbered-list':
             return (
-              <ol key={index} className="list-decimal list-inside my-2 space-y-0 text-sm">
+              <ol key={index} className="list-decimal list-inside my-2 space-y-0 text-sm text-left">
                 {segment.items.map((item, itemIndex) => (
-                  <li key={itemIndex} className="ml-3" value={item.number}>
+                  <li key={itemIndex} className="text-left" value={item.number}>
                     <MarkdownText text={item.content} />
                   </li>
                 ))}
@@ -179,9 +179,9 @@ const MarkdownText = ({ text }) => {
             );
           case 'bulleted-list':
             return (
-              <ul key={index} className="list-disc list-inside my-2 space-y-0 text-sm">
+              <ul key={index} className="list-disc list-inside my-2 space-y-0 text-sm text-left">
                 {segment.items.map((item, itemIndex) => (
-                  <li key={itemIndex} className="ml-3">
+                  <li key={itemIndex} className="text-left">
                     <MarkdownText text={item.content} />
                   </li>
                 ))}

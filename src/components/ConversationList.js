@@ -2,198 +2,112 @@ import React, { memo } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { parseMarkdown } from '../utils/messageUtils';
 
-// Simple component to render markdown-parsed text
+// Clean, simple markdown renderer
 const MarkdownText = ({ text }) => {
-  const segments = parseMarkdown(text);
-  
-  // Group consecutive list items, table rows, and handle paragraph breaks
-  const groupedSegments = [];
-  let currentList = null;
-  let currentTable = null;
-  let currentCodeBlock = null;
-  
-  segments.forEach((segment, index) => {
-    if (segment.type === 'numbered-list-item') {
-      if (currentTable) {
-        groupedSegments.push(currentTable);
-        currentTable = null;
-      }
-      if (currentCodeBlock) {
-        groupedSegments.push(currentCodeBlock);
-        currentCodeBlock = null;
-      }
-      if (!currentList || currentList.type !== 'numbered-list') {
-        if (currentList) groupedSegments.push(currentList);
-        currentList = { type: 'numbered-list', items: [] };
-      }
-      currentList.items.push(segment);
-    } else if (segment.type === 'bulleted-list-item') {
-      if (currentTable) {
-        groupedSegments.push(currentTable);
-        currentTable = null;
-      }
-      if (currentCodeBlock) {
-        groupedSegments.push(currentCodeBlock);
-        currentCodeBlock = null;
-      }
-      if (!currentList || currentList.type !== 'bulleted-list') {
-        if (currentList) groupedSegments.push(currentList);
-        currentList = { type: 'bulleted-list', items: [] };
-      }
-      currentList.items.push(segment);
-    } else if (segment.type === 'table-row') {
-      if (currentList) {
-        groupedSegments.push(currentList);
-        currentList = null;
-      }
-      if (currentCodeBlock) {
-        groupedSegments.push(currentCodeBlock);
-        currentCodeBlock = null;
-      }
-      if (!currentTable) {
-        currentTable = { type: 'table', rows: [] };
-      }
-      currentTable.rows.push(segment);
-    } else if (segment.type === 'table-separator') {
-      // Skip separator rows, they're just for formatting
-    } else if (segment.type === 'code-block-start') {
-      if (currentList) {
-        groupedSegments.push(currentList);
-        currentList = null;
-      }
-      if (currentTable) {
-        groupedSegments.push(currentTable);
-        currentTable = null;
-      }
-      currentCodeBlock = { type: 'code-block', language: segment.language, content: '' };
-    } else {
-      if (currentList) {
-        groupedSegments.push(currentList);
-        currentList = null;
-      }
-      if (currentTable) {
-        groupedSegments.push(currentTable);
-        currentTable = null;
-      }
-      if (currentCodeBlock) {
-        if (segment.content !== '```') {
-          currentCodeBlock.content += segment.content + '\n';
-        } else {
-          groupedSegments.push(currentCodeBlock);
-          currentCodeBlock = null;
-        }
+  if (!text) return null;
+
+  // Simple regex-based markdown parsing - much cleaner approach
+  const lines = text.split('\n');
+  const elements = [];
+  let inCodeBlock = false;
+  let codeBlockContent = [];
+
+  lines.forEach((line, index) => {
+    // Handle code blocks
+    if (line.trim().startsWith('```')) {
+      if (inCodeBlock) {
+        // End code block
+        elements.push(
+          <pre key={`code-${index}`} className="bg-gray-100 p-3 rounded text-sm font-mono overflow-x-auto">
+            <code>{codeBlockContent.join('\n')}</code>
+          </pre>
+        );
+        codeBlockContent = [];
+        inCodeBlock = false;
       } else {
-        groupedSegments.push(segment);
+        // Start code block
+        inCodeBlock = true;
       }
+      return;
     }
+
+    if (inCodeBlock) {
+      codeBlockContent.push(line);
+      return;
+    }
+
+    // Handle headings
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const Tag = `h${Math.min(level + 1, 6)}`;
+      const classes = level === 1 ? 'text-lg font-bold mt-4 mb-2' : 'text-base font-semibold mt-3 mb-2';
+      elements.push(
+        React.createElement(Tag, { key: `heading-${index}`, className: classes }, headingMatch[2])
+      );
+      return;
+    }
+
+    // Handle lists
+    const listMatch = line.match(/^(\s*)([-*•]|\d+[.)])\s+(.+)/);
+    if (listMatch) {
+      const indent = listMatch[1].length;
+      const marker = listMatch[2];
+      const content = listMatch[3];
+      const isNumbered = /^\d+[.)]/.test(marker);
+      
+      elements.push(
+        <div key={`list-${index}`} className="flex items-start gap-2 my-1">
+          <span className="text-gray-600 mt-0.5 min-w-[20px]">
+            {isNumbered ? marker : '•'}
+          </span>
+          <span className="flex-1">{renderInlineMarkdown(content)}</span>
+        </div>
+      );
+      return;
+    }
+
+    // Handle empty lines
+    if (!line.trim()) {
+      elements.push(<div key={`space-${index}`} className="h-2" />);
+      return;
+    }
+
+    // Regular paragraph
+    elements.push(
+      <p key={`p-${index}`} className="mb-2 leading-relaxed">
+        {renderInlineMarkdown(line)}
+      </p>
+    );
   });
+
+  // Close any remaining code block
+  if (inCodeBlock && codeBlockContent.length > 0) {
+    elements.push(
+      <pre key="code-final" className="bg-gray-100 p-3 rounded text-sm font-mono overflow-x-auto">
+        <code>{codeBlockContent.join('\n')}</code>
+      </pre>
+    );
+  }
+
+  return <div className="markdown-content">{elements}</div>;
+};
+
+// Simple inline markdown renderer
+const renderInlineMarkdown = (text) => {
+  if (!text) return text;
   
-  if (currentList) {
-    groupedSegments.push(currentList);
-  }
-  if (currentTable) {
-    groupedSegments.push(currentTable);
-  }
-  if (currentCodeBlock) {
-    groupedSegments.push(currentCodeBlock);
-  }
+  // Handle bold **text**
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>');
   
-  return (
-    <>
-      {groupedSegments.map((segment, index) => {
-        switch (segment.type) {
-          case 'bold':
-            return <strong key={index} className="font-semibold">{segment.content}</strong>;
-          case 'italic':
-            return <em key={index} className="italic">{segment.content}</em>;
-          case 'code':
-            return (
-              <code 
-                key={index} 
-                className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono"
-              >
-                {segment.content}
-              </code>
-            );
-          case 'heading':
-            const HeadingTag = `h${Math.min(segment.level + 1, 6)}`;
-            const headingClasses = {
-              1: 'text-lg font-bold mt-4 mb-2',
-              2: 'text-base font-bold mt-3 mb-2',
-              3: 'text-sm font-semibold mt-2 mb-1',
-              4: 'text-xs font-semibold mt-2 mb-1',
-              5: 'text-xs font-semibold mt-1 mb-1',
-              6: 'text-xs font-semibold mt-1 mb-1'
-            };
-            return (
-              <HeadingTag 
-                key={index} 
-                className={`${headingClasses[segment.level] || headingClasses[2]} text-gray-900`}
-              >
-                {segment.content}
-              </HeadingTag>
-            );
-          case 'code-block':
-            return (
-              <pre 
-                key={index} 
-                className="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs font-mono my-2"
-              >
-                <code>{segment.content.trim()}</code>
-              </pre>
-            );
-          case 'table':
-            return (
-              <div key={index} className="overflow-x-auto my-2">
-                <table className="min-w-full border-collapse border border-gray-300 text-xs">
-                  <tbody>
-                    {segment.rows.map((row, rowIndex) => (
-                      <tr key={rowIndex} className={rowIndex === 0 ? 'bg-gray-50' : ''}>
-                        {row.cells.map((cell, cellIndex) => (
-                          <td 
-                            key={cellIndex} 
-                            className={`border border-gray-300 px-2 py-1 ${rowIndex === 0 ? 'font-semibold' : ''}`}
-                          >
-                            <MarkdownText text={cell} />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
-          case 'break':
-            return <br key={index} />;
-          case 'paragraph-break':
-            return <div key={index} className="h-1" />;
-          case 'numbered-list':
-            return (
-              <ol key={index} className="list-decimal list-inside my-2 space-y-0 text-sm text-left">
-                {segment.items.map((item, itemIndex) => (
-                  <li key={itemIndex} className="text-left" value={item.number}>
-                    <MarkdownText text={item.content} />
-                  </li>
-                ))}
-              </ol>
-            );
-          case 'bulleted-list':
-            return (
-              <ul key={index} className="list-disc list-inside my-2 space-y-0 text-sm text-left">
-                {segment.items.map((item, itemIndex) => (
-                  <li key={itemIndex} className="text-left">
-                    <MarkdownText text={item.content} />
-                  </li>
-                ))}
-              </ul>
-            );
-          case 'text':
-          default:
-            return segment.content;
-        }
-      })}
-    </>
-  );
+  // Handle italic *text*
+  text = text.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>');
+  
+  // Handle code `text`
+  text = text.replace(/`(.*?)`/g, '<code class="bg-gray-200 px-1 py-0.5 rounded text-sm font-mono">$1</code>');
+  
+  // Convert to JSX (dangerouslySetInnerHTML for simplicity)
+  return <span dangerouslySetInnerHTML={{ __html: text }} />;
 };
 
 /**

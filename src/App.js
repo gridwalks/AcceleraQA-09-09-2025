@@ -928,7 +928,6 @@ Would you like to try rephrasing your question with any of these suggestions?`,
         type: 'ai',
         content: (() => {
           const answerText = typeof response.answer === 'string' ? response.answer.trim() : '';
-          const modeLine = `Mode used: ${modeUsed}`;
           const contentSections = [];
 
           if (documentSearchAttempted && !documentSearchProvidedMeaningfulAnswer) {
@@ -941,8 +940,6 @@ Would you like to try rephrasing your question with any of these suggestions?`,
           if (answerText) {
             contentSections.push(answerText);
           }
-
-          contentSections.push(`_${modeLine}_`);
 
           return contentSections.filter(Boolean).join('\n\n');
 

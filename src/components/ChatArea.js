@@ -184,10 +184,10 @@ const MarkdownText = ({ text }) => {
             );
           case 'bulleted-list':
             return (
-              <ul key={index} className="list-disc ml-6 my-4 space-y-2 text-gray-900">
+              <ul key={index} className="list-disc ml-6 my-4 text-gray-900">
                 {segment.items.map((item, itemIndex) => (
                   <li key={itemIndex} className="pl-2">
-                    <div className="space-y-1 leading-relaxed">
+                    <div className="leading-relaxed">
                       <MarkdownText text={item.content} />
                     </div>
                   </li>

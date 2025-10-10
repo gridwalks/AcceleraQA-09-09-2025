@@ -433,7 +433,7 @@ const DocumentChatArea = ({
   const inputLength = typeof inputMessage === 'string' ? inputMessage.length : 0;
   const trimmedInputMessage = typeof inputMessage === 'string' ? inputMessage.trim() : '';
   const hasMessages = Array.isArray(messages) && messages.length > 0;
-  const hasAttachment = Boolean(uploadedFile);
+  const hasAttachment = Array.isArray(uploadedFile) ? uploadedFile.length > 0 : Boolean(uploadedFile);
   const canClearChat = Boolean(onClearChat) && (hasMessages || hasAttachment || trimmedInputMessage.length > 0);
   const clearButtonDisabled = isLoading || !canClearChat;
 
@@ -776,13 +776,14 @@ const DocumentChatArea = ({
               type="file"
               id="chat-file-upload"
               accept=".pdf,.txt,.md,.docx,.csv,.xlsx"
+              multiple
               className="hidden"
-              onChange={(e) => setUploadedFile(e.target.files[0] || null)}
+              onChange={(e) => setUploadedFile(Array.from(e.target.files))}
             />
             <label
               htmlFor="chat-file-upload"
               className="flex min-w-[44px] cursor-pointer items-center justify-center rounded-lg bg-gray-200 px-3 py-3 text-gray-700 transition hover:bg-gray-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:px-4 sm:py-4"
-              title="Attach a PDF, Word (.docx), Markdown (.md), Text (.txt), CSV (.csv), or Excel (.xlsx) document. Non-PDF files will be converted automatically."
+              title="Attach multiple PDF, Word (.docx), Markdown (.md), Text (.txt), CSV (.csv), or Excel (.xlsx) documents. Non-PDF files will be converted automatically."
             >
               <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
             </label>
@@ -809,7 +810,7 @@ const DocumentChatArea = ({
           <button
             type="button"
             onClick={handleSendMessage}
-            disabled={isLoading || cooldown > 0 || (!trimmedInputMessage && !uploadedFile)}
+            disabled={isLoading || cooldown > 0 || (!trimmedInputMessage && !hasAttachment)}
             className="flex min-w-[44px] items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:py-4"
             title={cooldown > 0 ? `Please wait ${cooldown}s` : 'Send message'}
           >
@@ -821,24 +822,49 @@ const DocumentChatArea = ({
           </button>
         </div>
 
-        {uploadedFile && (
-          <div className="mt-2 flex items-center justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
-            <div className="min-w-0">
-              <div className="truncate font-medium text-gray-700" title={uploadedFile?.name}>
-                {uploadedFile?.name || 'Attached document'}
-              </div>
-              <div className="text-[11px] text-gray-500">
-                Will be indexed and available for chat
-              </div>
+        {hasAttachment && (
+          <div className="mt-2 space-y-2">
+            <div className="text-xs font-medium text-gray-600">
+              {Array.isArray(uploadedFile) ? `${uploadedFile.length} file${uploadedFile.length !== 1 ? 's' : ''} attached` : '1 file attached'}
             </div>
-            <button
-              type="button"
-              onClick={() => setUploadedFile(null)}
-              className="flex items-center gap-1 rounded-full border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-600 transition hover:border-gray-400 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-            >
-              <X className="h-3 w-3" aria-hidden="true" />
-              <span>Remove</span>
-            </button>
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {(Array.isArray(uploadedFile) ? uploadedFile : [uploadedFile]).map((file, index) => (
+                <div key={index} className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-gray-700" title={file?.name}>
+                      {file?.name || `Attached document ${index + 1}`}
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      Will be indexed and available for chat
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (Array.isArray(uploadedFile)) {
+                        const newFiles = uploadedFile.filter((_, i) => i !== index);
+                        setUploadedFile(newFiles.length > 0 ? newFiles : null);
+                      } else {
+                        setUploadedFile(null);
+                      }
+                    }}
+                    className="flex items-center gap-1 rounded-full border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-600 transition hover:border-gray-400 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                    <span>Remove</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+            {Array.isArray(uploadedFile) && uploadedFile.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setUploadedFile(null)}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Remove all files
+              </button>
+            )}
           </div>
         )}
 

@@ -1212,13 +1212,14 @@ const ChatArea = ({
               type="file"
               id="chat-file-upload"
               accept=".pdf,.txt,.md,.docx,.csv,.xlsx"
+              multiple
               className="hidden"
-              onChange={(e) => setUploadedFile(e.target.files[0] || null)}
+              onChange={(e) => setUploadedFile(Array.from(e.target.files))}
             />
             <label
               htmlFor="chat-file-upload"
               className="flex min-w-[44px] cursor-pointer items-center justify-center rounded-lg bg-gray-200 px-3 py-3 text-gray-700 transition hover:bg-gray-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:px-4 sm:py-4"
-              title="Attach a PDF, Word (.docx), Markdown (.md), Text (.txt), CSV (.csv), or Excel (.xlsx) document. Non-PDF files will be converted automatically."
+              title="Attach multiple PDF, Word (.docx), Markdown (.md), Text (.txt), CSV (.csv), or Excel (.xlsx) documents. Non-PDF files will be converted automatically."
             >
               <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
             </label>
@@ -1245,7 +1246,7 @@ const ChatArea = ({
           <button
             type="button"
             onClick={handleSendMessage}
-            disabled={isLoading || cooldown > 0 || (!trimmedInputMessage && !uploadedFile)}
+            disabled={isLoading || cooldown > 0 || (!trimmedInputMessage && !(Array.isArray(uploadedFile) ? uploadedFile.length > 0 : uploadedFile))}
             className="flex min-w-[44px] items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:py-4"
             title={cooldown > 0 ? `Please wait ${cooldown}s` : 'Send message'}
           >
@@ -1257,7 +1258,35 @@ const ChatArea = ({
           </button>
         </div>
 
-        {uploadedFile && (
+        {Array.isArray(uploadedFile) && uploadedFile.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-gray-600">
+              {uploadedFile.length} file{uploadedFile.length !== 1 ? 's' : ''} attached
+            </div>
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {uploadedFile.map((file, index) => (
+                <AttachmentPreview 
+                  key={index}
+                  file={file} 
+                  onRemove={() => {
+                    const newFiles = uploadedFile.filter((_, i) => i !== index);
+                    setUploadedFile(newFiles.length > 0 ? newFiles : null);
+                  }} 
+                />
+              ))}
+            </div>
+            {uploadedFile.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setUploadedFile(null)}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Remove all files
+              </button>
+            )}
+          </div>
+        )}
+        {!Array.isArray(uploadedFile) && uploadedFile && (
           <AttachmentPreview file={uploadedFile} onRemove={() => setUploadedFile(null)} />
         )}
 

@@ -661,21 +661,42 @@ function App() {
   const handleSendMessage = useCallback(async () => {
     const rawInput = inputMessage;
     const trimmedInput = rawInput.trim();
+    const hasFiles = Array.isArray(uploadedFile) ? uploadedFile.length > 0 : Boolean(uploadedFile);
 
-    if (!trimmedInput && !uploadedFile) return;
+    if (!trimmedInput && !hasFiles) return;
     if (cooldown > 0) return;
 
     setIsLoading(true);
 
-    let conversionDetails = null;
-    let preparedFile = null;
+    const files = Array.isArray(uploadedFile) ? uploadedFile : (uploadedFile ? [uploadedFile] : []);
+    const conversionResults = [];
+    let hasConversionError = false;
 
-    if (uploadedFile) {
+    if (hasFiles) {
       try {
-        conversionDetails = await convertFileToPdfIfNeeded(uploadedFile);
-        preparedFile = conversionDetails.file;
-      } catch (conversionError) {
-        console.error('File conversion failed:', conversionError);
+        // Process each file
+        for (const file of files) {
+          try {
+            const conversionDetails = await convertFileToPdfIfNeeded(file);
+            conversionResults.push({
+              file: conversionDetails.file,
+              originalFileName: conversionDetails.originalFileName || file.name,
+              converted: conversionDetails.converted,
+              conversionType: conversionDetails.conversion
+            });
+          } catch (conversionError) {
+            console.error('File conversion failed for', file.name, ':', conversionError);
+            hasConversionError = true;
+            conversionResults.push({
+              file: file,
+              originalFileName: file.name,
+              converted: false,
+              error: conversionError.message || 'Conversion failed'
+            });
+          }
+        }
+      } catch (error) {
+        console.error('File processing failed:', error);
         setIsLoading(false);
         setUploadedFile(null);
         setMessages((prev) => [
@@ -685,8 +706,8 @@ function App() {
             role: 'assistant',
             type: 'ai',
             content:
-              conversionError.message ||
-              'I was unable to process the attached document. Please upload a PDF, Word (.docx), Markdown (.md), text (.txt), CSV (.csv), or Excel (.xlsx) file.',
+              error.message ||
+              'I was unable to process the attached documents. Please upload PDF, Word (.docx), Markdown (.md), text (.txt), CSV (.csv), or Excel (.xlsx) files.',
             timestamp: Date.now(),
             sources: [],
             resources: [],
@@ -698,21 +719,13 @@ function App() {
 
     const conversationHistory = buildChatHistory(messages);
 
-    const attachments = uploadedFile
-      ? [
-          {
-            originalFileName:
-              conversionDetails?.originalFileName || uploadedFile.name || null,
-            finalFileName:
-              preparedFile?.name ||
-              conversionDetails?.originalFileName ||
-              uploadedFile.name ||
-              null,
-            converted: Boolean(conversionDetails?.converted),
-            conversionType: conversionDetails?.conversion || null,
-          },
-        ]
-      : [];
+    const attachments = conversionResults.map(result => ({
+      originalFileName: result.originalFileName || null,
+      finalFileName: result.file?.name || result.originalFileName || null,
+      converted: result.converted,
+      conversionType: result.conversionType || null,
+      error: result.error || null
+    }));
 
     const attachmentResources = createAttachmentResources(attachments);
 
@@ -731,7 +744,7 @@ function App() {
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage('');
 
-    const exportIntent = !preparedFile ? detectDocumentExportIntent(trimmedInput) : null;
+    const exportIntent = conversionResults.length === 0 ? detectDocumentExportIntent(trimmedInput) : null;
 
     if (exportIntent) {
       const exportSourceMessages = updatedMessages;
@@ -774,7 +787,7 @@ function App() {
       return;
     }
 
-    const vectorStoreIdToUse = usesNeonBackend || preparedFile
+    const vectorStoreIdToUse = usesNeonBackend || conversionResults.length > 0
       ? null
       : activeDocument?.vectorStoreId || null;
 
@@ -795,7 +808,7 @@ function App() {
       const wasSystemQuestion = lastMessageWasSystemQuestion(updatedMessages);
       
       // Use the selected mode - either Document Search or AI Knowledge
-      if (isDocumentSearchMode && !preparedFile) {
+      if (isDocumentSearchMode && conversionResults.length === 0) {
         documentSearchAttempted = true;
         try {
           // If it's a simple response to a system question, try to find the original query
@@ -857,7 +870,7 @@ function App() {
           });
           documentSearchFallbackExplanation = getDocumentSearchFallbackExplanation();
         }
-      } else if (!isDocumentSearchMode && !preparedFile) {
+      } else if (!isDocumentSearchMode && conversionResults.length === 0) {
         modeUsed = 'AI Knowledge';
       }
 
@@ -886,7 +899,7 @@ Would you like to try rephrasing your question with any of these suggestions?`,
         if (!response) {
           response = await aiService.getChatResponse(
             rawInput,
-            preparedFile,
+            conversionResults.length > 0 ? conversionResults[0].file : null,
             conversationHistory,
             undefined,
             vectorStoreIdToUse
@@ -898,7 +911,7 @@ Would you like to try rephrasing your question with any of these suggestions?`,
           // User needs to manually switch to AI mode
           modeUsed = 'Document Search (no results found)';
           setLastResponseMode('document-search-no-results');
-        } else if (!isDocumentSearchMode && !preparedFile) {
+        } else if (!isDocumentSearchMode && conversionResults.length === 0) {
           modeUsed = 'AI Knowledge';
           setLastResponseMode('ai-knowledge');
         } else {
@@ -952,17 +965,16 @@ Would you like to try rephrasing your question with any of these suggestions?`,
       setMessages((prev) => [...prev, assistantMessage]);
 
       if (!usesNeonBackend && response.vectorStoreId) {
-        if (preparedFile) {
+        if (conversionResults.length > 0) {
           const now = Date.now();
+          const firstFile = conversionResults[0];
           setActiveDocument({
             vectorStoreId: response.vectorStoreId,
-            originalName:
-              conversionDetails?.originalFileName || uploadedFile?.name || preparedFile?.name || null,
-            processedName: preparedFile?.name || null,
-            mimeType:
-              conversionDetails?.originalMimeType || uploadedFile?.type || preparedFile?.type || null,
-            size: uploadedFile?.size ?? preparedFile?.size ?? null,
-            converted: Boolean(conversionDetails?.converted),
+            originalName: firstFile.originalFileName || null,
+            processedName: firstFile.file?.name || null,
+            mimeType: firstFile.file?.type || null,
+            size: firstFile.file?.size ?? null,
+            converted: firstFile.converted,
             lastUpdated: now,
           });
         } else {
@@ -989,7 +1001,7 @@ Would you like to try rephrasing your question with any of these suggestions?`,
             };
           });
         }
-      } else if (preparedFile) {
+      } else if (conversionResults.length > 0) {
         setActiveDocument(null);
       }
 

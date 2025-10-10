@@ -115,7 +115,8 @@ const DocumentChatPage = () => {
   // Handle sending messages
   const handleSendMessage = useCallback(async () => {
     const trimmedMessage = inputMessage.trim();
-    if (!trimmedMessage && !uploadedFile) return;
+    const hasFiles = Array.isArray(uploadedFile) ? uploadedFile.length > 0 : Boolean(uploadedFile);
+    if (!trimmedMessage && !hasFiles) return;
     if (isLoading || cooldown > 0) return;
 
     setIsLoading(true);
@@ -123,15 +124,16 @@ const DocumentChatPage = () => {
 
     try {
       // Add user message to UI immediately
+      const files = Array.isArray(uploadedFile) ? uploadedFile : (uploadedFile ? [uploadedFile] : []);
       const userMessage = {
         role: 'user',
         content: trimmedMessage,
         timestamp: new Date().toISOString(),
-        attachments: uploadedFile ? [{
-          originalFileName: uploadedFile.name,
-          finalFileName: uploadedFile.name,
+        attachments: files.map(file => ({
+          originalFileName: file.name,
+          finalFileName: file.name,
           converted: false
-        }] : []
+        }))
       };
 
       setMessages(prev => [...prev, userMessage]);
@@ -147,32 +149,41 @@ const DocumentChatPage = () => {
         provider: getModelProvider() // Add current model provider
       };
 
-      // If file is uploaded, index it first
-      if (uploadedFile) {
+      // If files are uploaded, index them first
+      if (hasFiles) {
         const userId = await getUserId();
         if (!userId) {
           throw new Error('No user ID available');
         }
 
-        const formData = new FormData();
-        formData.append('file', uploadedFile);
-        formData.append('action', 'upload');
+        const newDocumentIds = [];
+        
+        // Process each file
+        for (const file of files) {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('action', 'upload');
 
-        const indexResponse = await fetch('/.netlify/functions/index-documents', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-            'x-user-id': userId
-          },
-          body: formData
-        });
+          const indexResponse = await fetch('/.netlify/functions/index-documents', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+              'x-user-id': userId
+            },
+            body: formData
+          });
 
-        if (indexResponse.ok) {
-          const indexData = await indexResponse.json();
-          if (indexData.documentId) {
-            requestBody.documentIds = [...selectedDocuments, indexData.documentId];
+          if (indexResponse.ok) {
+            const indexData = await indexResponse.json();
+            if (indexData.documentId) {
+              newDocumentIds.push(indexData.documentId);
+            }
           }
-          // Reload documents to include the new one
+        }
+        
+        if (newDocumentIds.length > 0) {
+          requestBody.documentIds = [...selectedDocuments, ...newDocumentIds];
+          // Reload documents to include the new ones
           loadDocuments();
         }
       }

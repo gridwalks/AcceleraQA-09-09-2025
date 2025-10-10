@@ -1,6 +1,6 @@
 import { OPENAI_CONFIG, ERROR_MESSAGES } from '../config/constants';
 import { generateResources } from '../utils/resourceGenerator';
-import { getCurrentModel } from '../config/modelConfig';
+import { getCurrentModel, getSystemPromptOverride } from '../config/modelConfig';
 import { recordTokenUsage } from '../utils/tokenUsage';
 import { convertDocxToPdfIfNeeded } from '../utils/fileConversion';
 
@@ -285,7 +285,7 @@ class OpenAIService {
     const normalizedHistory = this.normalizeHistory(history);
 
     const messages = [
-      { role: 'system', content: OPENAI_CONFIG.SYSTEM_PROMPT },
+      { role: 'system', content: getSystemPromptOverride() || OPENAI_CONFIG.SYSTEM_PROMPT },
       ...normalizedHistory.map(item => ({ role: item.role, content: item.content })),
     ];
 

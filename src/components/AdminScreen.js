@@ -33,7 +33,8 @@ import { getToken, getTokenInfo } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 import RAGConfigurationPage from './RAGConfigurationPage';
 import TrainingResourcesAdmin from './TrainingResourcesAdmin';
-import { getCurrentModel, getModelProvider, setModelProvider } from '../config/modelConfig';
+import { getCurrentModel, getModelProvider, setModelProvider, getSystemPromptOverride, setSystemPromptOverride, clearSystemPromptOverride } from '../config/modelConfig';
+import { OPENAI_CONFIG } from '../config/constants';
 import { getTokenUsageStats } from '../utils/tokenUsage';
 import { getRagBackendLabel, isNeonBackend } from '../config/ragConfig';
 import blobAdminService from '../services/blobAdminService';
@@ -1828,6 +1829,9 @@ const AIModelConfiguration = ({ user }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
+  const [useCustomPrompt, setUseCustomPrompt] = useState(!!getSystemPromptOverride());
+  const [customPrompt, setCustomPrompt] = useState(getSystemPromptOverride() || '');
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
 
   const handleProviderChange = async (provider) => {
     setIsLoading(true);
@@ -1850,6 +1854,38 @@ const AIModelConfiguration = ({ user }) => {
       setMessageType('error');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handlePromptOverrideToggle = async (enabled) => {
+    setUseCustomPrompt(enabled);
+    
+    if (!enabled) {
+      // Disable override - clear it
+      const success = clearSystemPromptOverride();
+      if (success) {
+        setCustomPrompt('');
+        setShowPromptEditor(false);
+        setMessage('System prompt override disabled. Using default prompt.');
+        setMessageType('success');
+      }
+    } else {
+      // Enable override - show editor
+      setShowPromptEditor(true);
+      if (!customPrompt) {
+        setCustomPrompt(OPENAI_CONFIG.SYSTEM_PROMPT);
+      }
+    }
+  };
+
+  const handleSaveCustomPrompt = () => {
+    const success = setSystemPromptOverride(customPrompt);
+    if (success) {
+      setMessage('Custom system prompt saved successfully.');
+      setMessageType('success');
+    } else {
+      setMessage('Failed to save custom prompt.');
+      setMessageType('error');
     }
   };
 

@@ -33,7 +33,7 @@ import { getToken, getTokenInfo } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
 import RAGConfigurationPage from './RAGConfigurationPage';
 import TrainingResourcesAdmin from './TrainingResourcesAdmin';
-import { getCurrentModel } from '../config/modelConfig';
+import { getCurrentModel, getModelProvider, setModelProvider } from '../config/modelConfig';
 import { getTokenUsageStats } from '../utils/tokenUsage';
 import { getRagBackendLabel, isNeonBackend } from '../config/ragConfig';
 import blobAdminService from '../services/blobAdminService';
@@ -919,6 +919,7 @@ const AdminScreen = ({ user, onBack }) => {
               { id: 'rag', label: 'RAG System', icon: FileText },
               { id: 'blobStorage', label: 'Netlify Blobs', icon: Cloud },
               { id: 'ragConfig', label: 'My Resources', icon: Search },
+              { id: 'aiModel', label: 'AI Model', icon: Zap },
               { id: 'system', label: 'System Health', icon: Activity },
               { id: 'usage', label: 'Token Usage', icon: BarChart3 },
               { id: 'training', label: 'External Resources', icon: BookOpen },
@@ -1208,6 +1209,13 @@ const AdminScreen = ({ user, onBack }) => {
           {activeTab === 'ragConfig' && (
             <div className="space-y-6">
               <RAGConfigurationPage user={user} onClose={() => setActiveTab('overview')} />
+            </div>
+          )}
+
+          {/* AI Model Tab */}
+          {activeTab === 'aiModel' && (
+            <div className="space-y-6">
+              <AIModelConfiguration user={user} />
             </div>
           )}
 
@@ -1811,6 +1819,150 @@ const AdminToolCard = ({ title, description, icon: Icon, onClick, loading, color
         </div>
       )}
     </button>
+  );
+};
+
+// AI Model Configuration Component
+const AIModelConfiguration = ({ user }) => {
+  const [currentProvider, setCurrentProvider] = useState(getModelProvider());
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('');
+
+  const handleProviderChange = async (provider) => {
+    setIsLoading(true);
+    setMessage('');
+    
+    try {
+      const success = setModelProvider(provider);
+      if (success) {
+        setCurrentProvider(provider);
+        setMessage(`Model provider successfully changed to ${provider === 'openai' ? 'OpenAI GPT-4o' : 'Groq GPT OSS 20b'}`);
+        setMessageType('success');
+      } else {
+        setMessage('Failed to change model provider. Please try again.');
+        setMessageType('error');
+      }
+    } catch (error) {
+      console.error('Error changing provider:', error);
+      setMessage('An error occurred while changing the model provider.');
+      setMessageType('error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const providers = [
+    {
+      id: 'openai',
+      name: 'OpenAI GPT-4o',
+      description: 'Advanced AI model with excellent reasoning and code generation capabilities',
+      features: ['High accuracy', 'Code generation', 'File processing', 'Vector search'],
+      color: 'blue'
+    },
+    {
+      id: 'groq',
+      name: 'Groq GPT OSS 20b (Llama 3.3 70B)',
+      description: 'Fast open-source model optimized for speed and efficiency',
+      features: ['Very fast responses', 'Open source', 'Cost effective', 'High throughput'],
+      color: 'green'
+    }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Zap className="h-5 w-5 mr-2 text-blue-600" />
+          AI Model Configuration
+        </h3>
+        
+        <p className="text-sm text-gray-600 mb-6">
+          Select the AI model provider for all chat functionality. This setting applies system-wide to all users.
+        </p>
+
+        {message && (
+          <div className={`mb-6 p-4 rounded-lg ${
+            messageType === 'success' 
+              ? 'bg-green-50 border border-green-200 text-green-800' 
+              : 'bg-red-50 border border-red-200 text-red-800'
+          }`}>
+            <div className="flex items-center">
+              {messageType === 'success' ? (
+                <CheckCircle className="h-5 w-5 mr-2" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 mr-2" />
+              )}
+              <span className="font-medium">{message}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {providers.map((provider) => (
+            <div
+              key={provider.id}
+              className={`relative border-2 rounded-lg p-6 cursor-pointer transition-all ${
+                currentProvider === provider.id
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              onClick={() => !isLoading && handleProviderChange(provider.id)}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center">
+                  <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                    currentProvider === provider.id
+                      ? 'border-blue-500 bg-blue-500'
+                      : 'border-gray-300'
+                  }`}>
+                    {currentProvider === provider.id && (
+                      <div className="w-2 h-2 bg-white rounded-full m-0.5"></div>
+                    )}
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900">{provider.name}</h4>
+                </div>
+                {currentProvider === provider.id && (
+                  <div className="flex items-center text-blue-600">
+                    <CheckCircle className="h-5 w-5 mr-1" />
+                    <span className="text-sm font-medium">Active</span>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-sm text-gray-600 mb-4">{provider.description}</p>
+
+              <div className="space-y-2">
+                <h5 className="text-sm font-medium text-gray-700">Key Features:</h5>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  {provider.features.map((feature, index) => (
+                    <li key={index} className="flex items-center">
+                      <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2"></div>
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {isLoading && currentProvider === provider.id && (
+                <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+                  <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+          <h5 className="text-sm font-medium text-gray-700 mb-2">Current Configuration:</h5>
+          <div className="text-sm text-gray-600">
+            <p><strong>Provider:</strong> {currentProvider === 'openai' ? 'OpenAI' : 'Groq'}</p>
+            <p><strong>Model:</strong> {currentProvider === 'openai' ? 'GPT-4o' : 'Llama 3.3 70B Versatile'}</p>
+            <p><strong>Scope:</strong> All chat functionality (main chat, document chat, study notes)</p>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

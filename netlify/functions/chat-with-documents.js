@@ -13,6 +13,12 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Initialize Groq (using OpenAI-compatible API)
+const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
+});
+
 // Initialize Neon connection
 const getDatabaseConnection = () => {
   const connectionString = process.env.NEON_DATABASE_URL;
@@ -353,7 +359,7 @@ function buildDocumentContext(searchResults, documentSummaries) {
 }
 
 // Generate AI response with document context
-async function generateAIResponse(message, documentContext, conversationHistory = []) {
+async function generateAIResponse(message, documentContext, conversationHistory = [], provider = 'openai') {
   // Build comprehensive document context with both search results and summaries
   const contextText = documentContext.searchResults
     .map(result => {
@@ -411,8 +417,12 @@ async function generateAIResponse(message, documentContext, conversationHistory 
   ];
   
   try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+    // Select the appropriate AI provider
+    const aiClient = provider === 'groq' ? groq : openai;
+    const model = provider === 'groq' ? 'llama-3.3-70b-versatile' : 'gpt-4';
+    
+    const completion = await aiClient.chat.completions.create({
+      model,
       messages,
       max_tokens: 1000,
       temperature: 0.7
@@ -493,7 +503,7 @@ export const handler = async (event, context) => {
       };
     }
 
-    const { message, documentIds, conversationHistory = [] } = requestData;
+    const { message, documentIds, conversationHistory = [], provider = 'openai' } = requestData;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       return {
@@ -517,7 +527,7 @@ export const handler = async (event, context) => {
     const documentContext = buildDocumentContext(searchResults, documentSummaries);
     
     // Generate AI response
-    const aiResponse = await generateAIResponse(message.trim(), documentContext, conversationHistory);
+    const aiResponse = await generateAIResponse(message.trim(), documentContext, conversationHistory, provider);
 
     // Return response
     return {

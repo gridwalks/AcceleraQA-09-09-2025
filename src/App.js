@@ -19,7 +19,7 @@ import StorageNotification, { useStorageNotifications } from './components/Stora
 import { v4 as uuidv4 } from 'uuid';
 import authService, { initializeAuth, handleLogout } from './services/authService';
 import ragService, { search as ragSearch } from './services/ragService';
-import openaiService from './services/openaiService';
+import aiService from './services/aiService';
 
 import {
   initializeNeonService,
@@ -881,7 +881,7 @@ Would you like to try rephrasing your question with any of these suggestions?`,
         }
         
         if (!response) {
-          response = await openaiService.getChatResponse(
+          response = await aiService.getChatResponse(
             rawInput,
             preparedFile,
             conversationHistory,
@@ -1213,7 +1213,7 @@ Would you like to try rephrasing your question with any of these suggestions?`,
         throw new Error('Please select at least one conversation with a valid AI response.');
       }
 
-      const notesResult = await openaiService.generateStudyNotes(candidateMessages);
+      const notesResult = await aiService.generateStudyNotes(candidateMessages);
       const notesContent = typeof notesResult?.answer === 'string' ? notesResult.answer.trim() : '';
 
       if (!notesContent) {

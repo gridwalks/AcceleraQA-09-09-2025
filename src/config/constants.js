@@ -35,6 +35,15 @@ Domain Guidance:
 9. Quote or paraphrase the document sections when answering to show your sources.
 `,
 };
+
+// Groq Configuration
+export const GROQ_CONFIG = {
+  MODEL: 'llama-3.3-70b-versatile',
+  MAX_TOKENS: 1200,
+  TEMPERATURE: 0.7,
+  BASE_URL: 'https://api.groq.com/openai/v1',
+  SYSTEM_PROMPT: OPENAI_CONFIG.SYSTEM_PROMPT, // Same system prompt for consistency
+};
 // Auth0 Configuration with enhanced validation
 export const AUTH0_CONFIG = {
   DOMAIN: process.env.REACT_APP_AUTH0_DOMAIN,
@@ -66,9 +75,13 @@ export const ERROR_MESSAGES = {
 
   INVALID_API_KEY: 'Invalid OpenAI API key.\n\nTROUBLESHOOTING STEPS:\n1. Verify your API key is correct and active\n2. Check your OpenAI account billing status\n3. Generate a new API key if needed: https://platform.openai.com/account/api-keys',
 
+  GROQ_API_KEY_NOT_CONFIGURED: 'Groq API key not configured.\n\nTROUBLESHOOTING STEPS:\n1. Check that REACT_APP_GROQ_API_KEY or GROQ_API_KEY is set in your environment\n2. If deploying to Netlify, add the variable in Site Settings > Environment Variables\n3. Get your API key from: https://console.groq.com/keys\n4. Contact your administrator if you need access',
+
+  GROQ_INVALID_API_KEY: 'Invalid Groq API key.\n\nTROUBLESHOOTING STEPS:\n1. Verify your API key is correct and active\n2. Check your Groq account status\n3. Generate a new API key if needed: https://console.groq.com/keys',
+
   RATE_LIMIT_EXCEEDED: (tokens) => 'Rate limit exceeded while sending ' + tokens + ' tokens. Please wait a few seconds before trying again.',
   
-  QUOTA_EXCEEDED: 'OpenAI API quota exceeded.\n\nTROUBLESHOOTING STEPS:\n1. Check your usage: https://platform.openai.com/account/usage\n2. Review your billing: https://platform.openai.com/account/billing\n3. Upgrade your plan if needed',
+  QUOTA_EXCEEDED: 'API quota exceeded.\n\nTROUBLESHOOTING STEPS:\n1. Check your usage in your provider dashboard\n2. Review your billing status\n3. Upgrade your plan if needed',
 
   NETWORK_ERROR: 'Network error. Please check your internet connection and try again.',
   GENERIC_ERROR: 'Sorry, I encountered an error. Please try again.',

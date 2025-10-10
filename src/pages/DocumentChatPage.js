@@ -5,6 +5,7 @@ import DocumentViewer from '../components/DocumentViewer';
 import Header from '../components/Header';
 import authService, { initializeAuth, getUserId, handleLogout } from '../services/authService';
 import { hasAdminRole } from '../utils/auth';
+import { getModelProvider } from '../config/modelConfig';
 import { 
   MessageSquare, 
   Database, 
@@ -142,7 +143,8 @@ const DocumentChatPage = () => {
         message: trimmedMessage,
         conversationId: conversationId,
         documentIds: selectedDocuments,
-        conversationHistory: messages.slice(-10) // Last 10 messages for context
+        conversationHistory: messages.slice(-10), // Last 10 messages for context
+        provider: getModelProvider() // Add current model provider
       };
 
       // If file is uploaded, index it first

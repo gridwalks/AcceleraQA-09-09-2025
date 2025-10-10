@@ -13,21 +13,8 @@ export const OPENAI_MODEL = 'gpt-4o';
 export const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 export function getCurrentModel() {
-  try {
-    if (typeof localStorage !== 'undefined' && isStorageAvailable()) {
-      const storedModel = localStorage.getItem(MODEL_STORAGE_KEY);
-      if (storedModel && MODEL_OPTIONS.includes(storedModel)) {
-        return storedModel;
-      }
-      if (storedModel) {
-        localStorage.removeItem(MODEL_STORAGE_KEY);
-      }
-      return DEFAULT_MODEL;
-    }
-  } catch (error) {
-    console.warn('Model config read failed:', error);
-  }
-  return DEFAULT_MODEL;
+  // Use provider-based model selection
+  return getCurrentModelForProvider();
 }
 
 export function getModelProvider() {

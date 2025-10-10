@@ -1,5 +1,6 @@
 // src/services/ragService.js - RAG service using OpenAI file search APIs
 import openaiService from './openaiService';
+import aiService from './aiService';
 import authService, { getToken, getUserId } from './authService';
 import { getCurrentModel } from '../config/modelConfig';
 import { RAG_BACKEND, RAG_BACKENDS, NEON_RAG_FUNCTION, RAG_DOCS_FUNCTION } from '../config/ragConfig';
@@ -1923,7 +1924,7 @@ class RAGService {
 
     const prompt = promptSections.join('\n');
 
-    const aiResult = await openaiService.getChatResponse(prompt);
+    const aiResult = await aiService.getChatResponse(prompt);
     const rawAnswer = typeof aiResult?.answer === 'string' ? aiResult.answer : '';
     const resources = aiResult?.resources || [];
 

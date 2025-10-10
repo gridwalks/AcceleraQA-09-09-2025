@@ -2,6 +2,7 @@ import { isStorageAvailable } from '../utils/storageUtils';
 
 export const MODEL_STORAGE_KEY = 'acceleraqa_ai_model';
 export const PROVIDER_STORAGE_KEY = 'acceleraqa_model_provider';
+export const SYSTEM_PROMPT_STORAGE_KEY = 'acceleraqa_system_prompt_override';
 
 export const MODEL_OPTIONS = ['gpt-4o', 'openai/gpt-oss-120b'];
 export const PROVIDER_OPTIONS = ['openai', 'groq'];
@@ -68,4 +69,45 @@ export function getCurrentModelForProvider() {
 
 export function setCurrentModel() {
   console.warn('setCurrentModel is deprecated. Use setModelProvider() instead.');
+}
+
+export function getSystemPromptOverride() {
+  try {
+    if (typeof localStorage !== 'undefined' && isStorageAvailable()) {
+      const stored = localStorage.getItem(SYSTEM_PROMPT_STORAGE_KEY);
+      return stored || null;
+    }
+  } catch (error) {
+    console.warn('System prompt override read failed:', error);
+  }
+  return null;
+}
+
+export function setSystemPromptOverride(prompt) {
+  try {
+    if (typeof localStorage !== 'undefined' && isStorageAvailable()) {
+      if (prompt && prompt.trim()) {
+        localStorage.setItem(SYSTEM_PROMPT_STORAGE_KEY, prompt.trim());
+        return true;
+      } else {
+        localStorage.removeItem(SYSTEM_PROMPT_STORAGE_KEY);
+        return true;
+      }
+    }
+  } catch (error) {
+    console.warn('System prompt override write failed:', error);
+  }
+  return false;
+}
+
+export function clearSystemPromptOverride() {
+  try {
+    if (typeof localStorage !== 'undefined' && isStorageAvailable()) {
+      localStorage.removeItem(SYSTEM_PROMPT_STORAGE_KEY);
+      return true;
+    }
+  } catch (error) {
+    console.warn('System prompt override clear failed:', error);
+  }
+  return false;
 }

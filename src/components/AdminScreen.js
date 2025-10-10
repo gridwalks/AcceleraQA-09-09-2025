@@ -1998,6 +1998,62 @@ const AIModelConfiguration = ({ user }) => {
             <p><strong>Scope:</strong> All chat functionality (main chat, document chat, study notes)</p>
           </div>
         </div>
+
+        {/* System Prompt Override Section */}
+        <div className="mt-6 p-6 bg-white rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h5 className="text-sm font-semibold text-gray-900">System Prompt Override</h5>
+              <p className="text-xs text-gray-500 mt-1">
+                Customize the system prompt used for AI responses (applies to both providers)
+              </p>
+            </div>
+            <button
+              onClick={() => handlePromptOverrideToggle(!useCustomPrompt)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                useCustomPrompt ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  useCustomPrompt ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {showPromptEditor && useCustomPrompt && (
+            <div className="mt-4 space-y-3">
+              <textarea
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                className="w-full h-64 p-3 border border-gray-300 rounded-lg text-sm font-mono resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Enter custom system prompt..."
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">
+                  {customPrompt.length} characters
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setCustomPrompt(OPENAI_CONFIG.SYSTEM_PROMPT);
+                    }}
+                    className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+                  >
+                    Reset to Default
+                  </button>
+                  <button
+                    onClick={handleSaveCustomPrompt}
+                    className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded hover:bg-blue-700"
+                  >
+                    Save Prompt
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -328,6 +328,9 @@ function App() {
   const [thirtyDayMessages, setThirtyDayMessages] = useState([]);
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
 
+  // Mode toggle state
+  const [isDocumentSearchMode, setIsDocumentSearchMode] = useState(true);
+
   const messagesEndRef = useRef(null);
   const messagesLoadedRef = useRef(false);
   const isAdmin = useMemo(() => user?.roles?.includes('admin'), [user]);
@@ -791,8 +794,8 @@ function App() {
       const isSimpleUserResponse = isSimpleResponse(rawInput);
       const wasSystemQuestion = lastMessageWasSystemQuestion(updatedMessages);
       
-      // Always try document search first unless it's a simple response to a system question
-      if (!preparedFile && !manualOverrideDisabled) {
+      // Use the selected mode - either Document Search or AI Knowledge
+      if (isDocumentSearchMode && !preparedFile) {
         documentSearchAttempted = true;
         try {
           // If it's a simple response to a system question, try to find the original query
@@ -839,23 +842,23 @@ function App() {
             documentSearchProvidedMeaningfulAnswer = true;
             console.log('Document search provided meaningful response');
           } else {
-            // Document search didn't find meaningful results, will fall back to AI
+            // Document search didn't find meaningful results
             documentSearchFallbackExplanation = getDocumentSearchFallbackExplanation(
               ragAnswer
             );
-            console.log('Document search response not meaningful, will fall back to AI:', documentSearchFallbackExplanation);
-            // Don't set response here - let it fall through to AI mode
+            console.log('Document search response not meaningful:', documentSearchFallbackExplanation);
+            // Don't set response here - user will need to manually switch to AI mode
           }
         } catch (ragError) {
-          console.error('Document search failed, falling back to AI Knowledge:', {
+          console.error('Document search failed:', {
             error: ragError.message,
             stack: ragError.stack,
             query: rawInput?.substring(0, 100)
           });
           documentSearchFallbackExplanation = getDocumentSearchFallbackExplanation();
         }
-      } else if (!preparedFile && manualOverrideDisabled) {
-        modeUsed = 'AI Knowledge (manual override)';
+      } else if (!isDocumentSearchMode && !preparedFile) {
+        modeUsed = 'AI Knowledge';
       }
 
       if (!response) {
@@ -890,12 +893,14 @@ Would you like to try rephrasing your question with any of these suggestions?`,
           );
         }
 
-        if (documentSearchAttempted) {
-          modeUsed = 'AI Knowledge (automatic fallback)';
-          setLastResponseMode('ai-knowledge-auto');
-        } else if (manualOverrideDisabled && !preparedFile) {
-          modeUsed = 'AI Knowledge (manual override)';
-          setLastResponseMode('ai-knowledge-manual');
+        if (documentSearchAttempted && !documentSearchProvidedMeaningfulAnswer) {
+          // Document search was attempted but didn't provide meaningful results
+          // User needs to manually switch to AI mode
+          modeUsed = 'Document Search (no results found)';
+          setLastResponseMode('document-search-no-results');
+        } else if (!isDocumentSearchMode && !preparedFile) {
+          modeUsed = 'AI Knowledge';
+          setLastResponseMode('ai-knowledge');
         } else {
           modeUsed = 'AI Knowledge';
           setLastResponseMode('ai-knowledge');
@@ -927,10 +932,10 @@ Would you like to try rephrasing your question with any of these suggestions?`,
           const contentSections = [];
 
           if (documentSearchAttempted && !documentSearchProvidedMeaningfulAnswer) {
-            const fallbackNotice = documentSearchFallbackExplanation
+            const noResultsNotice = documentSearchFallbackExplanation
               ? documentSearchFallbackExplanation
-              : DEFAULT_DOCUMENT_SEARCH_FALLBACK_NOTE;
-            contentSections.push(`_${fallbackNotice}_`);
+              : "No relevant information found in your documents. Try switching to AI Knowledge mode for a general response, or refine your search terms.";
+            contentSections.push(`_${noResultsNotice}_`);
           }
 
           if (answerText) {
@@ -1463,6 +1468,8 @@ Would you like to try rephrasing your question with any of these suggestions?`,
                     setUploadedFile={setUploadedFile}
                     cooldown={cooldown}
                     onClearChat={clearChat}
+                    isDocumentSearchMode={isDocumentSearchMode}
+                    setIsDocumentSearchMode={setIsDocumentSearchMode}
                   />
                 </div>
 
@@ -1498,6 +1505,8 @@ Would you like to try rephrasing your question with any of these suggestions?`,
                     setUploadedFile={setUploadedFile}
                     cooldown={cooldown}
                     onClearChat={clearChat}
+                    isDocumentSearchMode={isDocumentSearchMode}
+                    setIsDocumentSearchMode={setIsDocumentSearchMode}
                   />
                 </div>
 

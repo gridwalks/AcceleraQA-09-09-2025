@@ -1,7 +1,7 @@
 // src/components/ChatArea.js - DEPLOYMENT READY (fixes DatabaseOff issue)
 
 import React, { useCallback } from 'react';
-import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown, Trash2, Bot, User } from 'lucide-react';
+import { Send, Loader2, Database, Paperclip, X, ExternalLink, BookOpen, FileDown, Trash2, Bot, User, Search, Brain } from 'lucide-react';
 import { exportToWord } from '../utils/exportUtils';
 import { parseMarkdown } from '../utils/messageUtils';
 
@@ -889,6 +889,8 @@ const ChatArea = ({
   setUploadedFile,
   cooldown, // rate-limit cooldown (seconds)
   onClearChat,
+  isDocumentSearchMode,
+  setIsDocumentSearchMode,
 }) => {
   const inputLength = typeof inputMessage === 'string' ? inputMessage.length : 0;
   const trimmedInputMessage = typeof inputMessage === 'string' ? inputMessage.trim() : '';
@@ -929,6 +931,37 @@ const ChatArea = ({
                 <span className="hidden sm:inline">Saving...</span>
               </div>
             )}
+          </div>
+          
+          {/* Mode Toggle */}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-gray-700">Mode:</span>
+            <div className="flex bg-gray-200 rounded-lg p-1">
+              <button
+                onClick={() => setIsDocumentSearchMode(true)}
+                className={`flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  isDocumentSearchMode
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                title="Search through uploaded documents"
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden sm:inline">Document Search</span>
+              </button>
+              <button
+                onClick={() => setIsDocumentSearchMode(false)}
+                className={`flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  !isDocumentSearchMode
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                title="Use AI knowledge for general responses"
+              >
+                <Brain className="h-4 w-4" />
+                <span className="hidden sm:inline">AI Knowledge</span>
+              </button>
+            </div>
           </div>
         </div>
 

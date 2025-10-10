@@ -3,14 +3,14 @@ import { isStorageAvailable } from '../utils/storageUtils';
 export const MODEL_STORAGE_KEY = 'acceleraqa_ai_model';
 export const PROVIDER_STORAGE_KEY = 'acceleraqa_model_provider';
 
-export const MODEL_OPTIONS = ['gpt-4o', 'llama-3.3-70b-versatile'];
+export const MODEL_OPTIONS = ['gpt-4o', 'openai/gpt-oss-120b'];
 export const PROVIDER_OPTIONS = ['openai', 'groq'];
 
 export const DEFAULT_MODEL = 'gpt-4o';
 export const DEFAULT_PROVIDER = 'openai';
 
 export const OPENAI_MODEL = 'gpt-4o';
-export const GROQ_MODEL = 'llama-3.3-70b-versatile';
+export const GROQ_MODEL = 'openai/gpt-oss-120b';
 
 export function getCurrentModel() {
   // Use provider-based model selection

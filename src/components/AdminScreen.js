@@ -1863,7 +1863,7 @@ const AIModelConfiguration = ({ user }) => {
     },
     {
       id: 'groq',
-      name: 'Groq GPT OSS 20b (Llama 3.3 70B)',
+      name: 'Groq GPT-OSS-120B',
       description: 'Fast open-source model optimized for speed and efficiency',
       features: ['Very fast responses', 'Open source', 'Cost effective', 'High throughput'],
       color: 'green'
@@ -1958,7 +1958,7 @@ const AIModelConfiguration = ({ user }) => {
           <h5 className="text-sm font-medium text-gray-700 mb-2">Current Configuration:</h5>
           <div className="text-sm text-gray-600">
             <p><strong>Provider:</strong> {currentProvider === 'openai' ? 'OpenAI' : 'Groq'}</p>
-            <p><strong>Model:</strong> {currentProvider === 'openai' ? 'GPT-4o' : 'Llama 3.3 70B Versatile'}</p>
+            <p><strong>Model:</strong> {currentProvider === 'openai' ? 'GPT-4o' : 'GPT-OSS-120B'}</p>
             <p><strong>Scope:</strong> All chat functionality (main chat, document chat, study notes)</p>
           </div>
         </div>

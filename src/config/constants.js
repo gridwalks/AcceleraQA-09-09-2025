@@ -30,7 +30,7 @@ When answering questions:
 
 // Groq Configuration
 export const GROQ_CONFIG = {
-  MODEL: 'llama-3.3-70b-versatile',
+  MODEL: 'openai/gpt-oss-120b',
   MAX_TOKENS: 1200,
   TEMPERATURE: 0.7,
   BASE_URL: 'https://api.groq.com/openai/v1',

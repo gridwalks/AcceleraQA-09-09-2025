@@ -28,6 +28,7 @@ import {
 } from './services/neonService';
 
 import { FEATURE_FLAGS } from './config/featureFlags';
+import { getModelProvider } from './config/modelConfig';
 import { loadMessagesFromStorage, saveMessagesToStorage } from './utils/storageUtils';
 import {
   mergeCurrentAndStoredMessages,

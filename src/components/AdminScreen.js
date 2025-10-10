@@ -1835,6 +1835,7 @@ const AIModelConfiguration = ({ user }) => {
     
     try {
       const success = setModelProvider(provider);
+      
       if (success) {
         setCurrentProvider(provider);
         setMessage(`Model provider successfully changed to ${provider === 'openai' ? 'OpenAI GPT-4o' : 'Groq GPT OSS 20b'}`);

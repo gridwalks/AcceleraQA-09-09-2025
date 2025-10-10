@@ -64,11 +64,14 @@ export function setModelProvider(provider) {
         console.warn('Invalid provider:', provider);
         return false;
       }
+    } else {
+      console.warn('localStorage not available or storage check failed');
+      return false;
     }
   } catch (error) {
     console.warn('Provider config write failed:', error);
+    return false;
   }
-  return false;
 }
 
 export function getCurrentModelForProvider() {

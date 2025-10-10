@@ -29,8 +29,20 @@ const STORAGE_CONFIG = {
  * @returns {boolean} - Whether localStorage is available
  */
 export function isStorageAvailable() {
-  logVerboseInfo('Persistent localStorage usage has been disabled for conversations.');
-  return false;
+  try {
+    if (typeof localStorage === 'undefined') {
+      return false;
+    }
+    
+    // Test localStorage functionality
+    const testKey = '__storage_test__';
+    localStorage.setItem(testKey, 'test');
+    localStorage.removeItem(testKey);
+    return true;
+  } catch (error) {
+    console.warn('localStorage not available:', error);
+    return false;
+  }
 }
 
 /**

@@ -2,6 +2,7 @@ import { OPENAI_CONFIG, ERROR_MESSAGES } from '../config/constants';
 import { generateResources } from '../utils/resourceGenerator';
 import { recordTokenUsage } from '../utils/tokenUsage';
 import { convertDocxToPdfIfNeeded } from '../utils/fileConversion';
+import ragService from './ragService';
 
 class GroqService {
   constructor() {
@@ -155,6 +156,46 @@ class GroqService {
     return messageTokens + (payload.max_tokens || 0);
   }
 
+  async extractTextFromFile(file) {
+    // Use ragService to extract text from files
+    return await ragService.extractTextFromFile(file);
+  }
+
+  async extractTextFromMultipleFiles(files) {
+    if (!Array.isArray(files) || files.length === 0) {
+      return null;
+    }
+    
+    const fileContents = [];
+    
+    for (const file of files) {
+      try {
+        const text = await this.extractTextFromFile(file);
+        if (text && text.trim().length > 0) {
+          fileContents.push({
+            filename: file.name,
+            content: text.trim()
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to extract text from ${file.name}:`, error);
+        fileContents.push({
+          filename: file.name,
+          content: `[Unable to extract text from this file: ${error.message}]`
+        });
+      }
+    }
+    
+    if (fileContents.length === 0) {
+      return null;
+    }
+    
+    // Format multiple files with clear separators
+    return fileContents.map(fc => 
+      `\n\n=== FILE: ${fc.filename} ===\n${fc.content}\n=== END OF FILE: ${fc.filename} ===`
+    ).join('\n');
+  }
+
   async getChatResponse(
     message,
     documentFile = null,
@@ -197,12 +238,32 @@ class GroqService {
     };
 
     // Note: Groq doesn't support file uploads or vector stores like OpenAI
-    // For document files, we'll include the content in the message
+    // For document files, we'll extract text and include it in the message
     const isFile = documentFile && typeof documentFile === 'object' && 'name' in documentFile;
-    if (isFile) {
-      // For Groq, we can't upload files, so we'll include a note about the file
+    const isMultipleFiles = Array.isArray(documentFile) && documentFile.length > 0;
+    
+    let documentContent = null;
+    
+    if (isMultipleFiles) {
+      // Handle array of files
+      documentContent = await this.extractTextFromMultipleFiles(documentFile);
+    } else if (isFile) {
+      // Handle single file
+      try {
+        const text = await this.extractTextFromFile(documentFile);
+        if (text && text.trim().length > 0) {
+          documentContent = `\n\n=== FILE: ${documentFile.name} ===\n${text.trim()}\n=== END OF FILE: ${documentFile.name} ===`;
+        }
+      } catch (error) {
+        console.error('Failed to extract text from file:', error);
+        documentContent = `\n\n[Note: Unable to extract text from ${documentFile.name}: ${error.message}]`;
+      }
+    }
+    
+    // Update the message content with document content
+    if (documentContent) {
       requestBody.messages[requestBody.messages.length - 1].content = 
-        `${userPrompt}\n\n[Note: A file was uploaded but Groq doesn't support file processing. Please provide the file content as text for analysis.]`;
+        `${userPrompt}${documentContent}`;
     }
 
     const payloadForTokens = this.createChatPayload(userPrompt, normalizedHistory);

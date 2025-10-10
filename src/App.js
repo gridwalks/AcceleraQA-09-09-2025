@@ -897,9 +897,16 @@ Would you like to try rephrasing your question with any of these suggestions?`,
         }
         
         if (!response) {
+          // For Groq, pass all files; for OpenAI, pass first file (OpenAI handles single file + vector store)
+          const filesForAI = conversionResults.length > 0 
+            ? (getModelProvider() === 'groq' 
+                ? conversionResults.map(r => r.file) 
+                : conversionResults[0].file)
+            : null;
+
           response = await aiService.getChatResponse(
             rawInput,
-            conversionResults.length > 0 ? conversionResults[0].file : null,
+            filesForAI,
             conversationHistory,
             undefined,
             vectorStoreIdToUse

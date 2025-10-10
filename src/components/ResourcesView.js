@@ -1162,39 +1162,39 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
   const displayedSuggestions = showAllSuggestions ? learningSuggestions : learningSuggestions.slice(0, 3);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 h-full shadow-sm flex flex-col">
-      <div className="flex-1 overflow-y-auto space-y-4">
+    <div className="bg-white rounded-xl border border-gray-200 p-6 h-full shadow-sm flex flex-col">
+      <div className="flex-1 overflow-y-auto space-y-6">
         {FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && (
-          <div className="border border-gray-200 rounded-lg">
+          <div className="border border-gray-200 rounded-xl">
             <button
               type="button"
               onClick={() => toggleSection('suggestions')}
-              className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
+              className="w-full flex items-center justify-between px-6 py-4 text-body font-medium text-left hover:bg-gray-50 rounded-t-xl transition-colors"
             >
-              <div className="flex items-center space-x-2">
-                <Sparkles className="h-4 w-4" />
-                <span>AI Suggestions</span>
+              <div className="flex items-center space-x-3">
+                <Sparkles className="h-5 w-5 text-purple-600" />
+                <span className="text-heading-4">AI Suggestions</span>
                 {learningSuggestions.length > 0 && (
-                  <span className="bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  <span className="bg-purple-600 text-white text-caption px-2 py-1 rounded-full">
                     {learningSuggestions.length}
                   </span>
                 )}
               </div>
-              <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.suggestions ? 'rotate-90' : ''}`} />
+              <ChevronRight className={`h-5 w-5 transform transition-transform text-gray-500 ${openSections.suggestions ? 'rotate-90' : ''}`} />
             </button>
             {openSections.suggestions && (
-              <div className="p-4 space-y-4 border-t border-gray-200">
+              <div className="p-6 space-y-6 border-t border-gray-200">
                 {isLoadingSuggestions ? (
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600 text-sm">Analyzing your conversations...</p>
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-10 w-10 border-2 border-purple-600 border-t-transparent mx-auto mb-4"></div>
+                    <p className="text-body text-gray-600">Analyzing your conversations...</p>
                   </div>
                 ) : learningSuggestions.length > 0 ? (
                   <>
-                    <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg border border-purple-100 mb-4">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <Brain className="h-4 w-4 text-purple-600" />
-                        <span className="text-sm font-medium text-purple-800">
+                    <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-6 rounded-xl border border-purple-100 mb-6">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <Brain className="h-5 w-5 text-purple-600" />
+                        <span className="text-body font-medium text-purple-800">
                           Suggestions Based on Your Recent Conversations
                         </span>
                       </div>
@@ -1216,7 +1216,7 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
                     {learningSuggestions.length > 3 && (
                       <button
                         onClick={() => setShowAllSuggestions(!showAllSuggestions)}
-                        className="w-full py-2 px-4 text-sm text-purple-600 hover:text-purple-800 border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors"
+                        className="w-full py-3 px-6 text-body text-purple-600 hover:text-purple-800 border border-purple-200 rounded-xl hover:bg-purple-50 transition-colors font-medium"
                       >
                         {showAllSuggestions
                           ? `Show Less (${learningSuggestions.length - 3} hidden)`
@@ -1225,17 +1225,17 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
                     )}
                   </>
                 ) : (
-                  <div className="text-center py-12">
-                    <div className="w-12 h-12 bg-purple-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                      <Brain className="h-6 w-6 text-purple-600" />
+                  <div className="text-center py-16">
+                    <div className="w-16 h-16 bg-purple-100 rounded-xl mx-auto mb-6 flex items-center justify-center">
+                      <Brain className="h-8 w-8 text-purple-600" />
                     </div>
-                    <h4 className="text-lg font-medium text-gray-900 mb-2">No Suggestions Yet</h4>
-                    <p className="text-gray-600 text-sm mb-4">
+                    <h4 className="text-heading-3 text-gray-900 mb-3">No Suggestions Yet</h4>
+                    <p className="text-body text-gray-600 mb-6">
                       Start conversations to get personalized learning recommendations
                     </p>
                     <button
                       onClick={loadLearningSuggestions}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+                      className="btn-primary px-6 py-3 text-body"
                     >
                       Generate Suggestions
                     </button>
@@ -1246,34 +1246,34 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
           </div>
         )}
 
-        <div className="border border-gray-200 rounded-lg">
+        <div className="border border-gray-200 rounded-xl">
           <button
             type="button"
             onClick={() => toggleSection('resources')}
-            className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
+            className="w-full flex items-center justify-between px-6 py-4 text-body font-medium text-left hover:bg-gray-50 rounded-t-xl transition-colors"
           >
-            <div className="flex items-center space-x-2">
-              <BookOpen className="h-4 w-4" />
-              <span>Resources</span>
+            <div className="flex items-center space-x-3">
+              <BookOpen className="h-5 w-5 text-blue-600" />
+              <span className="text-heading-4">Resources</span>
               {currentResources.length > 0 && (
-                <span className="bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                <span className="bg-blue-600 text-white text-caption px-2 py-1 rounded-full">
                   {currentResources.length}
                 </span>
               )}
             </div>
-            <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.resources ? 'rotate-90' : ''}`} />
+            <ChevronRight className={`h-5 w-5 transform transition-transform text-gray-500 ${openSections.resources ? 'rotate-90' : ''}`} />
           </button>
           {openSections.resources && (
-            <div className="p-4 space-y-4 border-t border-gray-200">
+            <div className="p-6 space-y-6 border-t border-gray-200">
               {currentResources.length > 0 && (
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     type="text"
                     placeholder="Search resources..."
                     value={searchTerm}
                     onChange={handleSearchChange}
-                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="form-input w-full pl-12 pr-4 py-3 text-body focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               )}
@@ -1296,26 +1296,26 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
                     );
                   })
                 ) : (
-                  <div className="text-center py-8">
-                    <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600 text-sm">
+                  <div className="text-center py-12">
+                    <Search className="w-10 h-10 text-gray-400 mx-auto mb-4" />
+                    <p className="text-body text-gray-600 mb-4">
                       No resources match "{searchTerm}"
                     </p>
                     <button
                       onClick={() => setSearchTerm('')}
-                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                      className="btn-secondary text-body"
                     >
                       Clear search
                     </button>
                   </div>
                 )
               ) : (
-                <div className="text-center py-12">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                    <BookOpen className="h-6 w-6 text-gray-400" />
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 bg-gray-100 rounded-xl mx-auto mb-6 flex items-center justify-center">
+                    <BookOpen className="h-8 w-8 text-gray-400" />
                   </div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">No resources yet</h4>
-                  <p className="text-gray-600">
+                  <h4 className="text-heading-3 text-gray-900 mb-3">No resources yet</h4>
+                  <p className="text-body text-gray-600">
                     Ask a question to see relevant learning resources
                   </p>
                 </div>
@@ -1325,45 +1325,45 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
         </div>
 
         {/* Chat Histories Section */}
-        <div className="border border-gray-200 rounded-lg">
+        <div className="border border-gray-200 rounded-xl">
           <button
             type="button"
             onClick={() => toggleSection('chatHistories')}
-            className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-gray-50 rounded-t-lg"
+            className="w-full flex items-center justify-between px-6 py-4 text-body font-medium text-left hover:bg-gray-50 rounded-t-xl transition-colors"
           >
-            <div className="flex items-center space-x-2">
-              <MessageSquare className="h-4 w-4" />
-              <span>Chat Histories</span>
+            <div className="flex items-center space-x-3">
+              <MessageSquare className="h-5 w-5 text-green-600" />
+              <span className="text-heading-4">Chat Histories</span>
               {chatHistories.length > 0 && (
-                <span className="bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                <span className="bg-green-600 text-white text-caption px-2 py-1 rounded-full">
                   {chatHistories.length}
                 </span>
               )}
             </div>
-            <ChevronRight className={`h-4 w-4 transform transition-transform ${openSections.chatHistories ? 'rotate-90' : ''}`} />
+            <ChevronRight className={`h-5 w-5 transform transition-transform text-gray-500 ${openSections.chatHistories ? 'rotate-90' : ''}`} />
           </button>
           {openSections.chatHistories && (
-            <div className="p-4 space-y-4 border-t border-gray-200">
+            <div className="p-6 space-y-6 border-t border-gray-200">
               {/* Capture Current Chat Button */}
               {messages && messages.length > 0 && (
                 <button
                   onClick={handleCaptureCurrentChat}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                  className="w-full flex items-center justify-center space-x-3 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors text-body font-medium"
                 >
-                  <BookmarkPlus className="h-4 w-4" />
+                  <BookmarkPlus className="h-5 w-5" />
                   <span>Save Current Chat</span>
                 </button>
               )}
 
               {chatHistories.length > 0 && (
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     type="text"
                     placeholder="Search chat histories..."
                     value={searchTerm}
                     onChange={handleSearchChange}
-                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="form-input w-full pl-12 pr-4 py-3 text-body focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   />
                 </div>
               )}
@@ -1385,32 +1385,32 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
                     );
                   })
                 ) : (
-                  <div className="text-center py-8">
-                    <Search className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600 text-sm">
+                  <div className="text-center py-12">
+                    <Search className="w-10 h-10 text-gray-400 mx-auto mb-4" />
+                    <p className="text-body text-gray-600 mb-4">
                       No chat histories match "{searchTerm}"
                     </p>
                     <button
                       onClick={() => setSearchTerm('')}
-                      className="mt-2 text-sm text-green-600 hover:text-green-800"
+                      className="btn-secondary text-body"
                     >
                       Clear search
                     </button>
                   </div>
                 )
               ) : (
-                <div className="text-center py-12">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                    <MessageSquare className="h-6 w-6 text-gray-400" />
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 bg-gray-100 rounded-xl mx-auto mb-6 flex items-center justify-center">
+                    <MessageSquare className="h-8 w-8 text-gray-400" />
                   </div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">No chat histories yet</h4>
-                  <p className="text-gray-600 text-sm mb-4">
+                  <h4 className="text-heading-3 text-gray-900 mb-3">No chat histories yet</h4>
+                  <p className="text-body text-gray-600 mb-6">
                     Start a conversation and save it to create your first chat history
                   </p>
                   {messages && messages.length > 0 && (
                     <button
                       onClick={handleCaptureCurrentChat}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors"
+                      className="btn-primary px-6 py-3 text-body"
                     >
                       Save Current Chat
                     </button>
@@ -1424,8 +1424,9 @@ const ResourcesView = memo(({ currentResources = [], user, onSuggestionsUpdate, 
       </div>
 
       {showToast && (
-        <div className="fixed bottom-4 right-4 bg-green-600 text-white text-sm px-3 py-2 rounded shadow-lg z-50">
-          Added to Notebook
+        <div className="fixed bottom-6 right-6 bg-green-600 text-white text-body px-4 py-3 rounded-xl shadow-xl z-50 flex items-center space-x-2">
+          <Check className="h-5 w-5" />
+          <span>Added to Notebook</span>
         </div>
       )}
 

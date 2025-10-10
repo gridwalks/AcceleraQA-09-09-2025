@@ -14,10 +14,10 @@ const Sidebar = ({
   onLoadChatHistory
 }) => {
   return (
-    <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 lg:min-h-0">
+    <div className="h-full flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 lg:min-h-0">
       {/* Sidebar Header */}
-      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-        <h3 className="text-base sm:text-lg font-semibold text-gray-900">Resource Center</h3>
+      <div className="flex-shrink-0 px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-t-xl">
+        <h3 className="text-heading-3 text-gray-900">Resource Center</h3>
       </div>
 
       {/* Sidebar Content */}
@@ -34,25 +34,25 @@ const Sidebar = ({
 
       {/* Enhanced Footer with Learning Status */}
       {FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && (
-        <div className="flex-shrink-0 px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-lg">
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <span>{`${learningSuggestions.length} AI suggestions`}</span>
+        <div className="flex-shrink-0 px-6 py-4 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-b-xl">
+          <div className="flex items-center justify-between text-body-small text-gray-600">
+            <span className="font-medium">{`${learningSuggestions.length} AI suggestions`}</span>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3">
               {FEATURE_FLAGS.ENABLE_AI_SUGGESTIONS && (
                 <>
                   {isLoadingSuggestions ? (
-                    <div className="flex items-center space-x-1 text-purple-600">
-                      <div className="animate-spin rounded-full h-3 w-3 border border-purple-600 border-t-transparent"></div>
-                      <span>Learning...</span>
+                    <div className="flex items-center space-x-2 text-purple-600">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-600 border-t-transparent"></div>
+                      <span className="text-body-small">Learning...</span>
                     </div>
                   ) : learningSuggestions.length > 0 ? (
-                    <div className="flex items-center space-x-1 text-green-600">
+                    <div className="flex items-center space-x-2 text-green-600">
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span>Personalized</span>
+                      <span className="text-body-small font-medium">Personalized</span>
                     </div>
                   ) : (
-                    <span className="text-gray-400">Start chatting</span>
+                    <span className="text-body-small text-gray-400">Start chatting</span>
                   )}
                 </>
               )}

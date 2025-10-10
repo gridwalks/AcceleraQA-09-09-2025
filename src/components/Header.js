@@ -77,24 +77,24 @@ const Header = memo(({
   }, [menuOpen]);
 
   return (
-    <header className="bg-gray-50 border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center h-16">
-          <div className="flex-shrink-0 flex items-center space-x-2">
+    <header className="bg-white border-b border-gray-200 shadow-sm">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+        <div className="flex items-center h-18">
+          <div className="flex-shrink-0 flex items-center space-x-3">
             <img
               src="/AceleraQA_logo.png"
               alt="AcceleraQA logo"
               width="180"
               height="20"
             />
-            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">| Beta</span>
+            <span className="text-caption text-gray-500">| Beta</span>
           </div>
 
-          <div className="relative flex items-center space-x-4 ml-auto">
+          <div className="relative flex items-center space-x-6 ml-auto">
             {/* User Info */}
-            <div className="flex items-center space-x-2 text-sm text-gray-700">
-              <User className="h-4 w-4 text-gray-500" />
-              <span className="hidden sm:block whitespace-nowrap">
+            <div className="flex items-center space-x-3 text-body-small text-gray-700">
+              <User className="h-5 w-5 text-gray-500" />
+              <span className="hidden sm:block whitespace-nowrap font-medium">
                 {displayName}
                 {roleLabel
                   ? ` (${roleLabel}${orgLabel ? ` / ${orgLabel}` : ''})`
@@ -106,23 +106,23 @@ const Header = memo(({
             {/* Menu toggle */}
             <button
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="p-2 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300"
+              className="p-3 rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all"
               aria-label="Toggle menu"
             >
               <Menu className="h-5 w-5 text-gray-700" />
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
+              <div className="absolute right-0 top-full mt-3 w-64 bg-white border border-gray-200 rounded-xl shadow-xl py-2 z-50">
                 <button
                   onClick={() => {
                     onShowProfile();
                     setMenuOpen(false);
                   }}
-                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="flex w-full items-center px-4 py-3 text-body-small text-gray-700 hover:bg-gray-50 rounded-lg mx-1 transition-colors"
                   aria-label="View your profile"
                 >
-                  <User className="h-4 w-4 mr-2" />
+                  <User className="h-5 w-5 mr-3" />
                   Your Profile
                 </button>
 
@@ -132,10 +132,10 @@ const Header = memo(({
                       handleAdminClick();
                       setMenuOpen(false);
                     }}
-                    className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="flex w-full items-center px-4 py-3 text-body-small text-gray-700 hover:bg-gray-50 rounded-lg mx-1 transition-colors"
                     aria-label="Access admin panel"
                   >
-                    <Shield className="h-4 w-4 mr-2" />
+                    <Shield className="h-5 w-5 mr-3" />
                     Admin
                   </button>
                 )}
@@ -145,10 +145,10 @@ const Header = memo(({
                     onOpenNotebook();
                     setMenuOpen(false);
                   }}
-                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="flex w-full items-center px-4 py-3 text-body-small text-gray-700 hover:bg-gray-50 rounded-lg mx-1 transition-colors"
                   aria-label="Open notebook"
                 >
-                  <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-5 w-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                   </svg>
                   Open Notebook
@@ -159,30 +159,30 @@ const Header = memo(({
                     onShowRAGConfig();
                     setMenuOpen(false);
                   }}
-                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="flex w-full items-center px-4 py-3 text-body-small text-gray-700 hover:bg-gray-50 rounded-lg mx-1 transition-colors"
                   aria-label="Manage personal resources"
                 >
-                  <FileText className="h-4 w-4 mr-2" />
+                  <FileText className="h-5 w-5 mr-3" />
                   My Resources
                 </button>
 
                 <a
                   href="https://acceleraqa-main.netlify.app/privacy"
                   onClick={() => setMenuOpen(false)}
-                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="flex w-full items-center px-4 py-3 text-body-small text-gray-700 hover:bg-gray-50 rounded-lg mx-1 transition-colors"
                   aria-label="View terms and policies"
                 >
-                  <FileText className="h-4 w-4 mr-2" />
+                  <FileText className="h-5 w-5 mr-3" />
                   Terms & Policies
                 </a>
 
                 <a
                   href="/help.html"
                   onClick={() => setMenuOpen(false)}
-                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="flex w-full items-center px-4 py-3 text-body-small text-gray-700 hover:bg-gray-50 rounded-lg mx-1 transition-colors"
                   aria-label="View help information"
                 >
-                  <HelpCircle className="h-4 w-4 mr-2" />
+                  <HelpCircle className="h-5 w-5 mr-3" />
                   Help
                 </a>
 
@@ -191,26 +191,28 @@ const Header = memo(({
                     onOpenSupport();
                     setMenuOpen(false);
                   }}
-                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="flex w-full items-center px-4 py-3 text-body-small text-gray-700 hover:bg-gray-50 rounded-lg mx-1 transition-colors"
                   aria-label="Raise support request"
                 >
-                  <LifeBuoy className="h-4 w-4 mr-2" />
+                  <LifeBuoy className="h-5 w-5 mr-3" />
                   Support
                 </button>
+
+                <div className="border-t border-gray-200 my-2 mx-2"></div>
 
                 <button
                   onClick={() => {
                     handleLogoutClick();
                     setMenuOpen(false);
                   }}
-                  className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="flex w-full items-center px-4 py-3 text-body-small text-red-600 hover:bg-red-50 rounded-lg mx-1 transition-colors"
                   aria-label="Sign out of AcceleraQA"
                 >
-                  <LogOut className="h-4 w-4 mr-2" />
+                  <LogOut className="h-5 w-5 mr-3" />
                   Sign Out
                 </button>
-                <div className="border-t my-1"></div>
-                <div className="px-4 py-2 text-xs text-gray-500">
+                
+                <div className="px-4 py-3 text-caption text-gray-500 bg-gray-50 mx-2 rounded-lg">
                   Monthly Tokens Used: {monthlyTokens}
                 </div>
               </div>

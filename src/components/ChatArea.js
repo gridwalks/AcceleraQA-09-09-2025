@@ -917,16 +917,16 @@ const ChatArea = ({
   const manualOverrideActive = lastResponseMode === 'ai-knowledge-manual';
 
   return (
-    <div className="h-full flex flex-col min-h-0 overflow-hidden bg-[#F7F7F8] rounded-lg shadow-sm border border-gray-200">
+    <div className="h-full flex flex-col min-h-0 overflow-hidden bg-white rounded-xl shadow-sm border border-gray-200">
       {/* Chat Header */}
-      <div className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+      <div className="flex-shrink-0 px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-t-xl">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+          <div className="flex items-center space-x-4">
+            <h2 className="text-heading-2 text-gray-900">
               Document Assistant
             </h2>
             {isSaving && (
-              <div className="flex items-center space-x-2 text-sm text-blue-600">
+              <div className="flex items-center space-x-2 text-body-small text-blue-600">
                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
                 <span className="hidden sm:inline">Saving...</span>
               </div>
@@ -934,15 +934,15 @@ const ChatArea = ({
           </div>
           
           {/* Mode Toggle */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium text-gray-700">Mode:</span>
-            <div className="flex bg-gray-200 rounded-lg p-1">
+          <div className="flex items-center space-x-3">
+            <span className="text-body-small font-medium text-gray-700">Mode:</span>
+            <div className="flex bg-gray-100 rounded-xl p-1.5 shadow-inner">
               <button
                 onClick={() => setIsDocumentSearchMode(true)}
-                className={`flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`flex items-center space-x-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                   isDocumentSearchMode
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
                 title="Search through uploaded documents"
               >
@@ -951,10 +951,10 @@ const ChatArea = ({
               </button>
               <button
                 onClick={() => setIsDocumentSearchMode(false)}
-                className={`flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`flex items-center space-x-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                   !isDocumentSearchMode
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
                 title="Use AI knowledge for general responses"
               >
@@ -968,14 +968,17 @@ const ChatArea = ({
       </div>
 
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 min-h-0">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-md">
-              <div className="text-4xl sm:text-6xl mb-4">🚀</div>
-              <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
+            <div className="text-center max-w-lg">
+              <div className="text-6xl mb-6">🚀</div>
+              <h3 className="text-heading-2 text-gray-900 mb-3">
                 What can I help you with today?
               </h3>
+              <p className="text-body text-gray-600">
+                Ask questions about quality, compliance, or upload documents for specific guidance.
+              </p>
             </div>
           </div>
         ) : (
@@ -992,24 +995,24 @@ const ChatArea = ({
                 );
 
                 return (
-                  <div key={index} className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`flex items-start gap-3 ${isUserMessage ? 'flex-row-reverse' : ''}`}>
+                  <div key={index} className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'} mb-6`}>
+                    <div className={`flex items-start gap-4 ${isUserMessage ? 'flex-row-reverse' : ''}`}>
                       <div
-                        className={`mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-white shadow-sm ${
-                          isUserMessage ? 'bg-emerald-500' : 'bg-gray-900'
+                        className={`mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-white shadow-sm ${
+                          isUserMessage ? 'bg-blue-500' : 'bg-gray-700'
                         }`}
                       >
-                        {isUserMessage ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                        {isUserMessage ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
                       </div>
-                      <div
-                        className={`max-w-[85%] lg:max-w-[70%] rounded-2xl border px-4 py-3 shadow-sm text-sm sm:text-base leading-relaxed ${
-                          isUserMessage
-                            ? 'bg-[#DCF5C7] border-[#B7E797] text-gray-900'
-                            : 'bg-white border-gray-200 text-gray-900'
-                        }`}
-                      >
+                           <div
+                             className={`max-w-[85%] lg:max-w-[75%] ${
+                               isUserMessage
+                                 ? 'message-user'
+                                 : 'message-assistant'
+                             }`}
+                           >
                         {hasMessageText && (
-                          <div className="whitespace-pre-wrap">
+                          <div className="whitespace-pre-wrap text-readable">
                             <MarkdownText text={messageText} />
                           </div>
                         )}
@@ -1200,13 +1203,13 @@ const ChatArea = ({
       </div>
 
       {/* Input Area */}
-      <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg mt-auto">
+      <div className="flex-shrink-0 p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-b-xl mt-auto">
         {cooldown > 0 && (
-          <div className="mb-2 text-sm text-yellow-700 bg-yellow-100 px-3 py-2 rounded">
+          <div className="mb-4 status-warning">
             You're sending messages too quickly. Please wait {cooldown}s before trying again.
           </div>
         )}
-        <div className="flex space-x-3">
+        <div className="flex space-x-4">
           <div className="flex-shrink-0">
             <input
               type="file"
@@ -1218,10 +1221,10 @@ const ChatArea = ({
             />
             <label
               htmlFor="chat-file-upload"
-              className="flex min-w-[44px] cursor-pointer items-center justify-center rounded-lg bg-gray-200 px-3 py-3 text-gray-700 transition hover:bg-gray-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:px-4 sm:py-4"
+              className="flex min-w-[48px] cursor-pointer items-center justify-center rounded-xl bg-gray-100 px-4 py-4 text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
               title="Attach multiple PDF, Word (.docx), Markdown (.md), Text (.txt), CSV (.csv), or Excel (.xlsx) documents. Non-PDF files will be converted automatically."
             >
-              <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
+              <Paperclip className="h-5 w-5" />
             </label>
           </div>
           <div className="flex-1 relative">
@@ -1230,7 +1233,7 @@ const ChatArea = ({
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Ask about quality, compliance, or upload documents for specific guidance..."
-              className="w-full p-3 sm:p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base min-h-[44px] max-h-32"
+              className="form-input resize-none min-h-[52px] max-h-32 text-body"
               rows={1}
               style={{
                 height: 'auto',
@@ -1247,13 +1250,13 @@ const ChatArea = ({
             type="button"
             onClick={handleSendMessage}
             disabled={isLoading || cooldown > 0 || (!trimmedInputMessage && !(Array.isArray(uploadedFile) ? uploadedFile.length > 0 : uploadedFile))}
-            className="flex min-w-[44px] items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:py-4"
+            className="btn-primary flex min-w-[52px] items-center justify-center px-6 py-4 disabled:cursor-not-allowed disabled:opacity-50"
             title={cooldown > 0 ? `Please wait ${cooldown}s` : 'Send message'}
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
+              <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              <Send className="h-4 w-4 sm:h-5 sm:w-5" />
+              <Send className="h-5 w-5" />
             )}
           </button>
         </div>
@@ -1290,9 +1293,9 @@ const ChatArea = ({
           <AttachmentPreview file={uploadedFile} onRemove={() => setUploadedFile(null)} />
         )}
 
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {inputLength > 100 && (
-            <div className="text-xs text-gray-500 text-right sm:text-left">
+            <div className="text-caption text-gray-500 text-right sm:text-left">
               {inputLength} characters
             </div>
           )}
@@ -1307,9 +1310,9 @@ const ChatArea = ({
             disabled={clearButtonDisabled}
             aria-label="Clear chat history"
             title="Clear the current conversation"
-            className="inline-flex items-center gap-2 self-end sm:self-auto sm:ml-auto rounded-md border border-transparent bg-white px-3 py-2 text-xs sm:text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn-secondary inline-flex items-center gap-2 self-end sm:self-auto sm:ml-auto text-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
             <span>Clear chat</span>
           </button>
         </div>

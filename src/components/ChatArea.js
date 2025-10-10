@@ -919,46 +919,46 @@ const ChatArea = ({
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden bg-white rounded-xl shadow-sm border border-gray-200">
       {/* Chat Header */}
-      <div className="flex-shrink-0 px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-t-xl">
+      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-t-xl">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <h2 className="text-heading-2 text-gray-900">
+          <div className="flex items-center space-x-3">
+            <h2 className="text-heading-3 text-gray-900">
               Document Assistant
             </h2>
             {isSaving && (
               <div className="flex items-center space-x-2 text-body-small text-blue-600">
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent"></div>
                 <span className="hidden sm:inline">Saving...</span>
               </div>
             )}
           </div>
           
           {/* Mode Toggle */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             <span className="text-body-small font-medium text-gray-700">Mode:</span>
-            <div className="flex bg-gray-100 rounded-xl p-1.5 shadow-inner">
+            <div className="flex bg-gray-100 rounded-lg p-1 shadow-inner">
               <button
                 onClick={() => setIsDocumentSearchMode(true)}
-                className={`flex items-center space-x-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
                   isDocumentSearchMode
                     ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
                 title="Search through uploaded documents"
               >
-                <Search className="h-4 w-4" />
+                <Search className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Document Search</span>
               </button>
               <button
                 onClick={() => setIsDocumentSearchMode(false)}
-                className={`flex items-center space-x-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
                   !isDocumentSearchMode
                     ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
                 title="Use AI knowledge for general responses"
               >
-                <Brain className="h-4 w-4" />
+                <Brain className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">AI Knowledge</span>
               </button>
             </div>
@@ -968,12 +968,12 @@ const ChatArea = ({
       </div>
 
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center max-w-lg">
-              <div className="text-6xl mb-6">🚀</div>
-              <h3 className="text-heading-2 text-gray-900 mb-3">
+              <div className="text-4xl mb-4">🚀</div>
+              <h3 className="text-heading-3 text-gray-900 mb-2">
                 What can I help you with today?
               </h3>
               <p className="text-body text-gray-600">
@@ -995,15 +995,15 @@ const ChatArea = ({
                 );
 
                 return (
-                  <div key={index} className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'} mb-6`}>
-                    <div className={`flex items-start gap-4 ${isUserMessage ? 'flex-row-reverse' : ''}`}>
-                      <div
-                        className={`mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-white shadow-sm ${
-                          isUserMessage ? 'bg-blue-500' : 'bg-gray-700'
-                        }`}
-                      >
-                        {isUserMessage ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
-                      </div>
+                       <div key={index} className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'} mb-4`}>
+                         <div className={`flex items-start gap-3 ${isUserMessage ? 'flex-row-reverse' : ''}`}>
+                           <div
+                             className={`mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white shadow-sm ${
+                               isUserMessage ? 'bg-blue-500' : 'bg-gray-700'
+                             }`}
+                           >
+                             {isUserMessage ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                           </div>
                            <div
                              className={`max-w-[85%] lg:max-w-[75%] ${
                                isUserMessage
@@ -1203,13 +1203,13 @@ const ChatArea = ({
       </div>
 
       {/* Input Area */}
-      <div className="flex-shrink-0 p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-b-xl mt-auto">
+      <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-b-xl mt-auto">
         {cooldown > 0 && (
-          <div className="mb-4 status-warning">
+          <div className="mb-3 status-warning">
             You're sending messages too quickly. Please wait {cooldown}s before trying again.
           </div>
         )}
-        <div className="flex space-x-4">
+        <div className="flex space-x-3">
           <div className="flex-shrink-0">
             <input
               type="file"
@@ -1221,10 +1221,10 @@ const ChatArea = ({
             />
             <label
               htmlFor="chat-file-upload"
-              className="flex min-w-[48px] cursor-pointer items-center justify-center rounded-xl bg-gray-100 px-4 py-4 text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
+              className="flex min-w-[40px] cursor-pointer items-center justify-center rounded-lg bg-gray-100 px-3 py-3 text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
               title="Attach multiple PDF, Word (.docx), Markdown (.md), Text (.txt), CSV (.csv), or Excel (.xlsx) documents. Non-PDF files will be converted automatically."
             >
-              <Paperclip className="h-5 w-5" />
+              <Paperclip className="h-4 w-4" />
             </label>
           </div>
           <div className="flex-1 relative">
@@ -1233,7 +1233,7 @@ const ChatArea = ({
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Ask about quality, compliance, or upload documents for specific guidance..."
-              className="form-input resize-none min-h-[52px] max-h-32 text-body"
+              className="form-input resize-none min-h-[44px] max-h-28 text-body"
               rows={1}
               style={{
                 height: 'auto',
@@ -1241,7 +1241,7 @@ const ChatArea = ({
               }}
               onInput={(e) => {
                 e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+                e.target.style.height = Math.min(e.target.scrollHeight, 112) + 'px';
               }}
               disabled={isLoading}
             />
@@ -1250,13 +1250,13 @@ const ChatArea = ({
             type="button"
             onClick={handleSendMessage}
             disabled={isLoading || cooldown > 0 || (!trimmedInputMessage && !(Array.isArray(uploadedFile) ? uploadedFile.length > 0 : uploadedFile))}
-            className="btn-primary flex min-w-[52px] items-center justify-center px-6 py-4 disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn-primary flex min-w-[44px] items-center justify-center px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
             title={cooldown > 0 ? `Please wait ${cooldown}s` : 'Send message'}
           >
             {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Send className="h-5 w-5" />
+              <Send className="h-4 w-4" />
             )}
           </button>
         </div>
